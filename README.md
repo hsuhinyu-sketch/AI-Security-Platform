@@ -287,6 +287,53 @@ actions can be correlated to the same user-to-Agent grant. This first PoC suppor
 user → Agent grant. Delegation-grant issuance/revocation, signed grant exchange, and Agent →
 sub-Agent delegation chains remain later S3 work.
 
+### S4-A dynamic least privilege
+
+`dynamicAuthorization` adds a second, context-aware PDP stage after a normal static policy
+allow. It can restrict a permission to a verified JWT session (`sid`, `sessionId`) or client
+(`azp`, `clientId`) and a time window. It never widens a static permission: both stages must
+allow. No matching dynamic policy, an expired policy, or a PDP error is denied.
+
+```yaml
+security:
+  mode: enforce
+  policies:
+  - id: allow-alice-ticket-create
+    tenantId: tenant-a
+    userId: alice
+    agentId: support-agent
+    actionType: toolInvoke
+    actionName: tickets.create
+    resourceId: tickets.create
+    resourceType: tool
+    effect: allow
+    enabled: true
+  dynamicAuthorization:
+    policyVersion: s4-v1
+    failureMode: failClosed
+    cacheTtlSeconds: 0
+    policies:
+    - id: allow-current-support-session
+      tenantId: tenant-a
+      userId: alice
+      agentId: support-agent
+      actionType: toolInvoke
+      actionName: tickets.create
+      resourceId: tickets.create
+      resourceType: tool
+      sessionId: session-42
+      clientId: support-console
+      expiresAt: 2026-12-31T23:59:59Z
+      effect: allow
+      enabled: true
+```
+
+`failClosed` is the default and calls the PDP on every request. `useCachedDecision` can reuse a
+still-valid decision for `cacheTtlSeconds`; use it only for explicitly low-risk read operations.
+The cache key includes the policy version, subject, action, resource, session, and client, so it
+cannot be reused across a different security context. The PoC provides `LocalDynamicPdp` and a
+replaceable `DynamicPdp` trait; wiring a remote PDP is the next S4 increment.
+
 ## Core crates
 
 ```text

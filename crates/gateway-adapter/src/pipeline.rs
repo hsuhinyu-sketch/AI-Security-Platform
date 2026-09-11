@@ -1,8 +1,12 @@
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
+
 use audit_core::{AuditSink, event_from_decision};
-use chrono::Duration;
+use chrono::{DateTime, Duration, Utc};
 use security_contracts::{ActionRequest, ActionType, Decision, DecisionEffect};
 use security_engine::decide;
 use security_policy::Policy;
+use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
 use crate::{Capability, CapabilityBroker, CapabilityError};
@@ -11,6 +15,26 @@ use crate::{Capability, CapabilityBroker, CapabilityError};
 /// an external PDP, or a signed policy cache without changing the pipeline.
 pub trait Authorizer: Send + Sync {
 	fn decide(&self, request: &ActionRequest) -> Decision;
+}
+
+/// A dynamic policy decision point. Implementations may consult local state, a remote PDP, or a
+/// signed decision feed. Errors are deliberately distinct from a deny so the adapter can apply
+/// an explicit fail-closed failure policy.
+pub trait DynamicPdp: Send + Sync {
+	fn decide(&self, request: &ActionRequest) -> Result<Decision, DynamicPdpError>;
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DynamicPdpError {
+	pub reason: String,
+}
+
+impl DynamicPdpError {
+	pub fn unavailable(reason: impl Into<String>) -> Self {
+		Self {
+			reason: reason.into(),
+		}
+	}
 }
 
 /// The default PoC authorizer: local policy evaluation with deny-by-default semantics.
@@ -27,6 +51,264 @@ impl PolicyAuthorizer {
 impl Authorizer for PolicyAuthorizer {
 	fn decide(&self, request: &ActionRequest) -> Decision {
 		decide(&self.policies, request)
+	}
+}
+
+/// Defines what happens when the dynamic PDP cannot produce a decision.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum DynamicPdpFailureMode {
+	/// Call the PDP for every request. A PDP failure denies the request.
+	#[default]
+	FailClosed,
+	/// Reuse only a still-valid cached decision; if absent, call the PDP and deny on failure.
+	/// This is appropriate only for explicitly low-risk, read-only operations.
+	UseCachedDecision,
+}
+
+/// Dynamic restrictions layered over the normal identity/action/resource policy vocabulary.
+/// All fields of `policy` still apply; session, client, and time restrictions are additional.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DynamicPolicy {
+	#[serde(flatten)]
+	pub policy: Policy,
+	#[serde(default, skip_serializing_if = "Option::is_none")]
+	pub session_id: Option<String>,
+	#[serde(default, skip_serializing_if = "Option::is_none")]
+	pub client_id: Option<String>,
+	#[serde(default, skip_serializing_if = "Option::is_none")]
+	pub not_before: Option<DateTime<Utc>>,
+	#[serde(default, skip_serializing_if = "Option::is_none")]
+	pub expires_at: Option<DateTime<Utc>>,
+}
+
+impl DynamicPolicy {
+	fn matches(&self, request: &ActionRequest, now: DateTime<Utc>) -> bool {
+		self.policy.matches(request)
+			&& self
+				.session_id
+				.as_deref()
+				.is_none_or(|session| request.authorization_context.session_id.as_deref() == Some(session))
+			&& self
+				.client_id
+				.as_deref()
+				.is_none_or(|client| request.authorization_context.client_id.as_deref() == Some(client))
+			&& self.not_before.is_none_or(|not_before| now >= not_before)
+			&& self.expires_at.is_none_or(|expires_at| now < expires_at)
+	}
+}
+
+/// In-process PDP used by the PoC. It has the same interface as a remote PDP and gives the
+/// configuration a safe way to express time- and session-bound restrictions today.
+#[derive(Debug, Clone)]
+pub struct LocalDynamicPdp {
+	policies: Vec<DynamicPolicy>,
+}
+
+impl LocalDynamicPdp {
+	pub fn new(policies: Vec<DynamicPolicy>) -> Self {
+		Self { policies }
+	}
+}
+
+impl DynamicPdp for LocalDynamicPdp {
+	fn decide(&self, request: &ActionRequest) -> Result<Decision, DynamicPdpError> {
+		let now = Utc::now();
+		let select = |effect| {
+			self
+				.policies
+				.iter()
+				.filter(|policy| policy.policy.effect == effect && policy.matches(request, now))
+				.fold(None::<&DynamicPolicy>, |selected, policy| match selected {
+					Some(current) if current.policy.priority >= policy.policy.priority => Some(current),
+					_ => Some(policy),
+				})
+		};
+		let selected = select(DecisionEffect::Deny).or_else(|| select(DecisionEffect::Allow));
+		Ok(Decision {
+			request_id: request.request_id.clone(),
+			effect: selected
+				.map(|policy| policy.policy.effect)
+				.unwrap_or(DecisionEffect::Deny),
+			policy_id: selected
+				.map(|policy| policy.policy.id.clone())
+				.or_else(|| Some("dynamic-pdp:no-matching-policy".into())),
+		})
+	}
+}
+
+#[derive(Debug, Clone)]
+struct CachedDecision {
+	decision: Decision,
+	expires_at: DateTime<Utc>,
+}
+
+/// Process-local, bounded-by-TTL decision cache. It is deliberately not a source of authority:
+/// cache misses and expired entries always go back to the PDP, and PDP failures deny by default.
+#[derive(Debug, Clone, Default)]
+pub struct DecisionCache {
+	entries: Arc<Mutex<HashMap<String, CachedDecision>>>,
+}
+
+impl DecisionCache {
+	fn get(&self, key: &str, now: DateTime<Utc>) -> Option<Decision> {
+		let mut entries = self.entries.lock().expect("decision cache lock poisoned");
+		let entry = entries.get(key)?;
+		if now >= entry.expires_at {
+			entries.remove(key);
+			return None;
+		}
+		Some(entry.decision.clone())
+	}
+
+	fn insert(&self, key: String, decision: Decision, ttl: Duration) {
+		if ttl <= Duration::zero() {
+			return;
+		}
+		self
+			.entries
+			.lock()
+			.expect("decision cache lock poisoned")
+			.insert(
+				key,
+				CachedDecision {
+					decision,
+					expires_at: Utc::now() + ttl,
+				},
+			);
+	}
+}
+
+/// Adds a cache boundary and fail-closed error translation to any dynamic PDP.
+pub struct CachedDynamicPdp<P> {
+	pdp: P,
+	cache: DecisionCache,
+	policy_version: String,
+	cache_ttl: Duration,
+	failure_mode: DynamicPdpFailureMode,
+}
+
+impl<P> CachedDynamicPdp<P> {
+	pub fn new(
+		pdp: P,
+		cache: DecisionCache,
+		policy_version: impl Into<String>,
+		cache_ttl: Duration,
+		failure_mode: DynamicPdpFailureMode,
+	) -> Self {
+		Self {
+			pdp,
+			cache,
+			policy_version: policy_version.into(),
+			cache_ttl,
+			failure_mode,
+		}
+	}
+
+	fn cache_key(&self, request: &ActionRequest) -> String {
+		let material = serde_json::json!({
+			"policyVersion": self.policy_version,
+			"subject": request.subject,
+			"action": request.action,
+			"resource": request.resource,
+			"authorizationContext": request.authorization_context,
+		});
+		let encoded = serde_json::to_vec(&material).expect("authorization cache key is serializable");
+		Sha256::digest(encoded)
+			.iter()
+			.map(|byte| format!("{byte:02x}"))
+			.collect()
+	}
+}
+
+impl<P: DynamicPdp> DynamicPdp for CachedDynamicPdp<P> {
+	fn decide(&self, request: &ActionRequest) -> Result<Decision, DynamicPdpError> {
+		let key = self.cache_key(request);
+		if self.failure_mode == DynamicPdpFailureMode::UseCachedDecision {
+			if let Some(decision) = self.cache.get(&key, Utc::now()) {
+				return Ok(decision);
+			}
+		}
+		let decision = self.pdp.decide(request)?;
+		self.cache.insert(key, decision.clone(), self.cache_ttl);
+		Ok(decision)
+	}
+}
+
+/// Configuration for the built-in dynamic PDP. Its runtime cache is intentionally excluded from
+/// YAML/JSON, while clones of a loaded configuration share that cache.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DynamicAuthorizationConfig {
+	pub policy_version: String,
+	#[serde(default)]
+	pub policies: Vec<DynamicPolicy>,
+	#[serde(default)]
+	pub cache_ttl_seconds: u64,
+	#[serde(default)]
+	pub failure_mode: DynamicPdpFailureMode,
+	#[serde(skip, default)]
+	cache: DecisionCache,
+}
+
+impl DynamicAuthorizationConfig {
+	fn build_pdp(&self) -> CachedDynamicPdp<LocalDynamicPdp> {
+		CachedDynamicPdp::new(
+			LocalDynamicPdp::new(self.policies.clone()),
+			self.cache.clone(),
+			self.policy_version.clone(),
+			Duration::seconds(self.cache_ttl_seconds.try_into().unwrap_or(i64::MAX)),
+			self.failure_mode,
+		)
+	}
+}
+
+/// Requires both a static allow and a dynamic PDP allow. A dynamic failure is represented as a
+/// deny decision rather than silently falling back to the static policy.
+pub struct StaticAndDynamicAuthorizer<P = LocalDynamicPdp> {
+	static_authorizer: PolicyAuthorizer,
+	dynamic_pdp: Option<CachedDynamicPdp<P>>,
+}
+
+impl StaticAndDynamicAuthorizer<LocalDynamicPdp> {
+	pub fn from_config(policies: Vec<Policy>, dynamic: Option<&DynamicAuthorizationConfig>) -> Self {
+		Self {
+			static_authorizer: PolicyAuthorizer::new(policies),
+			dynamic_pdp: dynamic.map(DynamicAuthorizationConfig::build_pdp),
+		}
+	}
+}
+
+impl<P> StaticAndDynamicAuthorizer<P> {
+	pub fn new(
+		static_authorizer: PolicyAuthorizer,
+		dynamic_pdp: Option<CachedDynamicPdp<P>>,
+	) -> Self {
+		Self {
+			static_authorizer,
+			dynamic_pdp,
+		}
+	}
+}
+
+impl<P: DynamicPdp> Authorizer for StaticAndDynamicAuthorizer<P> {
+	fn decide(&self, request: &ActionRequest) -> Decision {
+		let static_decision = self.static_authorizer.decide(request);
+		if static_decision.effect == DecisionEffect::Deny {
+			return static_decision;
+		}
+		let Some(dynamic_pdp) = &self.dynamic_pdp else {
+			return static_decision;
+		};
+		match dynamic_pdp.decide(request) {
+			Ok(decision) => decision,
+			Err(error) => Decision {
+				request_id: request.request_id.clone(),
+				effect: DecisionEffect::Deny,
+				policy_id: Some(format!("dynamic-pdp:unavailable:{}", error.reason)),
+			},
+		}
 	}
 }
 
@@ -123,11 +405,18 @@ pub struct SecurityPipelineConfig {
 	/// Enables direct user-to-Agent delegation validation for requests carrying an Agent.
 	#[serde(default, skip_serializing_if = "Vec::is_empty")]
 	pub delegations: Vec<AgentDelegationConfig>,
+	/// Optional second authorization stage that narrows static permissions with verified context.
+	#[serde(default, skip_serializing_if = "Option::is_none")]
+	pub dynamic_authorization: Option<DynamicAuthorizationConfig>,
 }
 
 impl SecurityPipelineConfig {
-	pub fn build<S: AuditSink>(&self, audit: S) -> SecurityPipeline<PolicyAuthorizer, S> {
-		let mut pipeline = SecurityPipeline::new(PolicyAuthorizer::new(self.policies.clone()), audit);
+	pub fn build<S: AuditSink>(&self, audit: S) -> SecurityPipeline<StaticAndDynamicAuthorizer, S> {
+		let authorizer = StaticAndDynamicAuthorizer::from_config(
+			self.policies.clone(),
+			self.dynamic_authorization.as_ref(),
+		);
+		let mut pipeline = SecurityPipeline::new(authorizer, audit);
 		if let Some(identity) = self.required_identity {
 			pipeline = pipeline.add_identity_control(identity);
 		}
@@ -584,6 +873,9 @@ where
 
 #[cfg(test)]
 mod tests {
+	use std::sync::Arc;
+	use std::sync::atomic::{AtomicUsize, Ordering};
+
 	use audit_core::InMemoryAuditSink;
 	use chrono::Duration;
 	use security_contracts::{
@@ -609,6 +901,7 @@ mod tests {
 				id: "prod-db".into(),
 				resource_type: ResourceType::Tool,
 			},
+			authorization_context: Default::default(),
 		}
 	}
 
@@ -693,16 +986,144 @@ mod tests {
 			"requiredToolArguments": [{
 				"toolName": "db.delete",
 				"requiredFields": ["recordId"]
-			}]
+			}],
+			"dynamicAuthorization": {
+				"policyVersion": "s4-v1",
+				"failureMode": "failClosed",
+				"policies": [{
+					"id": "allow-active-maintenance-session",
+					"tenantId": "tenant-a",
+					"userId": "alice",
+					"agentId": "maintenance-agent",
+					"actionType": "toolInvoke",
+					"actionName": "db.delete",
+					"resourceId": "prod-db",
+					"resourceType": "tool",
+					"sessionId": "session-42",
+					"effect": "allow",
+					"enabled": true
+				}]
+			}
 		}))
 		.unwrap();
 		let audit = InMemoryAuditSink::default();
 		let pipeline = config.build(&audit);
+		let mut request = request();
+		request.authorization_context.session_id = Some("session-42".into());
 
 		assert!(
 			pipeline
-				.authorize(&request(), Some(&serde_json::json!({ "recordId": "42" })))
+				.authorize(&request, Some(&serde_json::json!({ "recordId": "42" })))
 				.is_ok()
 		);
+	}
+
+	#[test]
+	fn dynamic_policy_narrows_a_static_allow_using_verified_context() {
+		let config = SecurityPipelineConfig {
+			policies: vec![allow_policy()],
+			dynamic_authorization: Some(DynamicAuthorizationConfig {
+				policy_version: "s4-v1".into(),
+				policies: vec![DynamicPolicy {
+					policy: allow_policy(),
+					session_id: Some("session-42".into()),
+					client_id: Some("support-console".into()),
+					not_before: None,
+					expires_at: None,
+				}],
+				cache_ttl_seconds: 0,
+				failure_mode: DynamicPdpFailureMode::FailClosed,
+				cache: DecisionCache::default(),
+			}),
+			..Default::default()
+		};
+		let audit = InMemoryAuditSink::default();
+		let pipeline = config.build(&audit);
+		let mut authorized = request();
+		authorized.authorization_context.session_id = Some("session-42".into());
+		authorized.authorization_context.client_id = Some("support-console".into());
+		assert!(pipeline.authorize(&authorized, None).is_ok());
+
+		let mut wrong_session = authorized;
+		wrong_session.authorization_context.session_id = Some("session-other".into());
+		assert!(matches!(
+			pipeline.authorize(&wrong_session, None),
+			Err(GatewayError::Denied(decision))
+				if decision.policy_id.as_deref() == Some("dynamic-pdp:no-matching-policy")
+		));
+	}
+
+	struct UnavailablePdp;
+
+	impl DynamicPdp for UnavailablePdp {
+		fn decide(&self, _request: &ActionRequest) -> Result<Decision, DynamicPdpError> {
+			Err(DynamicPdpError::unavailable("connection refused"))
+		}
+	}
+
+	#[test]
+	fn dynamic_pdp_failure_never_falls_back_to_a_static_allow() {
+		let audit = InMemoryAuditSink::default();
+		let dynamic = CachedDynamicPdp::new(
+			UnavailablePdp,
+			DecisionCache::default(),
+			"s4-v1",
+			Duration::seconds(30),
+			DynamicPdpFailureMode::FailClosed,
+		);
+		let pipeline = SecurityPipeline::new(
+			StaticAndDynamicAuthorizer::new(PolicyAuthorizer::new(vec![allow_policy()]), Some(dynamic)),
+			&audit,
+		);
+		assert!(matches!(
+			pipeline.authorize(&request(), None),
+			Err(GatewayError::Denied(decision))
+				if decision.policy_id.as_deref() == Some("dynamic-pdp:unavailable:connection refused")
+		));
+	}
+
+	struct CountingPdp {
+		calls: Arc<AtomicUsize>,
+	}
+
+	impl DynamicPdp for CountingPdp {
+		fn decide(&self, request: &ActionRequest) -> Result<Decision, DynamicPdpError> {
+			self.calls.fetch_add(1, Ordering::SeqCst);
+			Ok(Decision {
+				request_id: request.request_id.clone(),
+				effect: DecisionEffect::Allow,
+				policy_id: Some("dynamic-allow".into()),
+			})
+		}
+	}
+
+	#[test]
+	fn explicit_fresh_cache_reuses_only_the_same_dynamic_context() {
+		let calls = Arc::new(AtomicUsize::new(0));
+		let dynamic = CachedDynamicPdp::new(
+			CountingPdp {
+				calls: calls.clone(),
+			},
+			DecisionCache::default(),
+			"s4-v1",
+			Duration::seconds(30),
+			DynamicPdpFailureMode::UseCachedDecision,
+		);
+		let audit = InMemoryAuditSink::default();
+		let pipeline = SecurityPipeline::new(
+			StaticAndDynamicAuthorizer::new(PolicyAuthorizer::new(vec![allow_policy()]), Some(dynamic)),
+			&audit,
+		);
+		let mut first = request();
+		first.authorization_context.session_id = Some("session-42".into());
+		let mut same_context = first.clone();
+		same_context.request_id = "another-request".into();
+		let mut different_context = first.clone();
+		different_context.authorization_context.session_id = Some("session-43".into());
+
+		assert!(pipeline.authorize(&first, None).is_ok());
+		assert!(pipeline.authorize(&same_context, None).is_ok());
+		assert!(pipeline.authorize(&different_context, None).is_ok());
+		assert_eq!(calls.load(Ordering::SeqCst), 2);
 	}
 }

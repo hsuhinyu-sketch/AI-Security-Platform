@@ -48,6 +48,18 @@ pub struct Resource {
 	pub resource_type: ResourceType,
 }
 
+/// Verified request attributes used to narrow a static permission at authorization time.
+/// These fields are normalized by the gateway; callers must not supply them as arbitrary
+/// Tool arguments or headers.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct AuthorizationContext {
+	#[serde(default, skip_serializing_if = "Option::is_none")]
+	pub session_id: Option<String>,
+	#[serde(default, skip_serializing_if = "Option::is_none")]
+	pub client_id: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct ActionRequest {
@@ -55,6 +67,8 @@ pub struct ActionRequest {
 	pub subject: Subject,
 	pub action: Action,
 	pub resource: Resource,
+	#[serde(default)]
+	pub authorization_context: AuthorizationContext,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -80,6 +94,7 @@ pub struct SecurityEvent {
 	pub subject: Subject,
 	pub action: Action,
 	pub resource: Resource,
+	pub authorization_context: AuthorizationContext,
 	pub decision: DecisionEffect,
 	pub policy_id: Option<String>,
 	pub timestamp: DateTime<Utc>,

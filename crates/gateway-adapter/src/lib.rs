@@ -4,7 +4,8 @@ use std::sync::Mutex;
 use audit_core::{AuditSink, event_from_decision};
 use chrono::{DateTime, Duration, Utc};
 use security_contracts::{
-	Action, ActionRequest, ActionType, Decision, DecisionEffect, Resource, ResourceType, Subject,
+	Action, ActionRequest, ActionType, AuthorizationContext, Decision, DecisionEffect, Resource,
+	ResourceType, Subject,
 };
 use security_engine::decide;
 use security_policy::Policy;
@@ -14,10 +15,12 @@ use uuid::Uuid;
 pub mod pipeline;
 
 pub use pipeline::{
-	AgentDelegation, AgentDelegationConfig, ApprovalProvider, Authorizer, ControlDenial,
-	DelegationScope, GatewayError, PolicyAuthorizer, RequiredIdentity, RequiredToolApproval,
-	RequiredToolApprovalConfig, RequiredToolArguments, RequiredToolArgumentsConfig, SecurityControl,
-	SecurityPipeline, SecurityPipelineConfig, StaticApproval, ToolApproval,
+	AgentDelegation, AgentDelegationConfig, ApprovalProvider, Authorizer, CachedDynamicPdp,
+	ControlDenial, DecisionCache, DelegationScope, DynamicAuthorizationConfig, DynamicPdp,
+	DynamicPdpError, DynamicPdpFailureMode, DynamicPolicy, GatewayError, LocalDynamicPdp,
+	PolicyAuthorizer, RequiredIdentity, RequiredToolApproval, RequiredToolApprovalConfig,
+	RequiredToolArguments, RequiredToolArgumentsConfig, SecurityControl, SecurityPipeline,
+	SecurityPipelineConfig, StaticAndDynamicAuthorizer, StaticApproval, ToolApproval,
 };
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -27,6 +30,19 @@ pub struct GatewayIdentity {
 	pub tenant_id: Option<String>,
 	/// Correlates this request to a delegation grant carried by verified authentication.
 	pub delegation_id: Option<String>,
+	/// Session identifier carried by verified authentication, when available.
+	pub session_id: Option<String>,
+	/// OAuth client/application identifier carried by verified authentication, when available.
+	pub client_id: Option<String>,
+}
+
+impl GatewayIdentity {
+	fn authorization_context(&self) -> AuthorizationContext {
+		AuthorizationContext {
+			session_id: self.session_id.clone(),
+			client_id: self.client_id.clone(),
+		}
+	}
 }
 
 impl From<GatewayIdentity> for Subject {
@@ -53,6 +69,8 @@ pub fn model_invoke(
 			agent_id,
 			tenant_id: None,
 			delegation_id: None,
+			session_id: None,
+			client_id: None,
 		},
 		model_id,
 	)
@@ -63,6 +81,7 @@ pub fn model_invoke_for_identity(
 	identity: GatewayIdentity,
 	model_id: impl Into<String>,
 ) -> ActionRequest {
+	let authorization_context = identity.authorization_context();
 	ActionRequest {
 		request_id: request_id.into(),
 		subject: identity.into(),
@@ -74,6 +93,7 @@ pub fn model_invoke_for_identity(
 			id: model_id.into(),
 			resource_type: ResourceType::Model,
 		},
+		authorization_context,
 	}
 }
 
@@ -92,6 +112,7 @@ pub fn agent_action_for_identity(
 	agent_id: impl Into<String>,
 	method: impl Into<String>,
 ) -> ActionRequest {
+	let authorization_context = identity.authorization_context();
 	ActionRequest {
 		request_id: request_id.into(),
 		subject: identity.into(),
@@ -103,6 +124,7 @@ pub fn agent_action_for_identity(
 			id: agent_id.into(),
 			resource_type: ResourceType::Agent,
 		},
+		authorization_context,
 	}
 }
 
@@ -111,6 +133,7 @@ pub fn inference_route_for_identity(
 	identity: GatewayIdentity,
 	endpoint_picker: impl Into<String>,
 ) -> ActionRequest {
+	let authorization_context = identity.authorization_context();
 	ActionRequest {
 		request_id: request_id.into(),
 		subject: identity.into(),
@@ -122,6 +145,7 @@ pub fn inference_route_for_identity(
 			id: endpoint_picker.into(),
 			resource_type: ResourceType::InferenceEndpoint,
 		},
+		authorization_context,
 	}
 }
 
@@ -138,6 +162,8 @@ pub fn tool_invoke(
 			agent_id,
 			tenant_id: None,
 			delegation_id: None,
+			session_id: None,
+			client_id: None,
 		},
 		tool_name,
 	)
@@ -149,6 +175,7 @@ pub fn tool_invoke_for_identity(
 	tool_name: impl Into<String>,
 ) -> ActionRequest {
 	let tool_name = tool_name.into();
+	let authorization_context = identity.authorization_context();
 	ActionRequest {
 		request_id: request_id.into(),
 		subject: identity.into(),
@@ -160,6 +187,7 @@ pub fn tool_invoke_for_identity(
 			id: tool_name,
 			resource_type: ResourceType::Tool,
 		},
+		authorization_context,
 	}
 }
 
@@ -168,6 +196,7 @@ pub fn tool_list(
 	identity: GatewayIdentity,
 	mcp_server_id: impl Into<String>,
 ) -> ActionRequest {
+	let authorization_context = identity.authorization_context();
 	ActionRequest {
 		request_id: request_id.into(),
 		subject: identity.into(),
@@ -179,6 +208,7 @@ pub fn tool_list(
 			id: mcp_server_id.into(),
 			resource_type: ResourceType::McpServer,
 		},
+		authorization_context,
 	}
 }
 
@@ -355,6 +385,8 @@ mod tests {
 				agent_id: Some("maintenance-agent".into()),
 				tenant_id: Some("tenant-a".into()),
 				delegation_id: None,
+				session_id: None,
+				client_id: None,
 			}
 			.into(),
 			action: Action {
@@ -365,6 +397,7 @@ mod tests {
 				id: "prod-db".into(),
 				resource_type: ResourceType::Tool,
 			},
+			authorization_context: Default::default(),
 		}
 	}
 

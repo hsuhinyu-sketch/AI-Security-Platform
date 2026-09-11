@@ -68,6 +68,8 @@ pub(crate) fn identity_from_context(context: &IncomingRequestContext) -> Gateway
 		agent_id: string_claim(&claims.inner, &["agent_id", "agentId"]),
 		tenant_id: string_claim(&claims.inner, &["tenant_id", "tenantId"]),
 		delegation_id: string_claim(&claims.inner, &["delegation_id", "delegationId"]),
+		session_id: string_claim(&claims.inner, &["sid", "session_id", "sessionId"]),
+		client_id: string_claim(&claims.inner, &["azp", "client_id", "clientId"]),
 	}
 }
 

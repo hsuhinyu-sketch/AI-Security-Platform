@@ -38,6 +38,8 @@ impl AuditSink for TracingAuditSink {
 			agent_id = ?event.subject.agent_id,
 			tenant_id = ?event.subject.tenant_id,
 			delegation_id = ?event.subject.delegation_id,
+			session_id = ?event.authorization_context.session_id,
+			client_id = ?event.authorization_context.client_id,
 			action = ?event.action.action_type,
 			resource = %event.resource.id,
 			decision = ?event.decision,
@@ -147,6 +149,8 @@ mod tests {
 			agent_id: Some("support-agent".into()),
 			tenant_id: Some("tenant-a".into()),
 			delegation_id: None,
+			session_id: None,
+			client_id: None,
 		};
 		let allowed = model_invoke_for_identity("request-allowed", allowed_identity, "support-chat");
 		assert!(evaluate(&config, &allowed).is_ok());
@@ -158,6 +162,8 @@ mod tests {
 				agent_id: Some("support-agent".into()),
 				tenant_id: Some("tenant-b".into()),
 				delegation_id: None,
+				session_id: None,
+				client_id: None,
 			},
 			"support-chat",
 		);
@@ -327,6 +333,8 @@ mod tests {
 			agent_id: Some("support-agent".into()),
 			tenant_id: Some("tenant-a".into()),
 			delegation_id: Some("delegation-alice-support-01".into()),
+			session_id: None,
+			client_id: None,
 		};
 		assert!(
 			evaluate_with_arguments(

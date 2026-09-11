@@ -38,6 +38,10 @@ The Apache-2.0 license and upstream attribution for reused AgentGateway code rem
 - S3-C validates direct user-to-Agent delegation from a verified `delegationId` claim against
   configured tenant-scoped, time-bounded operation scopes. The grant only constrains an existing
   policy allow; issuance/revocation and Agent-to-sub-Agent chains remain future work.
+- S4-A adds a second dynamic PDP stage. Verified session/client context and time-bounded dynamic
+  policies can only narrow a static allow. PDP errors deny by default; an explicit, TTL-bounded
+  cache option is limited to low-risk reads. `DynamicPdp` is the integration seam for a remote
+  PDP in the next increment.
 
 ## Migration rule
 

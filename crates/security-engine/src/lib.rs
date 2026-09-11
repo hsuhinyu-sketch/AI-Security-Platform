@@ -40,6 +40,7 @@ mod tests {
 				id: "prod-db".into(),
 				resource_type: ResourceType::Tool,
 			},
+			authorization_context: Default::default(),
 		};
 		let policies = vec![Policy {
 			id: "deny-prod-delete".into(),
@@ -75,6 +76,7 @@ mod tests {
 				id: "prod-db".into(),
 				resource_type: ResourceType::Tool,
 			},
+			authorization_context: Default::default(),
 		};
 		let policies = vec![
 			Policy {
@@ -128,6 +130,7 @@ mod tests {
 				id: "model-a".into(),
 				resource_type: ResourceType::Model,
 			},
+			authorization_context: Default::default(),
 		};
 
 		assert_eq!(decide(&[], &request).effect, DecisionEffect::Deny);

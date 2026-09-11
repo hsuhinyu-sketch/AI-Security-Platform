@@ -14,6 +14,7 @@ pub fn event_from_decision(
 		subject: request.subject.clone(),
 		action: request.action.clone(),
 		resource: request.resource.clone(),
+		authorization_context: request.authorization_context.clone(),
 		decision: decision.effect,
 		policy_id: decision.policy_id.clone(),
 		timestamp: Utc::now(),
