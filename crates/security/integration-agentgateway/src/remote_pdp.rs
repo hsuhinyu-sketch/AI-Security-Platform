@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use std::sync::{Arc, OnceLock};
-use std::time::Duration;
 
+use crate::trusted_https;
 use gateway_adapter::{DynamicPdpError, RemotePdpRequest, RemotePdpResponse, RemotePdpTransport};
 
 /// Runtime configuration for a trusted remote PDP. The identity PEM is a combined client
@@ -53,60 +53,15 @@ pub struct HttpRemotePdpTransport {
 
 impl HttpRemotePdpTransport {
 	fn from_config(config: &RemotePdpConfig) -> Result<Self, DynamicPdpError> {
-		let endpoint = reqwest::Url::parse(&config.endpoint).map_err(|error| {
-			DynamicPdpError::unavailable(format!("remote PDP endpoint is invalid: {error}"))
-		})?;
-		if endpoint.scheme() != "https" || endpoint.host_str().is_none() {
-			return Err(DynamicPdpError::unavailable(
-				"remote PDP endpoint must be an absolute https URL",
-			));
-		}
-		if config.timeout_millis == 0 {
-			return Err(DynamicPdpError::unavailable(
-				"remote PDP timeoutMillis must be greater than zero",
-			));
-		}
-
-		let mut builder = reqwest::blocking::Client::builder()
-			.use_rustls_tls()
-			.timeout(Duration::from_millis(config.timeout_millis));
-		if let Some(path) = &config.root_ca_pem_file {
-			let pem = std::fs::read(path).map_err(|error| {
-				DynamicPdpError::unavailable(format!(
-					"unable to read remote PDP root CA PEM '{}': {error}",
-					path.display()
-				))
-			})?;
-			let certificate = reqwest::Certificate::from_pem(&pem).map_err(|error| {
-				DynamicPdpError::unavailable(format!(
-					"remote PDP root CA PEM '{}' is invalid: {error}",
-					path.display()
-				))
-			})?;
-			builder = builder.add_root_certificate(certificate);
-		}
-		if let Some(path) = &config.identity_pem_file {
-			let pem = std::fs::read(path).map_err(|error| {
-				DynamicPdpError::unavailable(format!(
-					"unable to read remote PDP identity PEM '{}': {error}",
-					path.display()
-				))
-			})?;
-			let identity = reqwest::Identity::from_pem(&pem).map_err(|error| {
-				DynamicPdpError::unavailable(format!(
-					"remote PDP identity PEM '{}' is invalid: {error}",
-					path.display()
-				))
-			})?;
-			builder = builder.identity(identity);
-		}
-		let client = builder.build().map_err(|error| {
-			DynamicPdpError::unavailable(format!("unable to build remote PDP client: {error}"))
-		})?;
-		Ok(Self {
-			endpoint: endpoint.to_string(),
-			client,
-		})
+		let (endpoint, client) = trusted_https::build_client(
+			&config.endpoint,
+			config.timeout_millis,
+			config.identity_pem_file.as_deref(),
+			config.root_ca_pem_file.as_deref(),
+			"remote PDP",
+		)
+		.map_err(DynamicPdpError::unavailable)?;
+		Ok(Self { endpoint, client })
 	}
 }
 

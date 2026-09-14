@@ -376,9 +376,27 @@ client. Moving the hook to async I/O is a runtime-performance follow-up; it does
 PDP contract or security semantics.
 
 `DelegationRevocationCheck` and `DelegationRevocationProvider` provide the corresponding realtime
-revocation brick. The PoC includes an in-process `DelegationRevocationRegistry`; its production
-replacement will be a shared revocation index or the PDP itself. A failed revocation lookup is
-fail-closed.
+revocation brick. The in-process `DelegationRevocationRegistry` remains useful for tests, while
+`delegationRevocation` now connects every gateway instance to a shared HTTPS/mTLS source. A
+request carrying a verified `delegationId` issues an uncached `POST` on every protected action:
+
+```json
+{ "protocolVersion": "v1", "delegationId": "delegation-alice-support-01" }
+```
+
+The source must return the same `delegationId` and a Boolean `revoked` value. A mismatched ID,
+timeout, TLS/network failure, non-2xx response, or malformed response is fail-closed; requests
+without a delegation do not query the source. This makes a revocation visible to all configured
+gateway instances on their next protected request.
+
+```yaml
+security:
+  delegationRevocation:
+    endpoint: https://identity.security.internal/v1/delegations/revocation
+    timeoutMillis: 100
+    identityPemFile: /run/secrets/revocation-client-identity.pem
+    rootCaPemFile: /run/secrets/identity-root-ca.pem
+```
 
 ## Core crates
 

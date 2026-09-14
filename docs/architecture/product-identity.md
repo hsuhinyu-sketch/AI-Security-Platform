@@ -45,8 +45,9 @@ The Apache-2.0 license and upstream attribution for reused AgentGateway code rem
   timeout-bounded Rustls HTTPS client with optional mTLS identity and private CA files; response
   request binding, policy version, and expiry are validated before a decision is accepted. The
   cache is capped by PDP expiry and all transport/configuration failures deny. It also provides a
-  fail-closed `DelegationRevocationCheck` brick with an in-process registry for the PoC; a shared
-  revocation store remains future runtime work.
+  fail-closed `DelegationRevocationCheck` brick. `delegationRevocation` now connects that stage to
+  a shared HTTPS/mTLS source and queries it without an allow cache for each verified delegation;
+  the in-process registry remains available only for tests and local PoCs.
 
 ## Migration rule
 

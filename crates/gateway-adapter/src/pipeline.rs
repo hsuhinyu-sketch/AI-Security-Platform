@@ -607,7 +607,25 @@ impl SecurityPipelineConfig {
 			self.policies.clone(),
 			self.dynamic_authorization.as_ref(),
 		);
-		self.build_with_authorizer(audit, authorizer)
+		self.build_with_authorizer(audit, authorizer, None)
+	}
+
+	/// Adds a real-time delegation revocation check to the configured local authorization pipeline.
+	/// The provider is queried only for requests that carry a verified delegation identifier.
+	pub fn build_with_revocation<S: AuditSink, P: DelegationRevocationProvider + 'static>(
+		&self,
+		audit: S,
+		provider: P,
+	) -> SecurityPipeline<StaticAndDynamicAuthorizer, S> {
+		let authorizer = StaticAndDynamicAuthorizer::from_config(
+			self.policies.clone(),
+			self.dynamic_authorization.as_ref(),
+		);
+		self.build_with_authorizer(
+			audit,
+			authorizer,
+			Some(Box::new(DelegationRevocationCheck::new(provider))),
+		)
 	}
 
 	/// Builds the configured controls around a remote PDP. A remote PDP is only meaningful with
@@ -626,17 +644,48 @@ impl SecurityPipelineConfig {
 			PolicyAuthorizer::new(self.policies.clone()),
 			Some(dynamic.cache_pdp(remote_pdp)),
 		);
-		Ok(self.build_with_authorizer(audit, authorizer))
+		Ok(self.build_with_authorizer(audit, authorizer, None))
+	}
+
+	/// Builds the remote-PDP variant with an additional real-time delegation revocation stage.
+	pub fn build_with_remote_pdp_and_revocation<
+		S: AuditSink,
+		T: RemotePdpTransport,
+		P: DelegationRevocationProvider + 'static,
+	>(
+		&self,
+		audit: S,
+		transport: T,
+		provider: P,
+	) -> Result<SecurityPipeline<StaticAndDynamicAuthorizer<RemoteDynamicPdp<T>>, S>, DynamicPdpError>
+	{
+		let dynamic = self.dynamic_authorization.as_ref().ok_or_else(|| {
+			DynamicPdpError::unavailable("remote PDP requires dynamicAuthorization configuration")
+		})?;
+		let remote_pdp = RemoteDynamicPdp::new(transport, Some(dynamic.policy_version.clone()));
+		let authorizer = StaticAndDynamicAuthorizer::new(
+			PolicyAuthorizer::new(self.policies.clone()),
+			Some(dynamic.cache_pdp(remote_pdp)),
+		);
+		Ok(self.build_with_authorizer(
+			audit,
+			authorizer,
+			Some(Box::new(DelegationRevocationCheck::new(provider))),
+		))
 	}
 
 	fn build_with_authorizer<S: AuditSink, A: Authorizer>(
 		&self,
 		audit: S,
 		authorizer: A,
+		revocation_check: Option<Box<dyn SecurityControl>>,
 	) -> SecurityPipeline<A, S> {
 		let mut pipeline = SecurityPipeline::new(authorizer, audit);
 		if let Some(identity) = self.required_identity {
 			pipeline = pipeline.add_identity_control(identity);
+		}
+		if let Some(revocation_check) = revocation_check {
+			pipeline.identity_controls.push(revocation_check);
 		}
 		for requirement in &self.required_tool_arguments {
 			pipeline = pipeline.add_action_control(RequiredToolArguments::new(
@@ -1358,6 +1407,14 @@ mod tests {
 		}
 	}
 
+	struct FixedRevocation(bool);
+
+	impl DelegationRevocationProvider for FixedRevocation {
+		fn is_revoked(&self, _delegation_id: &str) -> Result<bool, DelegationRevocationError> {
+			Ok(self.0)
+		}
+	}
+
 	#[test]
 	fn remote_pdp_binds_response_to_request_version_and_expiry() {
 		let request = request();
@@ -1423,6 +1480,25 @@ mod tests {
 			audit.events()[0].policy_id.as_deref(),
 			Some("remote-allow-delete")
 		);
+	}
+
+	#[test]
+	fn configured_revocation_stage_blocks_a_revoked_delegation_before_authorization() {
+		let config = SecurityPipelineConfig {
+			policies: vec![allow_policy()],
+			..Default::default()
+		};
+		let audit = InMemoryAuditSink::default();
+		let pipeline = config.build_with_revocation(&audit, FixedRevocation(true));
+		let mut request = request();
+		request.subject.delegation_id = Some("delegation-alice-maintenance".into());
+
+		assert!(matches!(
+			pipeline.authorize(&request, None),
+			Err(GatewayError::DeniedByControl { ref denial, .. })
+				if denial.control_id == "delegation-revocation"
+		));
+		assert_eq!(audit.events()[0].decision, DecisionEffect::Deny);
 	}
 
 	#[test]
