@@ -16,11 +16,14 @@ pub mod pipeline;
 
 pub use pipeline::{
 	AgentDelegation, AgentDelegationConfig, ApprovalProvider, Authorizer, CachedDynamicPdp,
-	ControlDenial, DecisionCache, DelegationScope, DynamicAuthorizationConfig, DynamicPdp,
-	DynamicPdpError, DynamicPdpFailureMode, DynamicPolicy, GatewayError, LocalDynamicPdp,
-	PolicyAuthorizer, RequiredIdentity, RequiredToolApproval, RequiredToolApprovalConfig,
-	RequiredToolArguments, RequiredToolArgumentsConfig, SecurityControl, SecurityPipeline,
-	SecurityPipelineConfig, StaticAndDynamicAuthorizer, StaticApproval, ToolApproval,
+	ControlDenial, DecisionCache, DelegationRevocationCheck, DelegationRevocationError,
+	DelegationRevocationProvider, DelegationRevocationRegistry, DelegationScope,
+	DynamicAuthorizationConfig, DynamicPdp, DynamicPdpError, DynamicPdpFailureMode, DynamicPolicy,
+	GatewayError, LocalDynamicPdp, PolicyAuthorizer, RemoteDynamicPdp, RemotePdpRequest,
+	RemotePdpResponse, RemotePdpTransport, RequiredIdentity, RequiredToolApproval,
+	RequiredToolApprovalConfig, RequiredToolArguments, RequiredToolArgumentsConfig, SecurityControl,
+	SecurityPipeline, SecurityPipelineConfig, StaticAndDynamicAuthorizer, StaticApproval,
+	ToolApproval,
 };
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]

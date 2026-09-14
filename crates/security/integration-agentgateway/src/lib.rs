@@ -44,6 +44,8 @@ impl AuditSink for TracingAuditSink {
 			resource = %event.resource.id,
 			decision = ?event.decision,
 			policy_id = ?event.policy_id,
+			policy_version = ?event.policy_version,
+			decision_expires_at = ?event.decision_expires_at,
 			"security audit decision"
 		);
 	}

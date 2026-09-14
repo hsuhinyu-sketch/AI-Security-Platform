@@ -334,6 +334,27 @@ The cache key includes the policy version, subject, action, resource, session, a
 cannot be reused across a different security context. The PoC provides `LocalDynamicPdp` and a
 replaceable `DynamicPdp` trait; wiring a remote PDP is the next S4 increment.
 
+### S4-B1 remote PDP and delegation revocation contract
+
+The security core now defines the transport-neutral remote PDP contract. A runtime adapter must
+send a versioned `RemotePdpRequest` containing only normalized identity, delegation, action,
+resource, and authorization context. Its `RemotePdpResponse` is accepted only when all of the
+following match:
+
+- `requestId` is the request being authorized;
+- `policyVersion` is the version expected by the gateway, when one is pinned;
+- `expiresAt` is in the future.
+
+The returned policy version and expiry are written to the structured audit event. A cached decision
+is bounded by the smaller of the local TTL and PDP `expiresAt`, so a remote allow cannot survive
+past its PDP validity window. `RemotePdpTransport` is intentionally a runtime integration seam:
+the next increment supplies its HTTP/mTLS implementation and injects it into the running gateway.
+
+`DelegationRevocationCheck` and `DelegationRevocationProvider` provide the corresponding realtime
+revocation brick. The PoC includes an in-process `DelegationRevocationRegistry`; its production
+replacement will be a shared revocation index or the PDP itself. A failed revocation lookup is
+fail-closed.
+
 ## Core crates
 
 ```text

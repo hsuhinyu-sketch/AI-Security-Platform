@@ -42,6 +42,10 @@ The Apache-2.0 license and upstream attribution for reused AgentGateway code rem
   policies can only narrow a static allow. PDP errors deny by default; an explicit, TTL-bounded
   cache option is limited to low-risk reads. `DynamicPdp` is the integration seam for a remote
   PDP in the next increment.
+- S4-B1 defines a versioned remote PDP request/response contract and validates request binding,
+  policy version, and response expiry before accepting a dynamic decision. The cache is capped by
+  PDP expiry. It also provides a fail-closed `DelegationRevocationCheck` brick with an in-process
+  registry for the PoC; HTTP/mTLS transport and a shared revocation store remain runtime work.
 
 ## Migration rule
 

@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 
 use audit_core::{AuditSink, event_from_decision};
@@ -34,6 +34,137 @@ impl DynamicPdpError {
 		Self {
 			reason: reason.into(),
 		}
+	}
+}
+
+/// Versioned request sent to a remote PDP. It contains normalized, verified gateway context,
+/// never an upstream bearer token or raw Tool argument payload.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RemotePdpRequest {
+	pub protocol_version: String,
+	pub request: ActionRequest,
+}
+
+/// A remote PDP decision must be bound to one request and expire. This prevents replaying a
+/// response for another action and limits the lifetime of an allow held in the gateway cache.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RemotePdpResponse {
+	pub request_id: String,
+	pub effect: DecisionEffect,
+	pub policy_id: String,
+	pub policy_version: String,
+	pub expires_at: DateTime<Utc>,
+}
+
+/// Runtime transport for a trusted remote PDP. The Gateway runtime can implement this through
+/// HTTP/mTLS without coupling the security core to a blocking client or a particular protocol.
+pub trait RemotePdpTransport: Send + Sync {
+	fn decide(&self, request: RemotePdpRequest) -> Result<RemotePdpResponse, DynamicPdpError>;
+}
+
+/// Validates remote PDP responses before returning them to the authorization pipeline.
+pub struct RemoteDynamicPdp<T> {
+	transport: T,
+	expected_policy_version: Option<String>,
+}
+
+impl<T> RemoteDynamicPdp<T> {
+	pub fn new(transport: T, expected_policy_version: Option<String>) -> Self {
+		Self {
+			transport,
+			expected_policy_version,
+		}
+	}
+}
+
+impl<T: RemotePdpTransport> DynamicPdp for RemoteDynamicPdp<T> {
+	fn decide(&self, request: &ActionRequest) -> Result<Decision, DynamicPdpError> {
+		let response = self.transport.decide(RemotePdpRequest {
+			protocol_version: "v1".into(),
+			request: request.clone(),
+		})?;
+		if response.request_id != request.request_id {
+			return Err(DynamicPdpError::unavailable(
+				"remote PDP response requestId does not match",
+			));
+		}
+		if self
+			.expected_policy_version
+			.as_deref()
+			.is_some_and(|version| version != response.policy_version)
+		{
+			return Err(DynamicPdpError::unavailable(
+				"remote PDP response policyVersion does not match",
+			));
+		}
+		if response.expires_at <= Utc::now() {
+			return Err(DynamicPdpError::unavailable(
+				"remote PDP response is expired",
+			));
+		}
+		Ok(Decision {
+			request_id: response.request_id,
+			effect: response.effect,
+			policy_id: Some(response.policy_id),
+			policy_version: Some(response.policy_version),
+			expires_at: Some(response.expires_at),
+		})
+	}
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DelegationRevocationError {
+	pub reason: String,
+}
+
+/// Provider for real-time delegation revocation. A provider failure is handled fail-closed by
+/// `DelegationRevocationCheck`; it cannot silently preserve a previously delegated privilege.
+pub trait DelegationRevocationProvider: Send + Sync {
+	fn is_revoked(&self, delegation_id: &str) -> Result<bool, DelegationRevocationError>;
+}
+
+impl<T: DelegationRevocationProvider + ?Sized> DelegationRevocationProvider for Arc<T> {
+	fn is_revoked(&self, delegation_id: &str) -> Result<bool, DelegationRevocationError> {
+		(**self).is_revoked(delegation_id)
+	}
+}
+
+/// In-process implementation for the PoC and tests. A production implementation can back the
+/// same trait with a shared revocation index or the external PDP.
+#[derive(Debug, Default)]
+pub struct DelegationRevocationRegistry {
+	revoked: Mutex<HashSet<String>>,
+}
+
+impl DelegationRevocationRegistry {
+	pub fn revoke(&self, delegation_id: impl Into<String>) {
+		self
+			.revoked
+			.lock()
+			.expect("delegation revocation registry lock poisoned")
+			.insert(delegation_id.into());
+	}
+
+	pub fn unrevoke(&self, delegation_id: &str) {
+		self
+			.revoked
+			.lock()
+			.expect("delegation revocation registry lock poisoned")
+			.remove(delegation_id);
+	}
+}
+
+impl DelegationRevocationProvider for DelegationRevocationRegistry {
+	fn is_revoked(&self, delegation_id: &str) -> Result<bool, DelegationRevocationError> {
+		Ok(
+			self
+				.revoked
+				.lock()
+				.expect("delegation revocation registry lock poisoned")
+				.contains(delegation_id),
+		)
 	}
 }
 
@@ -104,11 +235,15 @@ impl DynamicPolicy {
 #[derive(Debug, Clone)]
 pub struct LocalDynamicPdp {
 	policies: Vec<DynamicPolicy>,
+	policy_version: String,
 }
 
 impl LocalDynamicPdp {
-	pub fn new(policies: Vec<DynamicPolicy>) -> Self {
-		Self { policies }
+	pub fn new(policies: Vec<DynamicPolicy>, policy_version: impl Into<String>) -> Self {
+		Self {
+			policies,
+			policy_version: policy_version.into(),
+		}
 	}
 }
 
@@ -134,6 +269,8 @@ impl DynamicPdp for LocalDynamicPdp {
 			policy_id: selected
 				.map(|policy| policy.policy.id.clone())
 				.or_else(|| Some("dynamic-pdp:no-matching-policy".into())),
+			policy_version: Some(self.policy_version.clone()),
+			expires_at: selected.and_then(|policy| policy.expires_at),
 		})
 	}
 }
@@ -166,6 +303,13 @@ impl DecisionCache {
 		if ttl <= Duration::zero() {
 			return;
 		}
+		let expires_at = decision
+			.expires_at
+			.map(|expires_at| expires_at.min(Utc::now() + ttl))
+			.unwrap_or_else(|| Utc::now() + ttl);
+		if expires_at <= Utc::now() {
+			return;
+		}
 		self
 			.entries
 			.lock()
@@ -174,7 +318,7 @@ impl DecisionCache {
 				key,
 				CachedDecision {
 					decision,
-					expires_at: Utc::now() + ttl,
+					expires_at,
 				},
 			);
 	}
@@ -255,7 +399,7 @@ pub struct DynamicAuthorizationConfig {
 impl DynamicAuthorizationConfig {
 	fn build_pdp(&self) -> CachedDynamicPdp<LocalDynamicPdp> {
 		CachedDynamicPdp::new(
-			LocalDynamicPdp::new(self.policies.clone()),
+			LocalDynamicPdp::new(self.policies.clone(), self.policy_version.clone()),
 			self.cache.clone(),
 			self.policy_version.clone(),
 			Duration::seconds(self.cache_ttl_seconds.try_into().unwrap_or(i64::MAX)),
@@ -307,6 +451,8 @@ impl<P: DynamicPdp> Authorizer for StaticAndDynamicAuthorizer<P> {
 				request_id: request.request_id.clone(),
 				effect: DecisionEffect::Deny,
 				policy_id: Some(format!("dynamic-pdp:unavailable:{}", error.reason)),
+				policy_version: None,
+				expires_at: None,
 			},
 		}
 	}
@@ -328,6 +474,44 @@ pub trait SecurityControl: Send + Sync {
 		request: &ActionRequest,
 		arguments: Option<&serde_json::Value>,
 	) -> Result<(), ControlDenial>;
+}
+
+/// Identity-stage brick that blocks a revoked delegation before static or dynamic authorization.
+pub struct DelegationRevocationCheck<P> {
+	provider: P,
+}
+
+impl<P> DelegationRevocationCheck<P> {
+	pub fn new(provider: P) -> Self {
+		Self { provider }
+	}
+}
+
+impl<P: DelegationRevocationProvider> SecurityControl for DelegationRevocationCheck<P> {
+	fn id(&self) -> &str {
+		"delegation-revocation"
+	}
+
+	fn check(
+		&self,
+		request: &ActionRequest,
+		_arguments: Option<&serde_json::Value>,
+	) -> Result<(), ControlDenial> {
+		let Some(delegation_id) = request.subject.delegation_id.as_deref() else {
+			return Ok(());
+		};
+		match self.provider.is_revoked(delegation_id) {
+			Ok(false) => Ok(()),
+			Ok(true) => Err(ControlDenial {
+				control_id: self.id().into(),
+				reason: format!("delegation '{}' has been revoked", delegation_id),
+			}),
+			Err(error) => Err(ControlDenial {
+				control_id: self.id().into(),
+				reason: format!("delegation revocation check unavailable: {}", error.reason),
+			}),
+		}
+	}
 }
 
 /// Ensures that the AI request retains the identities required by the deployment.
@@ -857,6 +1041,8 @@ where
 			request_id: request.request_id.clone(),
 			effect: DecisionEffect::Deny,
 			policy_id: Some(format!("control:{}", denial.control_id)),
+			policy_version: None,
+			expires_at: None,
 		};
 		self.record(request, &decision);
 		GatewayError::DeniedByControl { decision, denial }
@@ -1093,6 +1279,8 @@ mod tests {
 				request_id: request.request_id.clone(),
 				effect: DecisionEffect::Allow,
 				policy_id: Some("dynamic-allow".into()),
+				policy_version: None,
+				expires_at: None,
 			})
 		}
 	}
@@ -1125,5 +1313,82 @@ mod tests {
 		assert!(pipeline.authorize(&same_context, None).is_ok());
 		assert!(pipeline.authorize(&different_context, None).is_ok());
 		assert_eq!(calls.load(Ordering::SeqCst), 2);
+	}
+
+	#[derive(Clone)]
+	struct FixedRemoteTransport(RemotePdpResponse);
+
+	impl RemotePdpTransport for FixedRemoteTransport {
+		fn decide(&self, _request: RemotePdpRequest) -> Result<RemotePdpResponse, DynamicPdpError> {
+			Ok(self.0.clone())
+		}
+	}
+
+	#[test]
+	fn remote_pdp_binds_response_to_request_version_and_expiry() {
+		let request = request();
+		let expires_at = Utc::now() + Duration::seconds(30);
+		let pdp = RemoteDynamicPdp::new(
+			FixedRemoteTransport(RemotePdpResponse {
+				request_id: request.request_id.clone(),
+				effect: DecisionEffect::Allow,
+				policy_id: "pdp-allow-delete".into(),
+				policy_version: "2026-09-14".into(),
+				expires_at,
+			}),
+			Some("2026-09-14".into()),
+		);
+		let decision = pdp.decide(&request).unwrap();
+		assert_eq!(decision.effect, DecisionEffect::Allow);
+		assert_eq!(decision.policy_version.as_deref(), Some("2026-09-14"));
+		assert_eq!(decision.expires_at, Some(expires_at));
+
+		let mismatched = RemoteDynamicPdp::new(
+			FixedRemoteTransport(RemotePdpResponse {
+				request_id: "another-request".into(),
+				effect: DecisionEffect::Allow,
+				policy_id: "pdp-allow-delete".into(),
+				policy_version: "2026-09-14".into(),
+				expires_at,
+			}),
+			Some("2026-09-14".into()),
+		);
+		assert!(mismatched.decide(&request).is_err());
+	}
+
+	#[test]
+	fn decision_cache_never_outlives_the_pdp_expiry() {
+		let cache = DecisionCache::default();
+		let decision = Decision {
+			request_id: "request".into(),
+			effect: DecisionEffect::Allow,
+			policy_id: Some("pdp-allow".into()),
+			policy_version: Some("v1".into()),
+			expires_at: Some(Utc::now() + Duration::seconds(2)),
+		};
+		cache.insert("key".into(), decision, Duration::seconds(60));
+		assert!(
+			cache
+				.get("key", Utc::now() + Duration::seconds(3))
+				.is_none()
+		);
+	}
+
+	#[test]
+	fn revoking_a_delegation_blocks_the_next_agent_action() {
+		let registry = Arc::new(DelegationRevocationRegistry::default());
+		let audit = InMemoryAuditSink::default();
+		let pipeline = SecurityPipeline::new(PolicyAuthorizer::new(vec![allow_policy()]), &audit)
+			.add_identity_control(DelegationRevocationCheck::new(registry.clone()));
+		let mut request = request();
+		request.subject.delegation_id = Some("delegation-alice-maintenance".into());
+		assert!(pipeline.authorize(&request, None).is_ok());
+
+		registry.revoke("delegation-alice-maintenance");
+		assert!(matches!(
+			pipeline.authorize(&request, None),
+			Err(GatewayError::DeniedByControl { ref denial, .. })
+				if denial.control_id == "delegation-revocation"
+		));
 	}
 }

@@ -17,6 +17,8 @@ pub fn event_from_decision(
 		authorization_context: request.authorization_context.clone(),
 		decision: decision.effect,
 		policy_id: decision.policy_id.clone(),
+		policy_version: decision.policy_version.clone(),
+		decision_expires_at: decision.expires_at,
 		timestamp: Utc::now(),
 	}
 }

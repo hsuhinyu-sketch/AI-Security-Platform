@@ -84,6 +84,12 @@ pub struct Decision {
 	pub request_id: String,
 	pub effect: DecisionEffect,
 	pub policy_id: Option<String>,
+	/// Version of the dynamic policy bundle that produced this decision, when applicable.
+	#[serde(default, skip_serializing_if = "Option::is_none")]
+	pub policy_version: Option<String>,
+	/// The latest instant at which an allow decision may be reused.
+	#[serde(default, skip_serializing_if = "Option::is_none")]
+	pub expires_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -97,5 +103,7 @@ pub struct SecurityEvent {
 	pub authorization_context: AuthorizationContext,
 	pub decision: DecisionEffect,
 	pub policy_id: Option<String>,
+	pub policy_version: Option<String>,
+	pub decision_expires_at: Option<DateTime<Utc>>,
 	pub timestamp: DateTime<Utc>,
 }
