@@ -398,8 +398,15 @@ pub struct DynamicAuthorizationConfig {
 
 impl DynamicAuthorizationConfig {
 	fn build_pdp(&self) -> CachedDynamicPdp<LocalDynamicPdp> {
+		self.cache_pdp(LocalDynamicPdp::new(
+			self.policies.clone(),
+			self.policy_version.clone(),
+		))
+	}
+
+	fn cache_pdp<P>(&self, pdp: P) -> CachedDynamicPdp<P> {
 		CachedDynamicPdp::new(
-			LocalDynamicPdp::new(self.policies.clone(), self.policy_version.clone()),
+			pdp,
 			self.cache.clone(),
 			self.policy_version.clone(),
 			Duration::seconds(self.cache_ttl_seconds.try_into().unwrap_or(i64::MAX)),
@@ -600,6 +607,33 @@ impl SecurityPipelineConfig {
 			self.policies.clone(),
 			self.dynamic_authorization.as_ref(),
 		);
+		self.build_with_authorizer(audit, authorizer)
+	}
+
+	/// Builds the configured controls around a remote PDP. A remote PDP is only meaningful with
+	/// `dynamicAuthorization`, whose policy version, cache, and failure mode bind the response.
+	pub fn build_with_remote_pdp<S: AuditSink, T: RemotePdpTransport>(
+		&self,
+		audit: S,
+		transport: T,
+	) -> Result<SecurityPipeline<StaticAndDynamicAuthorizer<RemoteDynamicPdp<T>>, S>, DynamicPdpError>
+	{
+		let dynamic = self.dynamic_authorization.as_ref().ok_or_else(|| {
+			DynamicPdpError::unavailable("remote PDP requires dynamicAuthorization configuration")
+		})?;
+		let remote_pdp = RemoteDynamicPdp::new(transport, Some(dynamic.policy_version.clone()));
+		let authorizer = StaticAndDynamicAuthorizer::new(
+			PolicyAuthorizer::new(self.policies.clone()),
+			Some(dynamic.cache_pdp(remote_pdp)),
+		);
+		Ok(self.build_with_authorizer(audit, authorizer))
+	}
+
+	fn build_with_authorizer<S: AuditSink, A: Authorizer>(
+		&self,
+		audit: S,
+		authorizer: A,
+	) -> SecurityPipeline<A, S> {
 		let mut pipeline = SecurityPipeline::new(authorizer, audit);
 		if let Some(identity) = self.required_identity {
 			pipeline = pipeline.add_identity_control(identity);
@@ -1354,6 +1388,41 @@ mod tests {
 			Some("2026-09-14".into()),
 		);
 		assert!(mismatched.decide(&request).is_err());
+	}
+
+	#[test]
+	fn configured_pipeline_uses_remote_pdp_after_static_allow() {
+		let request = request();
+		let config = SecurityPipelineConfig {
+			policies: vec![allow_policy()],
+			dynamic_authorization: Some(DynamicAuthorizationConfig {
+				policy_version: "2026-09-14".into(),
+				policies: Vec::new(),
+				cache_ttl_seconds: 0,
+				failure_mode: DynamicPdpFailureMode::FailClosed,
+				cache: DecisionCache::default(),
+			}),
+			..Default::default()
+		};
+		let audit = InMemoryAuditSink::default();
+		let pipeline = config
+			.build_with_remote_pdp(
+				&audit,
+				FixedRemoteTransport(RemotePdpResponse {
+					request_id: request.request_id.clone(),
+					effect: DecisionEffect::Allow,
+					policy_id: "remote-allow-delete".into(),
+					policy_version: "2026-09-14".into(),
+					expires_at: Utc::now() + Duration::seconds(30),
+				}),
+			)
+			.unwrap();
+
+		assert!(pipeline.authorize(&request, None).is_ok());
+		assert_eq!(
+			audit.events()[0].policy_id.as_deref(),
+			Some("remote-allow-delete")
+		);
 	}
 
 	#[test]

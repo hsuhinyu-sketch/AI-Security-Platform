@@ -1,6 +1,10 @@
-use audit_core::AuditSink;
+use audit_core::{AuditSink, event_from_decision};
 use gateway_adapter::{GatewayError, SecurityPipelineConfig};
-use security_contracts::{ActionRequest, SecurityEvent};
+use security_contracts::{ActionRequest, Decision, DecisionEffect, SecurityEvent};
+
+pub mod remote_pdp;
+
+pub use remote_pdp::RemotePdpConfig;
 
 /// Runtime-neutral structured audit sink for gateway security decisions.
 #[derive(Clone, Copy, Default)]
@@ -24,6 +28,9 @@ pub enum SecurityMode {
 pub struct SecurityConfig {
 	#[serde(default)]
 	pub mode: SecurityMode,
+	/// Optional trusted HTTPS PDP used instead of the in-process dynamic PDP.
+	#[serde(default, skip_serializing_if = "Option::is_none")]
+	pub remote_pdp: Option<RemotePdpConfig>,
 	#[serde(flatten)]
 	pub pipeline: SecurityPipelineConfig,
 }
@@ -64,11 +71,24 @@ pub fn evaluate_with_arguments(
 	action: &ActionRequest,
 	arguments: Option<&serde_json::Value>,
 ) -> Result<(), GatewayError> {
-	match config
-		.pipeline
-		.build(TracingAuditSink)
-		.authorize(action, arguments)
-	{
+	let decision = match &config.remote_pdp {
+		Some(remote_pdp) => remote_pdp
+			.transport()
+			.map_err(|error| error.reason)
+			.and_then(|transport| {
+				config
+					.pipeline
+					.build_with_remote_pdp(TracingAuditSink, transport)
+					.map_err(|error| error.reason)
+			})
+			.map_err(|reason| configuration_denial(action, reason))
+			.and_then(|pipeline| pipeline.authorize(action, arguments)),
+		None => config
+			.pipeline
+			.build(TracingAuditSink)
+			.authorize(action, arguments),
+	};
+	match decision {
 		Ok(_) => Ok(()),
 		Err(error) => match config.mode {
 			SecurityMode::Audit => Ok(()),
@@ -84,6 +104,28 @@ pub fn evaluate_with_arguments(
 			SecurityMode::Enforce => Err(error),
 		},
 	}
+}
+
+fn configuration_denial(action: &ActionRequest, reason: String) -> GatewayError {
+	tracing::error!(
+		target: "security_audit",
+		request_id = %action.request_id,
+		error = %reason,
+		"remote PDP security configuration is invalid"
+	);
+	let decision = Decision {
+		request_id: action.request_id.clone(),
+		effect: DecisionEffect::Deny,
+		policy_id: Some("dynamic-pdp:configuration".into()),
+		policy_version: None,
+		expires_at: None,
+	};
+	TracingAuditSink.record(event_from_decision(
+		format!("{}:dynamic-pdp-configuration", action.request_id),
+		action,
+		&decision,
+	));
+	GatewayError::Denied(decision)
 }
 
 #[cfg(test)]
@@ -128,6 +170,7 @@ mod tests {
 	fn enforce_applies_tenant_scoped_least_privilege() {
 		let config = SecurityConfig {
 			mode: SecurityMode::Enforce,
+			remote_pdp: None,
 			pipeline: SecurityPipelineConfig {
 				required_identity: Some(RequiredIdentity::user_agent_tenant()),
 				policies: vec![Policy {
@@ -176,6 +219,7 @@ mod tests {
 	fn enforce_distinguishes_protocol_actions_and_applies_tool_arguments() {
 		let config = SecurityConfig {
 			mode: SecurityMode::Enforce,
+			remote_pdp: None,
 			pipeline: SecurityPipelineConfig {
 				policies: vec![
 					Policy {
@@ -277,6 +321,7 @@ mod tests {
 			evaluate(
 				&SecurityConfig {
 					mode: SecurityMode::Enforce,
+					remote_pdp: None,
 					pipeline: pipeline.clone(),
 				},
 				&tool,
@@ -287,6 +332,7 @@ mod tests {
 			evaluate(
 				&SecurityConfig {
 					mode: SecurityMode::Shadow,
+					remote_pdp: None,
 					pipeline,
 				},
 				&tool,
@@ -299,6 +345,7 @@ mod tests {
 	fn enforce_requires_a_verified_scoped_agent_delegation() {
 		let config = SecurityConfig {
 			mode: SecurityMode::Enforce,
+			remote_pdp: None,
 			pipeline: SecurityPipelineConfig {
 				policies: vec![Policy {
 					id: "allow-support-agent".into(),
@@ -365,5 +412,27 @@ mod tests {
 			)
 			.is_err()
 		);
+	}
+
+	#[test]
+	fn invalid_remote_pdp_configuration_is_denied_in_enforce_mode() {
+		let remote_pdp = serde_json::from_value(serde_json::json!({
+			"endpoint": "http://pdp.internal/v1/decisions"
+		}))
+		.expect("remote PDP test configuration should deserialize");
+		let action = gateway_adapter::model_invoke("request", None, None, "model");
+		let result = evaluate(
+			&SecurityConfig {
+				mode: SecurityMode::Enforce,
+				remote_pdp: Some(remote_pdp),
+				pipeline: SecurityPipelineConfig::default(),
+			},
+			&action,
+		);
+		assert!(matches!(
+			result,
+			Err(gateway_adapter::GatewayError::Denied(decision))
+				if decision.policy_id.as_deref() == Some("dynamic-pdp:configuration")
+		));
 	}
 }

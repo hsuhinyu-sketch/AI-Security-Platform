@@ -332,9 +332,10 @@ security:
 still-valid decision for `cacheTtlSeconds`; use it only for explicitly low-risk read operations.
 The cache key includes the policy version, subject, action, resource, session, and client, so it
 cannot be reused across a different security context. The PoC provides `LocalDynamicPdp` and a
-replaceable `DynamicPdp` trait; wiring a remote PDP is the next S4 increment.
+replaceable `DynamicPdp` trait. A trusted HTTPS remote PDP can now be selected through
+`remotePdp` as described below.
 
-### S4-B1 remote PDP and delegation revocation contract
+### S4-B remote PDP and delegation revocation
 
 The security core now defines the transport-neutral remote PDP contract. A runtime adapter must
 send a versioned `RemotePdpRequest` containing only normalized identity, delegation, action,
@@ -347,8 +348,32 @@ following match:
 
 The returned policy version and expiry are written to the structured audit event. A cached decision
 is bounded by the smaller of the local TTL and PDP `expiresAt`, so a remote allow cannot survive
-past its PDP validity window. `RemotePdpTransport` is intentionally a runtime integration seam:
-the next increment supplies its HTTP/mTLS implementation and injects it into the running gateway.
+past its PDP validity window.
+
+The running gateway now supplies the HTTP/mTLS transport. It accepts only absolute `https` PDP
+URLs, has a required bounded `timeoutMillis` (250 ms by default), reuses one Rustls HTTP client
+per loaded AI-system configuration, and maps invalid TLS/configuration, timeout, network, non-2xx,
+or invalid-response failures to a deny. `identityPemFile` references one PEM containing the PDP
+client certificate and private key; `rootCaPemFile` pins an additional private CA when needed.
+Neither a bearer token nor raw Tool arguments are sent to the PDP.
+
+```yaml
+security:
+  mode: enforce
+  dynamicAuthorization:
+    policyVersion: pdp-bundle-2026-09-14
+    failureMode: failClosed
+    cacheTtlSeconds: 0
+  remotePdp:
+    endpoint: https://pdp.security.internal/v1/decisions
+    timeoutMillis: 250
+    identityPemFile: /run/secrets/pdp-client-identity.pem
+    rootCaPemFile: /run/secrets/pdp-root-ca.pem
+```
+
+The current gateway security hook is synchronous, so this PoC uses `reqwest`'s bounded blocking
+client. Moving the hook to async I/O is a runtime-performance follow-up; it does not change the
+PDP contract or security semantics.
 
 `DelegationRevocationCheck` and `DelegationRevocationProvider` provide the corresponding realtime
 revocation brick. The PoC includes an in-process `DelegationRevocationRegistry`; its production

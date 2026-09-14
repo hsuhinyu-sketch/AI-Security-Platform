@@ -40,12 +40,13 @@ The Apache-2.0 license and upstream attribution for reused AgentGateway code rem
   policy allow; issuance/revocation and Agent-to-sub-Agent chains remain future work.
 - S4-A adds a second dynamic PDP stage. Verified session/client context and time-bounded dynamic
   policies can only narrow a static allow. PDP errors deny by default; an explicit, TTL-bounded
-  cache option is limited to low-risk reads. `DynamicPdp` is the integration seam for a remote
-  PDP in the next increment.
-- S4-B1 defines a versioned remote PDP request/response contract and validates request binding,
-  policy version, and response expiry before accepting a dynamic decision. The cache is capped by
-  PDP expiry. It also provides a fail-closed `DelegationRevocationCheck` brick with an in-process
-  registry for the PoC; HTTP/mTLS transport and a shared revocation store remain runtime work.
+  cache option is limited to low-risk reads.
+- S4-B implements the versioned remote PDP contract at runtime. The gateway uses a reusable,
+  timeout-bounded Rustls HTTPS client with optional mTLS identity and private CA files; response
+  request binding, policy version, and expiry are validated before a decision is accepted. The
+  cache is capped by PDP expiry and all transport/configuration failures deny. It also provides a
+  fail-closed `DelegationRevocationCheck` brick with an in-process registry for the PoC; a shared
+  revocation store remains future runtime work.
 
 ## Migration rule
 

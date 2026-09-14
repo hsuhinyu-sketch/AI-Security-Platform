@@ -13,6 +13,7 @@ security-contracts = { path = "../../contracts" }
 serde.workspace = true
 serde_json.workspace = true
 tracing.workspace = true
+reqwest = { workspace = true, features = ["blocking", "json"] }
 
 [dev-dependencies]
 chrono.workspace = true
