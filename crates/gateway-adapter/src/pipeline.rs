@@ -629,6 +629,14 @@ impl RuntimeSecurityControls {
 }
 
 impl SecurityPipelineConfig {
+	pub fn requires_tool_approval(&self, request: &ActionRequest) -> bool {
+		request.action.action_type == ActionType::ToolInvoke
+			&& self
+				.required_tool_approvals
+				.iter()
+				.any(|requirement| requirement.tool_name == request.action.name)
+	}
+
 	pub fn build<S: AuditSink>(&self, audit: S) -> SecurityPipeline<StaticAndDynamicAuthorizer, S> {
 		let authorizer = StaticAndDynamicAuthorizer::from_config(
 			self.policies.clone(),

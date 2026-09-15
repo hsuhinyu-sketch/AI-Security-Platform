@@ -301,7 +301,7 @@ impl Relay {
 	fn audit_security_pipeline(
 		&self,
 		r: &JsonRpcRequest<ClientRequest>,
-		ctx: &IncomingRequestContext,
+		ctx: &mut IncomingRequestContext,
 		mcp_server_id: &str,
 	) -> Result<(), UpstreamError> {
 		if let Some(config) = self.security_audit.as_deref() {
@@ -715,11 +715,11 @@ impl Relay {
 	pub async fn send_single(
 		&self,
 		r: JsonRpcRequest<ClientRequest>,
-		ctx: IncomingRequestContext,
+		mut ctx: IncomingRequestContext,
 		service_name: &str,
 		mcp_log: Option<AsyncLog<MCPInfo>>,
 	) -> Result<Response, UpstreamError> {
-		self.audit_security_pipeline(&r, &ctx, service_name)?;
+		self.audit_security_pipeline(&r, &mut ctx, service_name)?;
 		self.enforce_security_pipeline(&r, &ctx)?;
 		self.enforce_vehicle_tool_guardrails(&r).await?;
 		let id = r.id.clone();
@@ -864,7 +864,7 @@ impl Relay {
 		merge: Box<MergeFn>,
 		target_names: Option<Vec<String>>,
 	) -> Result<Response, UpstreamError> {
-		self.audit_security_pipeline(&r, &ctx, "mcp-gateway")?;
+		self.audit_security_pipeline(&r, &mut ctx, "mcp-gateway")?;
 		self.enforce_security_pipeline(&r, &ctx)?;
 		self.enforce_vehicle_tool_guardrails(&r).await?;
 		let id = r.id.clone();

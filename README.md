@@ -263,9 +263,26 @@ The approval authority response contains `approvalId`, `requestId`, `argumentsHa
 and, for an allow, `expiresAt`. HTTPS/mTLS configuration errors, transport failures, non-2xx
 responses, mismatched bindings, and expired approvals deny the Tool call.
 
-The security core also provides a short-lived, one-time `CapabilityBroker`. A Capability is bound
-to the authorized subject, action, resource, request ID, and Tool argument hash; durable broker
-storage and Tool/API-side consumption use the same binding model.
+`capabilityBroker` connects approved high-risk MCP Tool calls to a shared capability broker. After
+approval and authorization succeed, the gateway requests an opaque token bound to the normalized
+request and `argumentsHash`, validates the returned binding and TTL, then injects it as the
+internal `x-ai-security-capability` header for the upstream Tool/API. A caller-supplied header of
+the same name is stripped and cannot be used as a grant.
+
+```yaml
+security:
+  capabilityBroker:
+    issueEndpoint: https://capability.security.internal/v1/capabilities/issue
+    timeoutMillis: 250
+    ttlSeconds: 30
+    identityPemFile: /run/secrets/capability-client-identity.pem
+    rootCaPemFile: /run/secrets/capability-root-ca.pem
+```
+
+The broker issues `{ token, requestId, argumentsHash, expiresAt }`. The protected Tool/API must
+consume the token once through the broker using the same normalized request and argument hash;
+reuse, expiry, request mismatch, and parameter mismatch are denied. This allows broker state to be
+durable and shared across gateway instances without treating a client header as authority.
 
 ### S3-C Agent delegation
 

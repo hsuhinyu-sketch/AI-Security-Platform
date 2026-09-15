@@ -24,6 +24,14 @@ use crate::proxy::httpproxy::PolicyClient;
 use crate::types::agent::McpTargetSpec;
 use crate::*;
 
+/// Internal-only capability propagated after the gateway has obtained it from the trusted broker.
+/// `IncomingRequestContext::apply` strips any caller-supplied capability header and installs this
+/// extension value only when forwarding to an HTTP Tool/API backend.
+#[derive(Debug, Clone)]
+pub(crate) struct IssuedCapability(pub ::http::HeaderValue);
+
+pub(crate) const CAPABILITY_HEADER: &str = "x-ai-security-capability";
+
 #[derive(Debug, Clone)]
 pub struct IncomingRequestContext {
 	method: ::http::Method,
@@ -80,6 +88,7 @@ impl IncomingRequestContext {
 			// Remove headers we do not want to propagate to the backend
 			if k == http::header::CONTENT_ENCODING
 				|| k == http::header::CONTENT_LENGTH
+				|| k.as_str().eq_ignore_ascii_case(CAPABILITY_HEADER)
 				|| k.as_str().eq_ignore_ascii_case(HEADER_SESSION_ID)
 			{
 				continue;
@@ -87,6 +96,11 @@ impl IncomingRequestContext {
 			if !req.headers().contains_key(k) {
 				req.headers_mut().insert(k.clone(), v.clone());
 			}
+		}
+		if let Some(capability) = self.ext.get::<IssuedCapability>() {
+			req
+				.headers_mut()
+				.insert(CAPABILITY_HEADER, capability.0.clone());
 		}
 		let Some(authority) = self.authority.clone() else {
 			return Ok(());
@@ -537,5 +551,25 @@ mod tests {
 		ctx.apply(&mut req).unwrap();
 		assert_eq!(req.headers().get("authorization").unwrap(), "Bearer token");
 		assert_eq!(req.headers().get("x-request-id").unwrap(), "req-1");
+	}
+
+	#[test]
+	fn apply_strips_caller_capability_and_only_forwards_an_issued_capability() {
+		let mut ctx = ctx_with_headers(&[(CAPABILITY_HEADER, "caller-supplied")]);
+		let mut req = empty_upstream_req();
+		ctx.apply(&mut req).unwrap();
+		assert!(req.headers().get(CAPABILITY_HEADER).is_none());
+
+		ctx
+			.extensions_mut()
+			.insert(IssuedCapability(::http::HeaderValue::from_static(
+				"gateway-issued",
+			)));
+		let mut req = empty_upstream_req();
+		ctx.apply(&mut req).unwrap();
+		assert_eq!(
+			req.headers().get(CAPABILITY_HEADER).unwrap(),
+			"gateway-issued"
+		);
 	}
 }

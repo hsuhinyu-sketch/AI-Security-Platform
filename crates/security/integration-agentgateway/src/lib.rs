@@ -5,11 +5,13 @@ use gateway_adapter::{
 use security_contracts::{ActionRequest, Decision, DecisionEffect, SecurityEvent};
 
 pub mod remote_approval;
+pub mod remote_capability;
 pub mod remote_pdp;
 pub mod remote_revocation;
 mod trusted_https;
 
 pub use remote_approval::RemoteApprovalConfig;
+pub use remote_capability::{CapabilityGrant, RemoteCapabilityBrokerConfig};
 pub use remote_pdp::RemotePdpConfig;
 pub use remote_revocation::RemoteDelegationRevocationConfig;
 
@@ -44,6 +46,9 @@ pub struct SecurityConfig {
 	/// Optional trusted authority for configured high-risk Tool approval gates.
 	#[serde(default, skip_serializing_if = "Option::is_none")]
 	pub approval: Option<RemoteApprovalConfig>,
+	/// Optional shared broker issuing one-time capabilities for approved high-risk Tool calls.
+	#[serde(default, skip_serializing_if = "Option::is_none")]
+	pub capability_broker: Option<RemoteCapabilityBrokerConfig>,
 	#[serde(flatten)]
 	pub pipeline: SecurityPipelineConfig,
 }
@@ -121,6 +126,29 @@ pub fn evaluate_with_arguments(
 	}
 }
 
+/// Enforces a Tool call, then issues an opaque capability only for a configured high-risk Tool in
+/// enforce mode. Audit and shadow modes never mint a credential that could reach a protected API.
+pub fn authorize_tool_with_capability(
+	config: &SecurityConfig,
+	action: &ActionRequest,
+	arguments: &serde_json::Value,
+) -> Result<Option<CapabilityGrant>, GatewayError> {
+	evaluate_with_arguments(config, action, Some(arguments))?;
+	if config.mode != SecurityMode::Enforce || !config.pipeline.requires_tool_approval(action) {
+		return Ok(None);
+	}
+	let Some(broker) = &config.capability_broker else {
+		return Ok(None);
+	};
+	let issuer = broker
+		.issuer()
+		.map_err(|error| capability_denial(action, error.reason))?;
+	issuer
+		.issue(action, arguments)
+		.map(Some)
+		.map_err(|error| capability_denial(action, error.reason))
+}
+
 fn runtime_security_controls(config: &SecurityConfig) -> Result<RuntimeSecurityControls, String> {
 	let mut controls = RuntimeSecurityControls::default();
 	if let Some(revocation) = &config.delegation_revocation {
@@ -150,6 +178,28 @@ fn configuration_denial(action: &ActionRequest, reason: String) -> GatewayError 
 	};
 	TracingAuditSink.record(event_from_decision(
 		format!("{}:security-configuration", action.request_id),
+		action,
+		&decision,
+	));
+	GatewayError::Denied(decision)
+}
+
+fn capability_denial(action: &ActionRequest, reason: String) -> GatewayError {
+	tracing::error!(
+		target: "security_audit",
+		request_id = %action.request_id,
+		error = %reason,
+		"capability broker could not issue a required Tool capability"
+	);
+	let decision = Decision {
+		request_id: action.request_id.clone(),
+		effect: DecisionEffect::Deny,
+		policy_id: Some("security:capability-broker".into()),
+		policy_version: None,
+		expires_at: None,
+	};
+	TracingAuditSink.record(event_from_decision(
+		format!("{}:capability-broker", action.request_id),
 		action,
 		&decision,
 	));
@@ -201,6 +251,7 @@ mod tests {
 			remote_pdp: None,
 			delegation_revocation: None,
 			approval: None,
+			capability_broker: None,
 			pipeline: SecurityPipelineConfig {
 				required_identity: Some(RequiredIdentity::user_agent_tenant()),
 				policies: vec![Policy {
@@ -252,6 +303,7 @@ mod tests {
 			remote_pdp: None,
 			delegation_revocation: None,
 			approval: None,
+			capability_broker: None,
 			pipeline: SecurityPipelineConfig {
 				policies: vec![
 					Policy {
@@ -356,6 +408,7 @@ mod tests {
 					remote_pdp: None,
 					delegation_revocation: None,
 					approval: None,
+					capability_broker: None,
 					pipeline: pipeline.clone(),
 				},
 				&tool,
@@ -369,6 +422,7 @@ mod tests {
 					remote_pdp: None,
 					delegation_revocation: None,
 					approval: None,
+					capability_broker: None,
 					pipeline,
 				},
 				&tool,
@@ -384,6 +438,7 @@ mod tests {
 			remote_pdp: None,
 			delegation_revocation: None,
 			approval: None,
+			capability_broker: None,
 			pipeline: SecurityPipelineConfig {
 				policies: vec![Policy {
 					id: "allow-support-agent".into(),
@@ -465,6 +520,7 @@ mod tests {
 				remote_pdp: Some(remote_pdp),
 				delegation_revocation: None,
 				approval: None,
+				capability_broker: None,
 				pipeline: SecurityPipelineConfig::default(),
 			},
 			&action,
@@ -489,6 +545,7 @@ mod tests {
 				remote_pdp: None,
 				delegation_revocation: Some(delegation_revocation),
 				approval: None,
+				capability_broker: None,
 				pipeline: SecurityPipelineConfig::default(),
 			},
 			&action,
@@ -513,6 +570,7 @@ mod tests {
 				remote_pdp: None,
 				delegation_revocation: None,
 				approval: Some(approval),
+				capability_broker: None,
 				pipeline: SecurityPipelineConfig::default(),
 			},
 			&action,

@@ -3,7 +3,7 @@ use gateway_adapter::{
 };
 use rmcp::model::{ClientRequest, JsonRpcRequest};
 
-use crate::mcp::upstream::{IncomingRequestContext, UpstreamError};
+use crate::mcp::upstream::{IncomingRequestContext, IssuedCapability, UpstreamError};
 
 /// Enforce the configured security pipeline for a real MCP Tool invocation.
 /// Identity is derived only from previously validated JWT claims carried in the request context.
@@ -33,7 +33,7 @@ pub fn enforce_tool_call(
 pub fn audit_request(
 	config: &security_integration_agentgateway::SecurityConfig,
 	request: &JsonRpcRequest<ClientRequest>,
-	context: &IncomingRequestContext,
+	context: &mut IncomingRequestContext,
 	mcp_server_id: &str,
 ) -> Result<(), UpstreamError> {
 	let identity = identity_from_context(context);
@@ -54,8 +54,23 @@ pub fn audit_request(
 		),
 		_ => return Ok(()),
 	};
-	security_integration_agentgateway::evaluate_with_arguments(config, &action, arguments.as_ref())
-		.map_err(|error| UpstreamError::InvalidRequest(error_message(error)))
+	match arguments {
+		Some(arguments) => {
+			let capability = security_integration_agentgateway::authorize_tool_with_capability(
+				config, &action, &arguments,
+			)
+			.map_err(|error| UpstreamError::InvalidRequest(error_message(error)))?;
+			if let Some(capability) = capability {
+				let value = ::http::HeaderValue::from_str(&capability.token).map_err(|_| {
+					UpstreamError::InvalidRequest("capability broker returned an invalid token".into())
+				})?;
+				context.extensions_mut().insert(IssuedCapability(value));
+			}
+			Ok(())
+		},
+		None => security_integration_agentgateway::evaluate(config, &action)
+			.map_err(|error| UpstreamError::InvalidRequest(error_message(error))),
+	}
 }
 
 pub(crate) fn identity_from_context(context: &IncomingRequestContext) -> GatewayIdentity {
