@@ -6295,6 +6295,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "security-capability-broker"
+version = "0.0.0"
+dependencies = [
+ "axum",
+ "chrono",
+ "security-contracts",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+ "tower",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
 name = "security-contracts"
 version = "0.0.0"
 dependencies = [

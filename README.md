@@ -284,6 +284,19 @@ consume the token once through the broker using the same normalized request and 
 reuse, expiry, request mismatch, and parameter mismatch are denied. This allows broker state to be
 durable and shared across gateway instances without treating a client header as authority.
 
+`security-capability-broker` implements that shared service contract. It exposes
+`POST /v1/capabilities/issue` and `POST /v1/capabilities/consume`, with one atomic consume
+operation. Its PoC `InMemoryCapabilityStore` is replaceable through `CapabilityStore`; a production
+store must make `consume` a durable delete-and-validate transaction. The router deliberately
+requires a `BrokerPrincipal` supplied by the mTLS listener or service mesh: gateway principals may
+issue, protected Tool/API principals may consume, and anonymous HTTP requests are denied.
+
+The consuming Tool/API submits the opaque token plus the normalized `ActionRequest` and the hash
+it computed from the actual Tool parameters. A successful consume returns the bound request for a
+final local action/resource check; any binding mismatch burns the token before it can be replayed.
+See [`docs/architecture/capability-broker.md`](docs/architecture/capability-broker.md) for the wire
+contract and deployment boundary.
+
 ### S3-C Agent delegation
 
 `delegations` is an additional identity-stage brick for user-owned Agents. The JWT must be
