@@ -231,6 +231,7 @@ dependencies = [
  "rustls-pki-types",
  "schemars 1.2.1",
  "secrecy",
+ "security-capability-broker",
  "security-contracts",
  "security-integration-agentgateway",
  "serde",
@@ -6299,10 +6300,13 @@ name = "security-capability-broker"
 version = "0.0.0"
 dependencies = [
  "axum",
+ "base64",
  "chrono",
+ "reqwest 0.13.3",
  "security-contracts",
  "serde",
  "serde_json",
+ "sha2 0.11.0",
  "thiserror 2.0.18",
  "tokio",
  "tower",

@@ -36,8 +36,10 @@ The Apache-2.0 license and upstream attribution for reused AgentGateway code rem
   HTTPS/mTLS authority to the common runtime pipeline; its response is bound to the normalized
   request, argument hash, and expiry. The core also has a one-time,
   subject/action/resource/argument-bound `CapabilityBroker`. `capabilityBroker` issues the shared
-  broker's opaque token after an approved MCP Tool call and forwards it only through an internal
-  upstream header; caller-supplied capability headers are stripped.
+  broker's opaque token after an approved MCP Tool call and forwards it with the gateway-normalized
+  action context only through internal upstream headers; caller-supplied capability/context headers
+  are stripped. A protected Tool/API consumer hashes the actual parameters and atomically consumes
+  the token before it performs a side effect.
 - S3-C validates direct user-to-Agent delegation from a verified `delegationId` claim against
   configured tenant-scoped, time-bounded operation scopes. The grant only constrains an existing
   policy allow; issuance/revocation and Agent-to-sub-Agent chains remain future work.

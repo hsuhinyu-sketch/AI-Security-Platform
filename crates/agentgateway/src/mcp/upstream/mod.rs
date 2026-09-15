@@ -12,6 +12,7 @@ pub use openapi::ParseError as OpenAPIParseError;
 use rmcp::model::{ClientNotification, ClientRequest, JsonRpcRequest};
 use rmcp::transport::TokioChildProcess;
 use rmcp::transport::common::http_header::HEADER_SESSION_ID;
+use security_capability_broker::{CAPABILITY_CONTEXT_HEADER, CAPABILITY_HEADER};
 use thiserror::Error;
 use tokio::process::Command;
 
@@ -28,9 +29,10 @@ use crate::*;
 /// `IncomingRequestContext::apply` strips any caller-supplied capability header and installs this
 /// extension value only when forwarding to an HTTP Tool/API backend.
 #[derive(Debug, Clone)]
-pub(crate) struct IssuedCapability(pub ::http::HeaderValue);
-
-pub(crate) const CAPABILITY_HEADER: &str = "x-ai-security-capability";
+pub(crate) struct IssuedCapability {
+	pub capability: ::http::HeaderValue,
+	pub context: ::http::HeaderValue,
+}
 
 #[derive(Debug, Clone)]
 pub struct IncomingRequestContext {
@@ -89,6 +91,7 @@ impl IncomingRequestContext {
 			if k == http::header::CONTENT_ENCODING
 				|| k == http::header::CONTENT_LENGTH
 				|| k.as_str().eq_ignore_ascii_case(CAPABILITY_HEADER)
+				|| k.as_str().eq_ignore_ascii_case(CAPABILITY_CONTEXT_HEADER)
 				|| k.as_str().eq_ignore_ascii_case(HEADER_SESSION_ID)
 			{
 				continue;
@@ -100,7 +103,10 @@ impl IncomingRequestContext {
 		if let Some(capability) = self.ext.get::<IssuedCapability>() {
 			req
 				.headers_mut()
-				.insert(CAPABILITY_HEADER, capability.0.clone());
+				.insert(CAPABILITY_HEADER, capability.capability.clone());
+			req
+				.headers_mut()
+				.insert(CAPABILITY_CONTEXT_HEADER, capability.context.clone());
 		}
 		let Some(authority) = self.authority.clone() else {
 			return Ok(());
@@ -555,21 +561,28 @@ mod tests {
 
 	#[test]
 	fn apply_strips_caller_capability_and_only_forwards_an_issued_capability() {
-		let mut ctx = ctx_with_headers(&[(CAPABILITY_HEADER, "caller-supplied")]);
+		let mut ctx = ctx_with_headers(&[
+			(CAPABILITY_HEADER, "caller-supplied"),
+			(CAPABILITY_CONTEXT_HEADER, "caller-supplied-context"),
+		]);
 		let mut req = empty_upstream_req();
 		ctx.apply(&mut req).unwrap();
 		assert!(req.headers().get(CAPABILITY_HEADER).is_none());
+		assert!(req.headers().get(CAPABILITY_CONTEXT_HEADER).is_none());
 
-		ctx
-			.extensions_mut()
-			.insert(IssuedCapability(::http::HeaderValue::from_static(
-				"gateway-issued",
-			)));
+		ctx.extensions_mut().insert(IssuedCapability {
+			capability: ::http::HeaderValue::from_static("gateway-issued"),
+			context: ::http::HeaderValue::from_static("gateway-issued-context"),
+		});
 		let mut req = empty_upstream_req();
 		ctx.apply(&mut req).unwrap();
 		assert_eq!(
 			req.headers().get(CAPABILITY_HEADER).unwrap(),
 			"gateway-issued"
+		);
+		assert_eq!(
+			req.headers().get(CAPABILITY_CONTEXT_HEADER).unwrap(),
+			"gateway-issued-context"
 		);
 	}
 }

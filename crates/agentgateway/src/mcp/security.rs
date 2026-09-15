@@ -1,7 +1,9 @@
+use base64::Engine;
 use gateway_adapter::{
 	GatewayError, GatewayIdentity, SecurityPipelineConfig, tool_invoke_for_identity, tool_list,
 };
 use rmcp::model::{ClientRequest, JsonRpcRequest};
+use security_capability_broker::CAPABILITY_CONTEXT_HEADER;
 
 use crate::mcp::upstream::{IncomingRequestContext, IssuedCapability, UpstreamError};
 
@@ -61,10 +63,23 @@ pub fn audit_request(
 			)
 			.map_err(|error| UpstreamError::InvalidRequest(error_message(error)))?;
 			if let Some(capability) = capability {
-				let value = ::http::HeaderValue::from_str(&capability.token).map_err(|_| {
+				let capability = ::http::HeaderValue::from_str(&capability.token).map_err(|_| {
 					UpstreamError::InvalidRequest("capability broker returned an invalid token".into())
 				})?;
-				context.extensions_mut().insert(IssuedCapability(value));
+				let context_header = serde_json::to_vec(&action)
+					.map(|bytes| base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes))
+					.map_err(|_| {
+						UpstreamError::InvalidRequest("unable to encode capability action context".into())
+					})?;
+				let context_header = ::http::HeaderValue::from_str(&context_header).map_err(|_| {
+					UpstreamError::InvalidRequest(format!(
+						"unable to construct {CAPABILITY_CONTEXT_HEADER} header"
+					))
+				})?;
+				context.extensions_mut().insert(IssuedCapability {
+					capability,
+					context: context_header,
+				});
 			}
 			Ok(())
 		},

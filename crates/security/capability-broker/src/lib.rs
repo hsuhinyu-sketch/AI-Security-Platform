@@ -19,6 +19,19 @@ use thiserror::Error;
 use uuid::Uuid;
 
 pub const CAPABILITY_PROTOCOL_VERSION: &str = "v1";
+/// Forwarded only by the gateway after it receives a broker-issued grant.
+pub const CAPABILITY_HEADER: &str = "x-ai-security-capability";
+/// Base64url JSON encoding of the gateway-normalized [`ActionRequest`]. Like the capability
+/// header, a caller-provided value must be stripped before an upstream Tool/API request.
+pub const CAPABILITY_CONTEXT_HEADER: &str = "x-ai-security-capability-context";
+
+#[cfg(feature = "client")]
+mod consumer;
+#[cfg(feature = "client")]
+pub use consumer::{
+	CapabilityConsumerError, HttpCapabilityConsumer, RemoteCapabilityConsumerConfig,
+	encode_action_request,
+};
 
 /// Identity established by the mTLS listener or trusted service-mesh proxy.
 ///

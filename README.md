@@ -297,6 +297,12 @@ final local action/resource check; any binding mismatch burns the token before i
 See [`docs/architecture/capability-broker.md`](docs/architecture/capability-broker.md) for the wire
 contract and deployment boundary.
 
+Protected Tool/API services use the optional `security-capability-broker` `client` feature. Its
+`HttpCapabilityConsumer` extracts the gateway-only capability/context headers, hashes the actual
+parameters, consumes through mTLS, and validates the response before the Tool performs a side
+effect. The MCP gateway strips caller-provided values of both headers and replaces them only after
+it receives a broker-issued capability.
+
 ### S3-C Agent delegation
 
 `delegations` is an additional identity-stage brick for user-owned Agents. The JWT must be
