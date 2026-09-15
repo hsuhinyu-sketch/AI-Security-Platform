@@ -32,9 +32,10 @@ The Apache-2.0 license and upstream attribution for reused AgentGateway code rem
 - S1 provides tenant/user/agent/action/resource least-privilege enforcement.
 - S2 maps protocol operations into this vocabulary: MCP discovery and per-Tool filtering, MCP
   argument controls, A2A method-level actions, and inference-endpoint authorization.
-- S3-A declares high-risk Tools and applies a fail-closed approval gate. The core also has a
-  one-time, subject/action/resource/argument-bound `CapabilityBroker`; trusted approval issuance
-  and Tool-side consumption remain S3 work.
+- S3-A declares high-risk Tools and applies a fail-closed approval gate. `approval` binds a trusted
+  HTTPS/mTLS authority to the common runtime pipeline; its response is bound to the normalized
+  request, argument hash, and expiry. The core also has a one-time,
+  subject/action/resource/argument-bound `CapabilityBroker` for Tool/API-side consumption.
 - S3-C validates direct user-to-Agent delegation from a verified `delegationId` claim against
   configured tenant-scoped, time-bounded operation scopes. The grant only constrains an existing
   policy allow; issuance/revocation and Agent-to-sub-Agent chains remain future work.

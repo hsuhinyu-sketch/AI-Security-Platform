@@ -15,15 +15,15 @@ use uuid::Uuid;
 pub mod pipeline;
 
 pub use pipeline::{
-	AgentDelegation, AgentDelegationConfig, ApprovalProvider, Authorizer, CachedDynamicPdp,
-	ControlDenial, DecisionCache, DelegationRevocationCheck, DelegationRevocationError,
-	DelegationRevocationProvider, DelegationRevocationRegistry, DelegationScope,
-	DynamicAuthorizationConfig, DynamicPdp, DynamicPdpError, DynamicPdpFailureMode, DynamicPolicy,
-	GatewayError, LocalDynamicPdp, PolicyAuthorizer, RemoteDynamicPdp, RemotePdpRequest,
-	RemotePdpResponse, RemotePdpTransport, RequiredIdentity, RequiredToolApproval,
-	RequiredToolApprovalConfig, RequiredToolArguments, RequiredToolArgumentsConfig, SecurityControl,
-	SecurityPipeline, SecurityPipelineConfig, StaticAndDynamicAuthorizer, StaticApproval,
-	ToolApproval,
+	AgentDelegation, AgentDelegationConfig, ApprovalError, ApprovalProvider, Authorizer,
+	CachedDynamicPdp, ControlDenial, DecisionCache, DelegationRevocationCheck,
+	DelegationRevocationError, DelegationRevocationProvider, DelegationRevocationRegistry,
+	DelegationScope, DynamicAuthorizationConfig, DynamicPdp, DynamicPdpError, DynamicPdpFailureMode,
+	DynamicPolicy, GatewayError, LocalDynamicPdp, PolicyAuthorizer, RemoteDynamicPdp,
+	RemotePdpRequest, RemotePdpResponse, RemotePdpTransport, RequiredIdentity, RequiredToolApproval,
+	RequiredToolApprovalConfig, RequiredToolArguments, RequiredToolArgumentsConfig,
+	RuntimeSecurityControls, SecurityControl, SecurityPipeline, SecurityPipelineConfig,
+	StaticAndDynamicAuthorizer, StaticApproval, ToolApproval,
 };
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -296,7 +296,8 @@ impl CapabilityBroker {
 	}
 }
 
-fn arguments_hash(arguments: &serde_json::Value) -> String {
+/// Hashes the exact structured Tool arguments bound to an approval or capability.
+pub fn arguments_hash(arguments: &serde_json::Value) -> String {
 	let bytes = serde_json::to_vec(arguments).expect("JSON values serialize");
 	Sha256::digest(bytes)
 		.iter()

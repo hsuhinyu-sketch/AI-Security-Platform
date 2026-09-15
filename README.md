@@ -231,9 +231,9 @@ security:
 
 ### S3-A high-risk Tool gate
 
-Declare operations that must never proceed solely because a static policy matched. Until the
-deployment connects a trusted `ApprovalProvider`, this control is deliberately fail-closed in
-`enforce` mode; `shadow` records the missing approval without interrupting traffic.
+Declare operations that must never proceed solely because a static policy matched. The approval
+control is fail-closed until a trusted approval authority is configured; `shadow` records a denied
+approval without interrupting traffic.
 
 ```yaml
 security:
@@ -242,10 +242,30 @@ security:
   - toolName: records.delete
 ```
 
-The security core already provides a short-lived, one-time `CapabilityBroker`. A Capability is
-bound to the authorized subject, action, resource, request ID, and Tool argument hash. S3-B will
-connect a trusted approval authority to this broker and a Tool-side capability consumer; no
-untrusted request header is treated as an approval grant.
+`approval` connects high-risk Tools to a reusable HTTPS/mTLS approval authority. The gateway sends
+only the normalized `ActionRequest` plus an `argumentsHash`, never raw Tool arguments or a
+caller-supplied approval header. A positive response is accepted only when its `requestId` and
+`argumentsHash` match and it has a future `expiresAt`.
+
+```yaml
+security:
+  mode: enforce
+  requiredToolApprovals:
+  - toolName: records.delete
+  approval:
+    endpoint: https://approval.security.internal/v1/check
+    timeoutMillis: 250
+    identityPemFile: /run/secrets/approval-client-identity.pem
+    rootCaPemFile: /run/secrets/approval-root-ca.pem
+```
+
+The approval authority response contains `approvalId`, `requestId`, `argumentsHash`, `approved`,
+and, for an allow, `expiresAt`. HTTPS/mTLS configuration errors, transport failures, non-2xx
+responses, mismatched bindings, and expired approvals deny the Tool call.
+
+The security core also provides a short-lived, one-time `CapabilityBroker`. A Capability is bound
+to the authorized subject, action, resource, request ID, and Tool argument hash; durable broker
+storage and Tool/API-side consumption use the same binding model.
 
 ### S3-C Agent delegation
 

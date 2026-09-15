@@ -1,11 +1,15 @@
 use audit_core::{AuditSink, event_from_decision};
-use gateway_adapter::{GatewayError, SecurityPipelineConfig};
+use gateway_adapter::{
+	DelegationRevocationCheck, GatewayError, RuntimeSecurityControls, SecurityPipelineConfig,
+};
 use security_contracts::{ActionRequest, Decision, DecisionEffect, SecurityEvent};
 
+pub mod remote_approval;
 pub mod remote_pdp;
 pub mod remote_revocation;
 mod trusted_https;
 
+pub use remote_approval::RemoteApprovalConfig;
 pub use remote_pdp::RemotePdpConfig;
 pub use remote_revocation::RemoteDelegationRevocationConfig;
 
@@ -37,6 +41,9 @@ pub struct SecurityConfig {
 	/// Optional shared source for immediate, cross-instance delegation revocation.
 	#[serde(default, skip_serializing_if = "Option::is_none")]
 	pub delegation_revocation: Option<RemoteDelegationRevocationConfig>,
+	/// Optional trusted authority for configured high-risk Tool approval gates.
+	#[serde(default, skip_serializing_if = "Option::is_none")]
+	pub approval: Option<RemoteApprovalConfig>,
 	#[serde(flatten)]
 	pub pipeline: SecurityPipelineConfig,
 }
@@ -77,48 +84,24 @@ pub fn evaluate_with_arguments(
 	action: &ActionRequest,
 	arguments: Option<&serde_json::Value>,
 ) -> Result<(), GatewayError> {
-	let decision = match (&config.remote_pdp, &config.delegation_revocation) {
-		(Some(remote_pdp), Some(revocation)) => remote_pdp
-			.transport()
-			.map_err(|error| error.reason)
-			.and_then(|transport| {
-				revocation
-					.provider()
-					.map_err(|error| error.reason)
-					.and_then(|provider| {
-						config
-							.pipeline
-							.build_with_remote_pdp_and_revocation(TracingAuditSink, transport, provider)
-							.map_err(|error| error.reason)
-					})
-			})
-			.map_err(|reason| configuration_denial(action, reason))
-			.and_then(|pipeline| pipeline.authorize(action, arguments)),
-		(Some(remote_pdp), None) => remote_pdp
-			.transport()
-			.map_err(|error| error.reason)
-			.and_then(|transport| {
-				config
-					.pipeline
-					.build_with_remote_pdp(TracingAuditSink, transport)
-					.map_err(|error| error.reason)
-			})
-			.map_err(|reason| configuration_denial(action, reason))
-			.and_then(|pipeline| pipeline.authorize(action, arguments)),
-		(None, Some(revocation)) => revocation
-			.provider()
-			.map_err(|error| error.reason)
-			.map(|provider| {
-				config
-					.pipeline
-					.build_with_revocation(TracingAuditSink, provider)
-			})
-			.map_err(|reason| configuration_denial(action, reason))
-			.and_then(|pipeline| pipeline.authorize(action, arguments)),
-		(None, None) => config
-			.pipeline
-			.build(TracingAuditSink)
-			.authorize(action, arguments),
+	let decision = match runtime_security_controls(config) {
+		Err(reason) => Err(configuration_denial(action, reason)),
+		Ok(controls) => match &config.remote_pdp {
+			Some(remote_pdp) => remote_pdp
+				.transport()
+				.map_err(|error| configuration_denial(action, error.reason))
+				.and_then(|transport| {
+					config
+						.pipeline
+						.build_with_remote_pdp_and_runtime_controls(TracingAuditSink, transport, controls)
+						.map_err(|error| configuration_denial(action, error.reason))
+				})
+				.and_then(|pipeline| pipeline.authorize(action, arguments)),
+			None => config
+				.pipeline
+				.build_with_runtime_controls(TracingAuditSink, controls)
+				.authorize(action, arguments),
+		},
 	};
 	match decision {
 		Ok(_) => Ok(()),
@@ -138,6 +121,19 @@ pub fn evaluate_with_arguments(
 	}
 }
 
+fn runtime_security_controls(config: &SecurityConfig) -> Result<RuntimeSecurityControls, String> {
+	let mut controls = RuntimeSecurityControls::default();
+	if let Some(revocation) = &config.delegation_revocation {
+		let provider = revocation.provider().map_err(|error| error.reason)?;
+		controls = controls.add_identity_control(DelegationRevocationCheck::new(provider));
+	}
+	if let Some(approval) = &config.approval {
+		let provider = approval.provider().map_err(|error| error.reason)?;
+		controls = controls.with_approval_provider(provider);
+	}
+	Ok(controls)
+}
+
 fn configuration_denial(action: &ActionRequest, reason: String) -> GatewayError {
 	tracing::error!(
 		target: "security_audit",
@@ -148,7 +144,7 @@ fn configuration_denial(action: &ActionRequest, reason: String) -> GatewayError 
 	let decision = Decision {
 		request_id: action.request_id.clone(),
 		effect: DecisionEffect::Deny,
-		policy_id: Some("dynamic-pdp:configuration".into()),
+		policy_id: Some("security:configuration".into()),
 		policy_version: None,
 		expires_at: None,
 	};
@@ -204,6 +200,7 @@ mod tests {
 			mode: SecurityMode::Enforce,
 			remote_pdp: None,
 			delegation_revocation: None,
+			approval: None,
 			pipeline: SecurityPipelineConfig {
 				required_identity: Some(RequiredIdentity::user_agent_tenant()),
 				policies: vec![Policy {
@@ -254,6 +251,7 @@ mod tests {
 			mode: SecurityMode::Enforce,
 			remote_pdp: None,
 			delegation_revocation: None,
+			approval: None,
 			pipeline: SecurityPipelineConfig {
 				policies: vec![
 					Policy {
@@ -357,6 +355,7 @@ mod tests {
 					mode: SecurityMode::Enforce,
 					remote_pdp: None,
 					delegation_revocation: None,
+					approval: None,
 					pipeline: pipeline.clone(),
 				},
 				&tool,
@@ -369,6 +368,7 @@ mod tests {
 					mode: SecurityMode::Shadow,
 					remote_pdp: None,
 					delegation_revocation: None,
+					approval: None,
 					pipeline,
 				},
 				&tool,
@@ -383,6 +383,7 @@ mod tests {
 			mode: SecurityMode::Enforce,
 			remote_pdp: None,
 			delegation_revocation: None,
+			approval: None,
 			pipeline: SecurityPipelineConfig {
 				policies: vec![Policy {
 					id: "allow-support-agent".into(),
@@ -463,6 +464,7 @@ mod tests {
 				mode: SecurityMode::Enforce,
 				remote_pdp: Some(remote_pdp),
 				delegation_revocation: None,
+				approval: None,
 				pipeline: SecurityPipelineConfig::default(),
 			},
 			&action,
@@ -470,7 +472,7 @@ mod tests {
 		assert!(matches!(
 			result,
 			Err(gateway_adapter::GatewayError::Denied(decision))
-				if decision.policy_id.as_deref() == Some("dynamic-pdp:configuration")
+				if decision.policy_id.as_deref() == Some("security:configuration")
 		));
 	}
 
@@ -486,6 +488,7 @@ mod tests {
 				mode: SecurityMode::Enforce,
 				remote_pdp: None,
 				delegation_revocation: Some(delegation_revocation),
+				approval: None,
 				pipeline: SecurityPipelineConfig::default(),
 			},
 			&action,
@@ -493,7 +496,31 @@ mod tests {
 		assert!(matches!(
 			result,
 			Err(gateway_adapter::GatewayError::Denied(decision))
-				if decision.policy_id.as_deref() == Some("dynamic-pdp:configuration")
+				if decision.policy_id.as_deref() == Some("security:configuration")
+		));
+	}
+
+	#[test]
+	fn invalid_remote_approval_configuration_is_denied_in_enforce_mode() {
+		let approval = serde_json::from_value(serde_json::json!({
+			"endpoint": "http://approval.internal/v1/check"
+		}))
+		.expect("approval test configuration should deserialize");
+		let action = gateway_adapter::model_invoke("request", None, None, "model");
+		let result = evaluate(
+			&SecurityConfig {
+				mode: SecurityMode::Enforce,
+				remote_pdp: None,
+				delegation_revocation: None,
+				approval: Some(approval),
+				pipeline: SecurityPipelineConfig::default(),
+			},
+			&action,
+		);
+		assert!(matches!(
+			result,
+			Err(gateway_adapter::GatewayError::Denied(decision))
+				if decision.policy_id.as_deref() == Some("security:configuration")
 		));
 	}
 }

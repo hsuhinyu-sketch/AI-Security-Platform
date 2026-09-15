@@ -601,13 +601,53 @@ pub struct SecurityPipelineConfig {
 	pub dynamic_authorization: Option<DynamicAuthorizationConfig>,
 }
 
+/// Runtime-installed controls that stay independent from the YAML policy shape. Applications use
+/// this composition seam to bind trusted external systems without coupling the security core to
+/// HTTP, a UI, or a specific approval product.
+#[derive(Default)]
+pub struct RuntimeSecurityControls {
+	identity_controls: Vec<Box<dyn SecurityControl>>,
+	action_controls: Vec<Box<dyn SecurityControl>>,
+	approval_provider: Option<Arc<dyn ApprovalProvider>>,
+}
+
+impl RuntimeSecurityControls {
+	pub fn add_identity_control(mut self, control: impl SecurityControl + 'static) -> Self {
+		self.identity_controls.push(Box::new(control));
+		self
+	}
+
+	pub fn add_action_control(mut self, control: impl SecurityControl + 'static) -> Self {
+		self.action_controls.push(Box::new(control));
+		self
+	}
+
+	pub fn with_approval_provider(mut self, provider: impl ApprovalProvider + 'static) -> Self {
+		self.approval_provider = Some(Arc::new(provider));
+		self
+	}
+}
+
 impl SecurityPipelineConfig {
 	pub fn build<S: AuditSink>(&self, audit: S) -> SecurityPipeline<StaticAndDynamicAuthorizer, S> {
 		let authorizer = StaticAndDynamicAuthorizer::from_config(
 			self.policies.clone(),
 			self.dynamic_authorization.as_ref(),
 		);
-		self.build_with_authorizer(audit, authorizer, None)
+		self.build_with_authorizer(audit, authorizer, RuntimeSecurityControls::default())
+	}
+
+	/// Builds local authorization together with application-supplied identity and action controls.
+	pub fn build_with_runtime_controls<S: AuditSink>(
+		&self,
+		audit: S,
+		controls: RuntimeSecurityControls,
+	) -> SecurityPipeline<StaticAndDynamicAuthorizer, S> {
+		let authorizer = StaticAndDynamicAuthorizer::from_config(
+			self.policies.clone(),
+			self.dynamic_authorization.as_ref(),
+		);
+		self.build_with_authorizer(audit, authorizer, controls)
 	}
 
 	/// Adds a real-time delegation revocation check to the configured local authorization pipeline.
@@ -624,7 +664,8 @@ impl SecurityPipelineConfig {
 		self.build_with_authorizer(
 			audit,
 			authorizer,
-			Some(Box::new(DelegationRevocationCheck::new(provider))),
+			RuntimeSecurityControls::default()
+				.add_identity_control(DelegationRevocationCheck::new(provider)),
 		)
 	}
 
@@ -644,7 +685,26 @@ impl SecurityPipelineConfig {
 			PolicyAuthorizer::new(self.policies.clone()),
 			Some(dynamic.cache_pdp(remote_pdp)),
 		);
-		Ok(self.build_with_authorizer(audit, authorizer, None))
+		Ok(self.build_with_authorizer(audit, authorizer, RuntimeSecurityControls::default()))
+	}
+
+	/// Builds remote-PDP authorization together with application-supplied security bricks.
+	pub fn build_with_remote_pdp_and_runtime_controls<S: AuditSink, T: RemotePdpTransport>(
+		&self,
+		audit: S,
+		transport: T,
+		controls: RuntimeSecurityControls,
+	) -> Result<SecurityPipeline<StaticAndDynamicAuthorizer<RemoteDynamicPdp<T>>, S>, DynamicPdpError>
+	{
+		let dynamic = self.dynamic_authorization.as_ref().ok_or_else(|| {
+			DynamicPdpError::unavailable("remote PDP requires dynamicAuthorization configuration")
+		})?;
+		let remote_pdp = RemoteDynamicPdp::new(transport, Some(dynamic.policy_version.clone()));
+		let authorizer = StaticAndDynamicAuthorizer::new(
+			PolicyAuthorizer::new(self.policies.clone()),
+			Some(dynamic.cache_pdp(remote_pdp)),
+		);
+		Ok(self.build_with_authorizer(audit, authorizer, controls))
 	}
 
 	/// Builds the remote-PDP variant with an additional real-time delegation revocation stage.
@@ -667,26 +727,29 @@ impl SecurityPipelineConfig {
 			PolicyAuthorizer::new(self.policies.clone()),
 			Some(dynamic.cache_pdp(remote_pdp)),
 		);
-		Ok(self.build_with_authorizer(
-			audit,
-			authorizer,
-			Some(Box::new(DelegationRevocationCheck::new(provider))),
-		))
+		Ok(
+			self.build_with_authorizer(
+				audit,
+				authorizer,
+				RuntimeSecurityControls::default()
+					.add_identity_control(DelegationRevocationCheck::new(provider)),
+			),
+		)
 	}
 
 	fn build_with_authorizer<S: AuditSink, A: Authorizer>(
 		&self,
 		audit: S,
 		authorizer: A,
-		revocation_check: Option<Box<dyn SecurityControl>>,
+		mut controls: RuntimeSecurityControls,
 	) -> SecurityPipeline<A, S> {
 		let mut pipeline = SecurityPipeline::new(authorizer, audit);
 		if let Some(identity) = self.required_identity {
 			pipeline = pipeline.add_identity_control(identity);
 		}
-		if let Some(revocation_check) = revocation_check {
-			pipeline.identity_controls.push(revocation_check);
-		}
+		pipeline
+			.identity_controls
+			.append(&mut controls.identity_controls);
 		for requirement in &self.required_tool_arguments {
 			pipeline = pipeline.add_action_control(RequiredToolArguments::new(
 				requirement.tool_name.clone(),
@@ -694,9 +757,19 @@ impl SecurityPipelineConfig {
 			));
 		}
 		for requirement in &self.required_tool_approvals {
-			pipeline =
-				pipeline.add_action_control(RequiredToolApproval::new(requirement.tool_name.clone()));
+			pipeline = match &controls.approval_provider {
+				Some(provider) => pipeline.add_action_control(ToolApproval::new(
+					requirement.tool_name.clone(),
+					provider.clone(),
+				)),
+				None => {
+					pipeline.add_action_control(RequiredToolApproval::new(requirement.tool_name.clone()))
+				},
+			};
 		}
+		pipeline
+			.action_controls
+			.append(&mut controls.action_controls);
 		if !self.delegations.is_empty() {
 			pipeline = pipeline.add_identity_control(AgentDelegation::new(self.delegations.clone()));
 		}
@@ -954,15 +1027,46 @@ impl SecurityControl for RequiredToolApproval {
 /// External approval is another replaceable brick: an implementation may call a human
 /// workflow, a vehicle interlock, or a business transaction service.
 pub trait ApprovalProvider: Send + Sync {
-	fn approved(&self, request: &ActionRequest, arguments: &serde_json::Value) -> bool;
+	fn approved(
+		&self,
+		request: &ActionRequest,
+		arguments: &serde_json::Value,
+	) -> Result<bool, ApprovalError>;
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ApprovalError {
+	pub reason: String,
+}
+
+impl ApprovalError {
+	pub fn unavailable(reason: impl Into<String>) -> Self {
+		Self {
+			reason: reason.into(),
+		}
+	}
+}
+
+impl<T: ApprovalProvider + ?Sized> ApprovalProvider for Arc<T> {
+	fn approved(
+		&self,
+		request: &ActionRequest,
+		arguments: &serde_json::Value,
+	) -> Result<bool, ApprovalError> {
+		(**self).approved(request, arguments)
+	}
 }
 
 #[derive(Debug, Clone, Copy)]
 pub struct StaticApproval(pub bool);
 
 impl ApprovalProvider for StaticApproval {
-	fn approved(&self, _request: &ActionRequest, _arguments: &serde_json::Value) -> bool {
-		self.0
+	fn approved(
+		&self,
+		_request: &ActionRequest,
+		_arguments: &serde_json::Value,
+	) -> Result<bool, ApprovalError> {
+		Ok(self.0)
 	}
 }
 
@@ -1000,13 +1104,16 @@ impl<P: ApprovalProvider> SecurityControl for ToolApproval<P> {
 				reason: format!("tool '{}' requires approval arguments", self.tool_name),
 			});
 		};
-		if self.provider.approved(request, arguments) {
-			Ok(())
-		} else {
-			Err(ControlDenial {
+		match self.provider.approved(request, arguments) {
+			Ok(true) => Ok(()),
+			Ok(false) => Err(ControlDenial {
 				control_id: self.id().into(),
 				reason: format!("tool '{}' was not approved", self.tool_name),
-			})
+			}),
+			Err(error) => Err(ControlDenial {
+				control_id: self.id().into(),
+				reason: format!("approval check unavailable: {}", error.reason),
+			}),
 		}
 	}
 }
@@ -1499,6 +1606,37 @@ mod tests {
 				if denial.control_id == "delegation-revocation"
 		));
 		assert_eq!(audit.events()[0].decision, DecisionEffect::Deny);
+	}
+
+	#[test]
+	fn trusted_runtime_approval_replaces_the_fail_closed_high_risk_gate() {
+		let config = SecurityPipelineConfig {
+			policies: vec![allow_policy()],
+			required_tool_approvals: vec![RequiredToolApprovalConfig {
+				tool_name: "db.delete".into(),
+			}],
+			..Default::default()
+		};
+		let audit = InMemoryAuditSink::default();
+		let pipeline = config.build_with_runtime_controls(
+			&audit,
+			RuntimeSecurityControls::default().with_approval_provider(StaticApproval(true)),
+		);
+		assert!(
+			pipeline
+				.authorize(&request(), Some(&serde_json::json!({ "recordId": "42" })))
+				.is_ok()
+		);
+
+		let denied = config.build_with_runtime_controls(
+			InMemoryAuditSink::default(),
+			RuntimeSecurityControls::default().with_approval_provider(StaticApproval(false)),
+		);
+		assert!(
+			denied
+				.authorize(&request(), Some(&serde_json::json!({})))
+				.is_err()
+		);
 	}
 
 	#[test]
