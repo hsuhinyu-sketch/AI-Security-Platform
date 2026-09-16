@@ -15,16 +15,16 @@ use uuid::Uuid;
 pub mod pipeline;
 
 pub use pipeline::{
-	AgentDelegation, AgentDelegationConfig, AgentIdentityRegistry, AgentIdentityRegistryConfig,
-	ApprovalError, ApprovalProvider, Authorizer, CachedDynamicPdp, ControlDenial, DecisionCache,
-	DelegationRevocationCheck, DelegationRevocationError, DelegationRevocationProvider,
-	DelegationRevocationRegistry, DelegationScope, DynamicAuthorizationConfig, DynamicPdp,
-	DynamicPdpError, DynamicPdpFailureMode, DynamicPolicy, GatewayError, LocalDynamicPdp,
-	PolicyAuthorizer, RegisteredAgentConfig, RemoteDynamicPdp, RemotePdpRequest, RemotePdpResponse,
-	RemotePdpTransport, RequiredIdentity, RequiredToolApproval, RequiredToolApprovalConfig,
-	RequiredToolArguments, RequiredToolArgumentsConfig, RuntimeSecurityControls, SecurityControl,
-	SecurityPipeline, SecurityPipelineConfig, StaticAndDynamicAuthorizer, StaticApproval,
-	ToolApproval,
+	AgentDelegation, AgentDelegationConfig, AgentIdentityError, AgentIdentityProvider,
+	AgentIdentityRegistry, AgentIdentityRegistryConfig, ApprovalError, ApprovalProvider, Authorizer,
+	CachedDynamicPdp, ControlDenial, DecisionCache, DelegationRevocationCheck,
+	DelegationRevocationError, DelegationRevocationProvider, DelegationRevocationRegistry,
+	DelegationScope, DynamicAuthorizationConfig, DynamicPdp, DynamicPdpError, DynamicPdpFailureMode,
+	DynamicPolicy, ExternalAgentIdentityCheck, GatewayError, LocalDynamicPdp, PolicyAuthorizer,
+	RegisteredAgentConfig, RemoteDynamicPdp, RemotePdpRequest, RemotePdpResponse, RemotePdpTransport,
+	RequiredIdentity, RequiredToolApproval, RequiredToolApprovalConfig, RequiredToolArguments,
+	RequiredToolArgumentsConfig, RuntimeSecurityControls, SecurityControl, SecurityPipeline,
+	SecurityPipelineConfig, StaticAndDynamicAuthorizer, StaticApproval, ToolApproval,
 };
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]

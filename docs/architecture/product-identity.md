@@ -47,7 +47,9 @@ The Apache-2.0 license and upstream attribution for reused AgentGateway code rem
   `agentIdentity` binds an already verified JWT claim to an enabled Agent record, its tenant, an
   allowed OAuth client/workload identity, and an optional validity period before policy or
   delegation evaluation. The static registry is replaceable through the identity-control seam by a
-  remote directory or certificate/SPIFFE-backed attestation source.
+  remote directory or certificate/SPIFFE-backed attestation source. `remoteAgentIdentity` is the
+  first implementation of that seam: an HTTPS/mTLS, no-allow-cache directory lookup bound to the
+  verified Agent, tenant, and OAuth client identity.
 - S4-A adds a second dynamic PDP stage. Verified session/client context and time-bounded dynamic
   policies can only narrow a static allow. PDP errors deny by default; an explicit, TTL-bounded
   cache option is limited to low-risk reads.

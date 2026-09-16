@@ -1,16 +1,18 @@
 use audit_core::{AuditSink, event_from_decision};
 use gateway_adapter::{
-	AgentIdentityRegistry, AgentIdentityRegistryConfig, DelegationRevocationCheck, GatewayError,
-	RuntimeSecurityControls, SecurityPipelineConfig,
+	AgentIdentityRegistry, AgentIdentityRegistryConfig, DelegationRevocationCheck,
+	ExternalAgentIdentityCheck, GatewayError, RuntimeSecurityControls, SecurityPipelineConfig,
 };
 use security_contracts::{ActionRequest, Decision, DecisionEffect, SecurityEvent};
 
+pub mod remote_agent_identity;
 pub mod remote_approval;
 pub mod remote_capability;
 pub mod remote_pdp;
 pub mod remote_revocation;
 mod trusted_https;
 
+pub use remote_agent_identity::RemoteAgentIdentityConfig;
 pub use remote_approval::RemoteApprovalConfig;
 pub use remote_capability::{CapabilityGrant, RemoteCapabilityBrokerConfig};
 pub use remote_pdp::RemotePdpConfig;
@@ -54,6 +56,10 @@ pub struct SecurityConfig {
 	/// tenant-scoped Agent principal and an allowed OAuth client/workload identity.
 	#[serde(default, skip_serializing_if = "Option::is_none")]
 	pub agent_identity: Option<AgentIdentityRegistryConfig>,
+	/// Optional authoritative HTTPS/mTLS Agent Directory. This cannot be combined with the local
+	/// static `agentIdentity` registry because two sources could disagree about a principal.
+	#[serde(default, skip_serializing_if = "Option::is_none")]
+	pub remote_agent_identity: Option<RemoteAgentIdentityConfig>,
 	#[serde(flatten)]
 	pub pipeline: SecurityPipelineConfig,
 }
@@ -156,9 +162,21 @@ pub fn authorize_tool_with_capability(
 
 fn runtime_security_controls(config: &SecurityConfig) -> Result<RuntimeSecurityControls, String> {
 	let mut controls = RuntimeSecurityControls::default();
+	if config.agent_identity.is_some() && config.remote_agent_identity.is_some() {
+		return Err("configure either agentIdentity or remoteAgentIdentity, not both".into());
+	}
 	if let Some(agent_identity) = &config.agent_identity {
 		let registry = AgentIdentityRegistry::from_config(agent_identity.clone())?;
 		controls = controls.add_identity_control(registry);
+	}
+	if let Some(remote_agent_identity) = &config.remote_agent_identity {
+		let provider = remote_agent_identity
+			.provider()
+			.map_err(|error| error.reason)?;
+		controls = controls.add_identity_control(ExternalAgentIdentityCheck::new(
+			remote_agent_identity.required,
+			provider,
+		));
 	}
 	if let Some(revocation) = &config.delegation_revocation {
 		let provider = revocation.provider().map_err(|error| error.reason)?;
@@ -262,6 +280,7 @@ mod tests {
 			approval: None,
 			capability_broker: None,
 			agent_identity: None,
+			remote_agent_identity: None,
 			pipeline: SecurityPipelineConfig {
 				required_identity: Some(RequiredIdentity::user_agent_tenant()),
 				policies: vec![Policy {
@@ -325,6 +344,7 @@ mod tests {
 					expires_at: None,
 				}],
 			}),
+			remote_agent_identity: None,
 			pipeline: SecurityPipelineConfig {
 				policies: vec![Policy {
 					id: "allow-support-agent".into(),
@@ -382,6 +402,7 @@ mod tests {
 			approval: None,
 			capability_broker: None,
 			agent_identity: None,
+			remote_agent_identity: None,
 			pipeline: SecurityPipelineConfig {
 				policies: vec![
 					Policy {
@@ -488,6 +509,7 @@ mod tests {
 					approval: None,
 					capability_broker: None,
 					agent_identity: None,
+					remote_agent_identity: None,
 					pipeline: pipeline.clone(),
 				},
 				&tool,
@@ -503,6 +525,7 @@ mod tests {
 					approval: None,
 					capability_broker: None,
 					agent_identity: None,
+					remote_agent_identity: None,
 					pipeline,
 				},
 				&tool,
@@ -520,6 +543,7 @@ mod tests {
 			approval: None,
 			capability_broker: None,
 			agent_identity: None,
+			remote_agent_identity: None,
 			pipeline: SecurityPipelineConfig {
 				policies: vec![Policy {
 					id: "allow-support-agent".into(),
@@ -603,6 +627,7 @@ mod tests {
 				approval: None,
 				capability_broker: None,
 				agent_identity: None,
+				remote_agent_identity: None,
 				pipeline: SecurityPipelineConfig::default(),
 			},
 			&action,
@@ -629,6 +654,7 @@ mod tests {
 				approval: None,
 				capability_broker: None,
 				agent_identity: None,
+				remote_agent_identity: None,
 				pipeline: SecurityPipelineConfig::default(),
 			},
 			&action,
@@ -655,6 +681,35 @@ mod tests {
 				approval: Some(approval),
 				capability_broker: None,
 				agent_identity: None,
+				remote_agent_identity: None,
+				pipeline: SecurityPipelineConfig::default(),
+			},
+			&action,
+		);
+		assert!(matches!(
+			result,
+			Err(gateway_adapter::GatewayError::Denied(decision))
+				if decision.policy_id.as_deref() == Some("security:configuration")
+		));
+	}
+
+	#[test]
+	fn invalid_remote_agent_directory_configuration_is_denied_in_enforce_mode() {
+		let remote_agent_identity = serde_json::from_value(serde_json::json!({
+			"endpoint": "http://agents.internal/v1/identities/check",
+			"required": true
+		}))
+		.expect("remote Agent Directory test configuration should deserialize");
+		let action = gateway_adapter::model_invoke("request", None, None, "model");
+		let result = evaluate(
+			&SecurityConfig {
+				mode: SecurityMode::Enforce,
+				remote_pdp: None,
+				delegation_revocation: None,
+				approval: None,
+				capability_broker: None,
+				agent_identity: None,
+				remote_agent_identity: Some(remote_agent_identity),
 				pipeline: SecurityPipelineConfig::default(),
 			},
 			&action,

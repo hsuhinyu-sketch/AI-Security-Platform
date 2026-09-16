@@ -125,6 +125,73 @@ pub trait DelegationRevocationProvider: Send + Sync {
 	fn is_revoked(&self, delegation_id: &str) -> Result<bool, DelegationRevocationError>;
 }
 
+/// Failure from an authoritative Agent identity source. It is distinct from an unknown/disabled
+/// Agent so callers can make source outages fail closed without treating them as a policy deny.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AgentIdentityError {
+	pub reason: String,
+}
+
+impl AgentIdentityError {
+	pub fn unavailable(reason: impl Into<String>) -> Self {
+		Self {
+			reason: reason.into(),
+		}
+	}
+}
+
+/// Verifies a normalized Agent identity against an authoritative directory or attestation source.
+/// Implementations receive only verified gateway identity context, never a raw user header.
+pub trait AgentIdentityProvider: Send + Sync {
+	fn verify(&self, request: &ActionRequest) -> Result<(), AgentIdentityError>;
+}
+
+/// Identity-stage adapter for an external Agent directory. The provider is queried only when an
+/// Agent claim is present; `required` controls whether human-only requests may bypass this brick.
+pub struct ExternalAgentIdentityCheck<P> {
+	required: bool,
+	provider: P,
+}
+
+impl<P> ExternalAgentIdentityCheck<P> {
+	pub fn new(required: bool, provider: P) -> Self {
+		Self { required, provider }
+	}
+}
+
+impl<P: AgentIdentityProvider> SecurityControl for ExternalAgentIdentityCheck<P> {
+	fn id(&self) -> &str {
+		"agent-identity-directory"
+	}
+
+	fn check(
+		&self,
+		request: &ActionRequest,
+		_arguments: Option<&serde_json::Value>,
+	) -> Result<(), ControlDenial> {
+		if request.subject.agent_id.is_none() {
+			return if self.required {
+				Err(ControlDenial {
+					control_id: self.id().into(),
+					reason: "an Agent identity is required by the Agent directory".into(),
+				})
+			} else {
+				Ok(())
+			};
+		}
+		self
+			.provider
+			.verify(request)
+			.map_err(|error| ControlDenial {
+				control_id: self.id().into(),
+				reason: format!(
+					"Agent identity directory rejected request: {}",
+					error.reason
+				),
+			})
+	}
+}
+
 impl<T: DelegationRevocationProvider + ?Sized> DelegationRevocationProvider for Arc<T> {
 	fn is_revoked(&self, delegation_id: &str) -> Result<bool, DelegationRevocationError> {
 		(**self).is_revoked(delegation_id)
@@ -1413,6 +1480,20 @@ mod tests {
 
 	use super::*;
 
+	struct FixedAgentIdentity(bool);
+
+	impl AgentIdentityProvider for FixedAgentIdentity {
+		fn verify(&self, _request: &ActionRequest) -> Result<(), AgentIdentityError> {
+			if self.0 {
+				Ok(())
+			} else {
+				Err(AgentIdentityError::unavailable(
+					"Agent is disabled remotely",
+				))
+			}
+		}
+	}
+
 	fn request() -> ActionRequest {
 		ActionRequest {
 			request_id: "pipeline-request".into(),
@@ -1501,6 +1582,31 @@ mod tests {
 			pipeline.authorize(&wrong_client, None),
 			Err(GatewayError::DeniedByControl { ref denial, .. })
 				if denial.control_id == "agent-identity-registry"
+		));
+	}
+
+	#[test]
+	fn external_agent_identity_check_requires_agent_and_fails_closed() {
+		let pipeline = SecurityPipeline::new(
+			PolicyAuthorizer::new(vec![allow_policy()]),
+			InMemoryAuditSink::default(),
+		)
+		.add_identity_control(ExternalAgentIdentityCheck::new(
+			true,
+			FixedAgentIdentity(false),
+		));
+		assert!(matches!(
+			pipeline.authorize(&request(), None),
+			Err(GatewayError::DeniedByControl { ref denial, .. })
+				if denial.control_id == "agent-identity-directory"
+		));
+
+		let mut no_agent = request();
+		no_agent.subject.agent_id = None;
+		assert!(matches!(
+			pipeline.authorize(&no_agent, None),
+			Err(GatewayError::DeniedByControl { ref denial, .. })
+				if denial.reason.contains("identity is required")
 		));
 	}
 

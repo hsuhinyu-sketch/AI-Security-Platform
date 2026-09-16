@@ -220,6 +220,25 @@ The static registry is the PoC source of truth. `AgentIdentityRegistry` is itsel
 security control, so a remote Agent Directory, certificate/SPIFFE attestation provider, or lifecycle
 service can replace the source without changing protocol adapters or authorization policies.
 
+`remoteAgentIdentity` is the implemented HTTPS/mTLS directory adapter. It is mutually exclusive
+with `agentIdentity` and sends the normalized, verified request context on every Agent action; it
+does not cache an allow, so an Agent disablement takes effect on the next action.
+
+```yaml
+security:
+  mode: enforce
+  remoteAgentIdentity:
+    endpoint: https://agent-directory.security.internal/v1/identities/check
+    required: true
+    timeoutMillis: 100
+    identityPemFile: /run/secrets/gateway-agent-directory-identity.pem
+    rootCaPemFile: /run/secrets/agent-directory-root-ca.pem
+```
+
+The directory response must echo the verified `agentId`, `tenantId`, and OAuth `clientId`, return
+`active: true`, and, if it supplies `expiresAt`, keep that time in the future. Network, TLS,
+response-binding, inactive, and expired-directory responses are denied in `enforce` mode.
+
 ### S2 protocol-level controls
 
 S2 turns protocol operations into the same policy vocabulary. In `enforce` mode, MCP `tools/list`
