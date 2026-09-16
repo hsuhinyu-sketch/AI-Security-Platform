@@ -43,6 +43,11 @@ The Apache-2.0 license and upstream attribution for reused AgentGateway code rem
 - S3-C validates direct user-to-Agent delegation from a verified `delegationId` claim against
   configured tenant-scoped, time-bounded operation scopes. The grant only constrains an existing
   policy allow; issuance/revocation and Agent-to-sub-Agent chains remain future work.
+- S3-D treats `agentId` as a registered principal rather than a free-form authorization attribute.
+  `agentIdentity` binds an already verified JWT claim to an enabled Agent record, its tenant, an
+  allowed OAuth client/workload identity, and an optional validity period before policy or
+  delegation evaluation. The static registry is replaceable through the identity-control seam by a
+  remote directory or certificate/SPIFFE-backed attestation source.
 - S4-A adds a second dynamic PDP stage. Verified session/client context and time-bounded dynamic
   policies can only narrow a static allow. PDP errors deny by default; an explicit, TTL-bounded
   cache option is limited to low-risk reads.

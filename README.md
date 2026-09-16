@@ -180,9 +180,45 @@ aiSystems:
       actionName: invoke
       resourceId: support-chat
       resourceType: model
-      effect: allow
-      enabled: true
+    effect: allow
+    enabled: true
 ```
+
+### S1-A registered Agent identity
+
+`agentIdentity` turns a verified JWT `agentId` claim into a registered Agent principal. It is an
+identity-stage control: it runs before policy, delegation, approval, and Capability issuance. Each
+Agent is bound to one tenant, one or more verified OAuth `azp`/`clientId` values, an enabled flag,
+and an optional validity period. This prevents a client from gaining an Agent's privileges by only
+adding a matching `agentId` claim.
+
+```yaml
+security:
+  mode: enforce
+  agentIdentity:
+    required: true
+    agents:
+    - agentId: support-agent
+      tenantId: tenant-a
+      clientIds: [support-agent-workload]
+      enabled: true
+      notBefore: 2026-09-01T00:00:00Z
+      expiresAt: 2027-09-01T00:00:00Z
+  policies:
+  - id: allow-support-agent
+    tenantId: tenant-a
+    agentId: support-agent
+    actionType: toolInvoke
+    actionName: tickets.create
+    resourceId: tickets.create
+    resourceType: tool
+    effect: allow
+    enabled: true
+```
+
+The static registry is the PoC source of truth. `AgentIdentityRegistry` is itself an identity-stage
+security control, so a remote Agent Directory, certificate/SPIFFE attestation provider, or lifecycle
+service can replace the source without changing protocol adapters or authorization policies.
 
 ### S2 protocol-level controls
 

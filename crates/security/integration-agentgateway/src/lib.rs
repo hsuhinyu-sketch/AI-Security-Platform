@@ -1,6 +1,7 @@
 use audit_core::{AuditSink, event_from_decision};
 use gateway_adapter::{
-	DelegationRevocationCheck, GatewayError, RuntimeSecurityControls, SecurityPipelineConfig,
+	AgentIdentityRegistry, AgentIdentityRegistryConfig, DelegationRevocationCheck, GatewayError,
+	RuntimeSecurityControls, SecurityPipelineConfig,
 };
 use security_contracts::{ActionRequest, Decision, DecisionEffect, SecurityEvent};
 
@@ -49,6 +50,10 @@ pub struct SecurityConfig {
 	/// Optional shared broker issuing one-time capabilities for approved high-risk Tool calls.
 	#[serde(default, skip_serializing_if = "Option::is_none")]
 	pub capability_broker: Option<RemoteCapabilityBrokerConfig>,
+	/// Optional registered Agent identity source. It binds a verified JWT Agent claim to an enabled
+	/// tenant-scoped Agent principal and an allowed OAuth client/workload identity.
+	#[serde(default, skip_serializing_if = "Option::is_none")]
+	pub agent_identity: Option<AgentIdentityRegistryConfig>,
 	#[serde(flatten)]
 	pub pipeline: SecurityPipelineConfig,
 }
@@ -151,6 +156,10 @@ pub fn authorize_tool_with_capability(
 
 fn runtime_security_controls(config: &SecurityConfig) -> Result<RuntimeSecurityControls, String> {
 	let mut controls = RuntimeSecurityControls::default();
+	if let Some(agent_identity) = &config.agent_identity {
+		let registry = AgentIdentityRegistry::from_config(agent_identity.clone())?;
+		controls = controls.add_identity_control(registry);
+	}
 	if let Some(revocation) = &config.delegation_revocation {
 		let provider = revocation.provider().map_err(|error| error.reason)?;
 		controls = controls.add_identity_control(DelegationRevocationCheck::new(provider));
@@ -211,9 +220,9 @@ mod tests {
 	use super::{SecurityConfig, SecurityMode, evaluate, evaluate_with_arguments};
 	use chrono::{Duration, Utc};
 	use gateway_adapter::{
-		AgentDelegationConfig, DelegationScope, GatewayIdentity, RequiredIdentity,
-		SecurityPipelineConfig, agent_action_for_identity, model_invoke_for_identity,
-		tool_invoke_for_identity,
+		AgentDelegationConfig, AgentIdentityRegistryConfig, DelegationScope, GatewayIdentity,
+		RegisteredAgentConfig, RequiredIdentity, SecurityPipelineConfig, agent_action_for_identity,
+		model_invoke_for_identity, tool_invoke_for_identity,
 	};
 	use security_contracts::{ActionType, DecisionEffect, ResourceType};
 	use security_policy::Policy;
@@ -252,6 +261,7 @@ mod tests {
 			delegation_revocation: None,
 			approval: None,
 			capability_broker: None,
+			agent_identity: None,
 			pipeline: SecurityPipelineConfig {
 				required_identity: Some(RequiredIdentity::user_agent_tenant()),
 				policies: vec![Policy {
@@ -297,6 +307,73 @@ mod tests {
 	}
 
 	#[test]
+	fn enforce_accepts_only_a_registered_agent_client_binding() {
+		let config = SecurityConfig {
+			mode: SecurityMode::Enforce,
+			remote_pdp: None,
+			delegation_revocation: None,
+			approval: None,
+			capability_broker: None,
+			agent_identity: Some(AgentIdentityRegistryConfig {
+				required: true,
+				agents: vec![RegisteredAgentConfig {
+					agent_id: "support-agent".into(),
+					tenant_id: "tenant-a".into(),
+					client_ids: vec!["support-agent-workload".into()],
+					enabled: true,
+					not_before: None,
+					expires_at: None,
+				}],
+			}),
+			pipeline: SecurityPipelineConfig {
+				policies: vec![Policy {
+					id: "allow-support-agent".into(),
+					priority: 0,
+					tenant_id: Some("tenant-a".into()),
+					user_id: Some("alice".into()),
+					agent_id: Some("support-agent".into()),
+					action_type: Some(ActionType::ModelInvoke),
+					action_name: Some("invoke".into()),
+					resource_id: Some("support-chat".into()),
+					resource_type: Some(ResourceType::Model),
+					effect: DecisionEffect::Allow,
+					enabled: true,
+				}],
+				..Default::default()
+			},
+		};
+		let trusted = GatewayIdentity {
+			user_id: Some("alice".into()),
+			agent_id: Some("support-agent".into()),
+			tenant_id: Some("tenant-a".into()),
+			delegation_id: None,
+			session_id: None,
+			client_id: Some("support-agent-workload".into()),
+		};
+		assert!(
+			evaluate(
+				&config,
+				&model_invoke_for_identity("registered-agent", trusted.clone(), "support-chat")
+			)
+			.is_ok()
+		);
+		assert!(
+			evaluate(
+				&config,
+				&model_invoke_for_identity(
+					"untrusted-client",
+					GatewayIdentity {
+						client_id: Some("other-client".into()),
+						..trusted
+					},
+					"support-chat"
+				)
+			)
+			.is_err()
+		);
+	}
+
+	#[test]
 	fn enforce_distinguishes_protocol_actions_and_applies_tool_arguments() {
 		let config = SecurityConfig {
 			mode: SecurityMode::Enforce,
@@ -304,6 +381,7 @@ mod tests {
 			delegation_revocation: None,
 			approval: None,
 			capability_broker: None,
+			agent_identity: None,
 			pipeline: SecurityPipelineConfig {
 				policies: vec![
 					Policy {
@@ -409,6 +487,7 @@ mod tests {
 					delegation_revocation: None,
 					approval: None,
 					capability_broker: None,
+					agent_identity: None,
 					pipeline: pipeline.clone(),
 				},
 				&tool,
@@ -423,6 +502,7 @@ mod tests {
 					delegation_revocation: None,
 					approval: None,
 					capability_broker: None,
+					agent_identity: None,
 					pipeline,
 				},
 				&tool,
@@ -439,6 +519,7 @@ mod tests {
 			delegation_revocation: None,
 			approval: None,
 			capability_broker: None,
+			agent_identity: None,
 			pipeline: SecurityPipelineConfig {
 				policies: vec![Policy {
 					id: "allow-support-agent".into(),
@@ -521,6 +602,7 @@ mod tests {
 				delegation_revocation: None,
 				approval: None,
 				capability_broker: None,
+				agent_identity: None,
 				pipeline: SecurityPipelineConfig::default(),
 			},
 			&action,
@@ -546,6 +628,7 @@ mod tests {
 				delegation_revocation: Some(delegation_revocation),
 				approval: None,
 				capability_broker: None,
+				agent_identity: None,
 				pipeline: SecurityPipelineConfig::default(),
 			},
 			&action,
@@ -571,6 +654,7 @@ mod tests {
 				delegation_revocation: None,
 				approval: Some(approval),
 				capability_broker: None,
+				agent_identity: None,
 				pipeline: SecurityPipelineConfig::default(),
 			},
 			&action,

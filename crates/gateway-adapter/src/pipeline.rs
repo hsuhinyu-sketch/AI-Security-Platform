@@ -530,6 +530,151 @@ pub struct RequiredIdentity {
 	pub tenant: bool,
 }
 
+/// A registered Agent principal trusted to act through this gateway. The Agent identifier itself
+/// always comes from previously verified authentication; this registry binds it to a tenant and
+/// an OAuth client/workload identity so a caller cannot gain authority by merely naming an Agent.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RegisteredAgentConfig {
+	pub agent_id: String,
+	pub tenant_id: String,
+	/// OAuth `azp`/`client_id` values that may assert this Agent identity. Empty is invalid.
+	#[serde(default)]
+	pub client_ids: Vec<String>,
+	#[serde(default = "default_enabled")]
+	pub enabled: bool,
+	#[serde(default, skip_serializing_if = "Option::is_none")]
+	pub not_before: Option<chrono::DateTime<chrono::Utc>>,
+	#[serde(default, skip_serializing_if = "Option::is_none")]
+	pub expires_at: Option<chrono::DateTime<chrono::Utc>>,
+}
+
+const fn default_enabled() -> bool {
+	true
+}
+
+/// Configured source of trusted Agent identities. A production deployment can replace this
+/// static source with a remote directory by installing a runtime `SecurityControl` at the same
+/// identity-stage seam.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentIdentityRegistryConfig {
+	/// Deny any request that does not carry a registered Agent identity.
+	#[serde(default)]
+	pub required: bool,
+	#[serde(default)]
+	pub agents: Vec<RegisteredAgentConfig>,
+}
+
+#[derive(Debug, Clone)]
+pub struct AgentIdentityRegistry {
+	required: bool,
+	agents: Vec<RegisteredAgentConfig>,
+}
+
+impl AgentIdentityRegistry {
+	pub fn from_config(config: AgentIdentityRegistryConfig) -> Result<Self, String> {
+		let mut seen = std::collections::HashSet::new();
+		for agent in &config.agents {
+			if agent.agent_id.is_empty() || agent.tenant_id.is_empty() {
+				return Err("registered Agent requires non-empty agentId and tenantId".into());
+			}
+			if agent.client_ids.is_empty() || agent.client_ids.iter().any(String::is_empty) {
+				return Err(format!(
+					"registered Agent '{}' requires at least one non-empty clientId",
+					agent.agent_id
+				));
+			}
+			if agent.not_before.is_some_and(|not_before| {
+				agent
+					.expires_at
+					.is_some_and(|expires_at| expires_at <= not_before)
+			}) {
+				return Err(format!(
+					"registered Agent '{}' has an invalid validity interval",
+					agent.agent_id
+				));
+			}
+			if !seen.insert(agent.agent_id.as_str()) {
+				return Err(format!(
+					"registered Agent '{}' is duplicated",
+					agent.agent_id
+				));
+			}
+		}
+		Ok(Self {
+			required: config.required,
+			agents: config.agents,
+		})
+	}
+}
+
+impl SecurityControl for AgentIdentityRegistry {
+	fn id(&self) -> &str {
+		"agent-identity-registry"
+	}
+
+	fn check(
+		&self,
+		request: &ActionRequest,
+		_arguments: Option<&serde_json::Value>,
+	) -> Result<(), ControlDenial> {
+		let Some(agent_id) = request.subject.agent_id.as_deref() else {
+			return if self.required {
+				Err(ControlDenial {
+					control_id: self.id().into(),
+					reason: "a registered Agent identity is required".into(),
+				})
+			} else {
+				Ok(())
+			};
+		};
+		let Some(agent) = self.agents.iter().find(|agent| agent.agent_id == agent_id) else {
+			return Err(ControlDenial {
+				control_id: self.id().into(),
+				reason: format!("Agent '{}' is not registered", agent_id),
+			});
+		};
+		if !agent.enabled {
+			return Err(ControlDenial {
+				control_id: self.id().into(),
+				reason: format!("Agent '{}' is disabled", agent_id),
+			});
+		}
+		if request.subject.tenant_id.as_deref() != Some(agent.tenant_id.as_str()) {
+			return Err(ControlDenial {
+				control_id: self.id().into(),
+				reason: format!("Agent '{}' tenant binding does not match", agent_id),
+			});
+		}
+		let Some(client_id) = request.authorization_context.client_id.as_deref() else {
+			return Err(ControlDenial {
+				control_id: self.id().into(),
+				reason: format!("Agent '{}' requires a verified clientId", agent_id),
+			});
+		};
+		if !agent.client_ids.iter().any(|allowed| allowed == client_id) {
+			return Err(ControlDenial {
+				control_id: self.id().into(),
+				reason: format!("Agent '{}' client binding does not match", agent_id),
+			});
+		}
+		let now = chrono::Utc::now();
+		if agent.not_before.is_some_and(|not_before| now < not_before)
+			|| agent.expires_at.is_some_and(|expires_at| now >= expires_at)
+		{
+			return Err(ControlDenial {
+				control_id: self.id().into(),
+				reason: format!(
+					"Agent '{}' identity is outside its validity period",
+					agent_id
+				),
+			});
+		}
+		Ok(())
+	}
+}
+
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RequiredToolArgumentsConfig {
@@ -1325,6 +1470,38 @@ mod tests {
 				.is_ok()
 		);
 		assert_eq!(audit.events()[0].decision, DecisionEffect::Allow);
+	}
+
+	#[test]
+	fn registered_agent_identity_binds_verified_agent_tenant_and_client() {
+		let registry = AgentIdentityRegistry::from_config(AgentIdentityRegistryConfig {
+			required: true,
+			agents: vec![RegisteredAgentConfig {
+				agent_id: "maintenance-agent".into(),
+				tenant_id: "tenant-a".into(),
+				client_ids: vec!["maintenance-workload".into()],
+				enabled: true,
+				not_before: None,
+				expires_at: None,
+			}],
+		})
+		.unwrap();
+		let pipeline = SecurityPipeline::new(
+			PolicyAuthorizer::new(vec![allow_policy()]),
+			InMemoryAuditSink::default(),
+		)
+		.add_identity_control(registry);
+		let mut trusted = request();
+		trusted.authorization_context.client_id = Some("maintenance-workload".into());
+		assert!(pipeline.authorize(&trusted, None).is_ok());
+
+		let mut wrong_client = trusted;
+		wrong_client.authorization_context.client_id = Some("untrusted-client".into());
+		assert!(matches!(
+			pipeline.authorize(&wrong_client, None),
+			Err(GatewayError::DeniedByControl { ref denial, .. })
+				if denial.control_id == "agent-identity-registry"
+		));
 	}
 
 	#[test]
