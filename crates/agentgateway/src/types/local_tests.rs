@@ -489,6 +489,129 @@ aiSystems:
 }
 
 #[tokio::test]
+async fn ai_system_inference_compiles_parameters_quotas_and_routing() {
+	let normalized = normalize_test_yaml(
+		r#"
+aiSystems:
+- id: customer-assistant
+  inference:
+    parameters:
+      defaults:
+        temperature: 0.2
+        max_tokens: 1024
+      overrides:
+        max_tokens: 512
+    quota:
+      requests:
+        maxTokens: 20
+        tokensPerFill: 10
+        fillInterval: 1s
+      tokens:
+        maxTokens: 2000
+        tokensPerFill: 1000
+        fillInterval: 1m
+    routing:
+      endpointPicker:
+        host: 127.0.0.1:8300
+      destinationMode: passthrough
+  llm:
+    port: 4100
+    policies:
+      localRateLimit:
+      - maxTokens: 5
+        tokensPerFill: 5
+        fillInterval: 1s
+    models:
+    - name: chat
+      provider: openAI
+      defaults:
+        temperature: 0.7
+"#,
+	)
+	.await
+	.expect("system-level inference configuration should normalize");
+
+	let rate_limit_types = normalized
+		.policies
+		.iter()
+		.filter_map(|policy| policy.policy.as_traffic_route_phase())
+		.filter_map(|policy| match policy {
+			TrafficPolicy::LocalRateLimit(limits) => Some(limits),
+			_ => None,
+		})
+		.flat_map(|limits| limits.iter())
+		.flat_map(|entry| entry.pol.iter())
+		.map(|rate_limit| {
+			matches!(
+				&rate_limit.spec.limit_type,
+				crate::http::localratelimit::RateLimitType::Requests
+			)
+		})
+		.collect::<Vec<_>>();
+	assert_eq!(
+		rate_limit_types.len(),
+		3,
+		"legacy and system quotas should compose"
+	);
+	assert!(rate_limit_types.iter().any(|is_request| *is_request));
+	assert_eq!(
+		rate_limit_types
+			.iter()
+			.filter(|is_request| !**is_request)
+			.count(),
+		1
+	);
+
+	let ai_policy = normalized
+		.backends
+		.iter()
+		.flat_map(|backend| &backend.inline_policies)
+		.find_map(|policy| match policy {
+			BackendTrafficPolicy::AI(policy) => Some(policy),
+			_ => None,
+		})
+		.expect("LLM backend should have an AI policy");
+	assert_eq!(ai_policy.defaults.as_ref().unwrap()["temperature"], 0.7);
+	assert_eq!(ai_policy.defaults.as_ref().unwrap()["max_tokens"], 1024);
+	assert_eq!(ai_policy.overrides.as_ref().unwrap()["max_tokens"], 512);
+	assert!(normalized.backends.iter().any(|backend| {
+		backend
+			.inline_policies
+			.iter()
+			.any(|policy| matches!(policy, BackendTrafficPolicy::InferenceRouting(_)))
+	}));
+}
+
+#[tokio::test]
+async fn ai_system_inference_requires_an_llm_gateway() {
+	let error = normalize_test_yaml(
+		r#"
+aiSystems:
+- name: tools-only
+  inference:
+    quota:
+      requests:
+        maxTokens: 10
+        tokensPerFill: 10
+        fillInterval: 1s
+  mcp:
+    port: 4102
+    targets:
+    - name: tools
+      mcp:
+        host: 127.0.0.1:8200
+"#,
+	)
+	.await
+	.expect_err("inference controls need an LLM gateway");
+	assert!(
+		error
+			.to_string()
+			.contains("aiSystems['tools-only'].inference requires the LLM gateway")
+	);
+}
+
+#[tokio::test]
 async fn test_llm_provider_reference_config() {
 	test_config_parsing("llm_provider_reference").await;
 }

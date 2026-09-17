@@ -85,14 +85,31 @@ inference routing, LLM plus A2A, or all three LLM/A2A/MCP gateways without chang
 
 ```yaml
 aiSystems:
-- name: support-agent
+- id: support-agent # `name` remains supported for compatibility
+  # System-wide inference controls compile into the existing LLM execution policies.
+  # They are shared by every model below, while model-level settings can refine them.
+  inference:
+    parameters:
+      defaults:
+        temperature: 0.2
+        max_tokens: 1024
+      overrides:
+        max_tokens: 512
+    quota:
+      requests:
+        maxTokens: 120
+        tokensPerFill: 120
+        fillInterval: 1m
+      tokens:
+        maxTokens: 100000
+        tokensPerFill: 100000
+        fillInterval: 1m
+    routing:
+      endpointPicker:
+        host: 127.0.0.1:9300
+      destinationMode: passthrough
   llm:
     port: 4100
-    policies:
-      inferenceRouting:
-        endpointPicker:
-          host: 127.0.0.1:9300
-        destinationMode: passthrough
     models:
     - name: support-chat
       provider: openAI
@@ -108,9 +125,13 @@ aiSystems:
         host: 127.0.0.1:8200
 ```
 
-The A2A gateway automatically adds the A2A protocol adapter to its backend route. LLM
-`inferenceRouting` is attached to each generated model backend, allowing an endpoint picker to
-select an edge or cloud inference destination. Ports must be unique across all listeners.
+The A2A gateway automatically adds the A2A protocol adapter to its backend route. `inference`
+is a configuration-compiler input: `parameters` becomes the existing per-model LLM request
+policy, `quota` becomes request and token local-rate-limit policies, and `routing` is attached to
+each generated model backend so an endpoint picker can select an edge or cloud destination. The
+legacy `llm.policies.localRateLimit` and `llm.policies.inferenceRouting` locations remain valid;
+local rate limits compose, while routing must be declared in only one location. Ports must be
+unique across all listeners.
 
 ### Compile-time gateway profiles
 

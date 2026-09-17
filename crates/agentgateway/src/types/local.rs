@@ -480,17 +480,89 @@ pub struct LocalSimpleMcpConfig {
 /// request/response adapter for that route.
 #[apply(schema_de!)]
 pub struct LocalAiSystemConfig {
+	/// name is the stable identifier for this AI system. `id` is accepted as an alias so
+	/// system-centric configuration can use the same terminology as deployment metadata.
+	#[serde(alias = "id")]
 	pub name: Strng,
 	/// Common security controls applied to every enabled gateway in this AI system.
 	#[serde(default, skip_serializing_if = "Option::is_none")]
 	#[cfg_attr(feature = "schema", schemars(with = "Option<serde_json::Value>"))]
 	security: Option<security_integration_agentgateway::SecurityConfig>,
+	/// inference contains system-wide LLM controls. It is compiled into the selected LLM
+	/// gateway's existing parameter, rate-limit, and routing policies.
+	#[serde(default, skip_serializing_if = "Option::is_none")]
+	inference: Option<LocalInferenceConfig>,
 	#[serde(default, skip_serializing_if = "Option::is_none")]
 	llm: Option<LocalLLMConfig>,
 	#[serde(default, skip_serializing_if = "Option::is_none")]
 	a2a: Option<LocalA2aGatewayConfig>,
 	#[serde(default, skip_serializing_if = "Option::is_none")]
 	mcp: Option<LocalSimpleMcpConfig>,
+}
+
+/// System-level inference controls. This is intentionally an input model, not a second runtime
+/// policy engine: during configuration normalization it is compiled into the LLM gateway's
+/// established parameter, local-rate-limit, and endpoint-picker policies.
+#[apply(schema_de!)]
+#[derive(Default)]
+pub struct LocalInferenceConfig {
+	/// parameters are applied to every model in this AI system. Model-level settings remain more
+	/// specific and take precedence over `defaults`; `overrides` always replaces client input.
+	#[serde(default, skip_serializing_if = "Option::is_none")]
+	parameters: Option<LocalInferenceParameters>,
+	/// quota declares local request and LLM-token buckets without exposing the lower-level
+	/// `localRateLimit` location or requiring callers to repeat the bucket type.
+	#[serde(default, skip_serializing_if = "Option::is_none")]
+	quota: Option<LocalInferenceQuota>,
+	/// routing is the system-level endpoint-picker policy for every model backend.
+	#[serde(default, skip_serializing_if = "Option::is_none")]
+	routing: Option<crate::http::ext_proc::InferenceRouting>,
+}
+
+#[apply(schema_de!)]
+pub struct LocalInferenceParameters {
+	/// defaults are inserted only when the client did not set the request parameter.
+	#[serde(default, skip_serializing_if = "Option::is_none")]
+	defaults: Option<HashMap<String, serde_json::Value>>,
+	/// overrides replace client-provided values and are appropriate for enforced ceilings or
+	/// deployment-specific model settings.
+	#[serde(default, skip_serializing_if = "Option::is_none")]
+	overrides: Option<HashMap<String, serde_json::Value>>,
+}
+
+#[apply(schema_de!)]
+pub struct LocalInferenceQuota {
+	/// requests configures a local request-count token bucket for every LLM route.
+	#[serde(default, skip_serializing_if = "Option::is_none")]
+	requests: Option<crate::http::localratelimit::RateLimitSpec>,
+	/// tokens configures a local LLM-token token bucket for every LLM route. Input tokens are
+	/// charged before forwarding and response tokens are reconciled after the response.
+	#[serde(default, skip_serializing_if = "Option::is_none")]
+	tokens: Option<crate::http::localratelimit::RateLimitSpec>,
+}
+
+impl LocalInferenceQuota {
+	fn into_rate_limits(self) -> anyhow::Result<Vec<crate::http::localratelimit::RateLimit>> {
+		use crate::http::localratelimit::{RateLimit, RateLimitType};
+
+		let mut limits = Vec::with_capacity(2);
+		if let Some(mut requests) = self.requests {
+			requests.limit_type = RateLimitType::Requests;
+			limits.push(
+				RateLimit::try_from(requests).context("aiSystems[].inference.quota.requests is invalid")?,
+			);
+		}
+		if let Some(mut tokens) = self.tokens {
+			tokens.limit_type = RateLimitType::Tokens;
+			limits.push(
+				RateLimit::try_from(tokens).context("aiSystems[].inference.quota.tokens is invalid")?,
+			);
+		}
+		if limits.is_empty() {
+			bail!("aiSystems[].inference.quota must configure requests and/or tokens");
+		}
+		Ok(limits)
+	}
 }
 
 #[apply(schema_de!)]
@@ -1046,6 +1118,53 @@ fn merge_optional_maps<T>(
 			Some(base)
 		},
 	}
+}
+
+/// Compile the system-centric inference input model into the established LLM runtime policy
+/// model. Keeping this translation at normalization time makes the new layout non-breaking:
+/// `llm.policies`, model-level parameter policy, and `aiSystems[].inference` all use the same
+/// execution path.
+fn compile_ai_system_inference(
+	system_name: &str,
+	mut llm: LocalLLMConfig,
+	inference: Option<LocalInferenceConfig>,
+) -> anyhow::Result<LocalLLMConfig> {
+	let Some(LocalInferenceConfig {
+		parameters,
+		quota,
+		routing,
+	}) = inference
+	else {
+		return Ok(llm);
+	};
+
+	if let Some(LocalInferenceParameters {
+		defaults,
+		overrides,
+	}) = parameters
+	{
+		for model in &mut llm.models {
+			model.defaults = merge_optional_maps(defaults.clone(), model.defaults.take());
+			model.overrides = merge_optional_maps(overrides.clone(), model.overrides.take());
+		}
+	}
+
+	if quota.is_some() || routing.is_some() {
+		let policies = llm.policies.get_or_insert_with(Default::default);
+		if let Some(quota) = quota {
+			policies.local_rate_limit.extend(quota.into_rate_limits()?);
+		}
+		if let Some(routing) = routing {
+			if policies.inference_routing.is_some() {
+				bail!(
+					"aiSystems['{system_name}'] configures inference.routing and llm.policies.inferenceRouting; configure routing in only one location"
+				);
+			}
+			policies.inference_routing = Some(routing);
+		}
+	}
+
+	Ok(llm)
 }
 
 fn custom_provider_format(
@@ -2594,6 +2713,7 @@ async fn convert(
 		let LocalAiSystemConfig {
 			name,
 			security,
+			inference,
 			llm,
 			a2a,
 			mcp,
@@ -2607,8 +2727,12 @@ async fn convert(
 		if llm.is_none() && a2a.is_none() && mcp.is_none() {
 			bail!("aiSystems['{name}'] must enable at least one gateway");
 		}
+		if llm.is_none() && inference.is_some() {
+			bail!("aiSystems['{name}'].inference requires the LLM gateway");
+		}
 		let security = security.map(Arc::new);
 		if let Some(llm_config) = llm {
+			let llm_config = compile_ai_system_inference(&name, llm_config, inference)?;
 			let gateway_id = format!("ai-system:{name}:llm");
 			let (bind, mut routes, policies, mut backends) =
 				convert_llm_config(resources, config, gateway.clone(), llm_config, &gateway_id).await?;
