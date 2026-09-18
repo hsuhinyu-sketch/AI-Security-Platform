@@ -41,6 +41,7 @@ pub mod parse;
 pub mod proxy;
 pub mod resource_manager;
 pub(crate) mod rag;
+pub(crate) mod security_events;
 pub mod runtime;
 pub(crate) mod security;
 pub mod serdes;

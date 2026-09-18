@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AI Security Platform · Security Console</title>
+  <style>
+    :root { color-scheme: dark; font-family: Inter, ui-sans-serif, system-ui, sans-serif; background: #07111f; color: #e6edf7; }
+    * { box-sizing: border-box; } body { max-width: 1180px; margin: 0 auto; padding: 28px 20px 52px; }
+    header { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; margin-bottom: 26px; }
+    h1 { font-size: 24px; margin: 0 0 6px; } h2 { font-size: 16px; margin: 0; } p, .muted { color: #9eb0c7; margin: 0; font-size: 14px; }
+    .live { color: #79e3a8; font-size: 13px; } .live.off { color: #f0b46b; }
+    .cards { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 18px; }
+    .card, .panel { background: #0d1a2c; border: 1px solid #203553; border-radius: 10px; }
+    .card { padding: 16px; } .card .value { display: block; font-size: 25px; font-weight: 700; margin-top: 7px; }
+    .allow { color: #79e3a8; } .deny { color: #ff8484; } .other { color: #83b7ff; }
+    .panel { padding: 16px; } .toolbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 15px 0; }
+    input, select, button { background: #091525; color: #e6edf7; border: 1px solid #365276; border-radius: 7px; padding: 8px 10px; font: inherit; }
+    input { min-width: 250px; } button { cursor: pointer; background: #1e5ba8; border-color: #3377c9; } button:hover { background: #286bc0; }
+    table { border-collapse: collapse; width: 100%; font-size: 13px; } th { color: #9eb0c7; font-weight: 600; text-align: left; } th, td { padding: 11px 8px; border-bottom: 1px solid #1b304c; vertical-align: top; }
+    .decision { font-weight: 700; text-transform: uppercase; } code { color: #b8d4fb; word-break: break-word; }
+    details { max-width: 360px; } summary { cursor: pointer; color: #9eb0c7; } pre { white-space: pre-wrap; margin: 8px 0 0; color: #b9c9dd; }
+    #empty { padding: 34px 0; text-align: center; } @media (max-width: 760px) { .cards { grid-template-columns: repeat(2, 1fr); } header { align-items: flex-start; flex-direction: column; } .events { overflow-x: auto; } }
+  </style>
+</head>
+<body>
+  <header>
+    <div><h1>Security Console</h1><p>AI Gateway 的脱敏安全决策时间线</p></div>
+    <span id="live" class="live off">● 正在连接事件流</span>
+  </header>
+  <section class="cards" aria-label="Security overview">
+    <div class="card"><span class="muted">已记录事件</span><span class="value" id="total">0</span></div>
+    <div class="card"><span class="muted">当前保留</span><span class="value" id="retained">0</span></div>
+    <div class="card"><span class="muted">允许</span><span class="value allow" id="allowed">0</span></div>
+    <div class="card"><span class="muted">拒绝</span><span class="value deny" id="denied">0</span></div>
+  </section>
+  <section class="panel">
+    <h2>安全事件</h2>
+    <div class="toolbar">
+      <input id="requestId" placeholder="按 Request ID 追踪一条请求链路">
+      <select id="limit"><option value="50">最近 50 条</option><option value="100" selected>最近 100 条</option><option value="250">最近 250 条</option><option value="500">最近 500 条</option></select>
+      <button id="refresh">刷新</button>
+      <span class="muted" id="meta"></span>
+    </div>
+    <div class="events"><table><thead><tr><th>时间</th><th>请求 / 主体</th><th>阶段</th><th>资源</th><th>决策</th><th>规则与脱敏详情</th></tr></thead><tbody id="events"></tbody></table></div>
+    <p id="empty">尚无安全事件。发起受保护的 LLM、MCP 或 RAG 请求后，事件会实时显示在这里。</p>
+  </section>
+  <script>
+    const $ = id => document.getElementById(id);
+    const escape = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
+    const timestamp = value => value ? new Date(value).toLocaleString() : '—';
+    const decision = event => event.decision ? `<span class="decision ${event.decision === 'deny' ? 'deny' : 'allow'}">${escape(event.decision)}</span>` : '<span class="other">观察</span>';
+    const render = events => {
+      $('events').innerHTML = events.map(event => `<tr>
+        <td>${timestamp(event.timestamp)}</td>
+        <td><code>${escape(event.requestId)}</code><br><span class="muted">${escape(event.tenantId || event.agentId || event.userId || '匿名主体')}</span></td>
+        <td>${escape(event.kind)}<br><span class="muted">${escape(event.action)}</span></td>
+        <td>${escape(event.resourceType)}<br><code>${escape(event.resourceId)}</code></td>
+        <td>${decision(event)}</td>
+        <td><code>${escape(event.policyId || '—')}</code><details><summary>详情</summary><pre>${escape(JSON.stringify(event.details, null, 2))}</pre></details></td>
+      </tr>`).join('');
+      $('empty').hidden = events.length !== 0;
+      $('meta').textContent = `${events.length} 条事件（内容、JWT 与 Capability Token 不会出现在此处）`;
+    };
+    async function overview() {
+      const data = await fetch('/api/security/overview').then(r => r.json());
+      $('total').textContent = data.totalRecorded; $('retained').textContent = `${data.retainedEvents} / ${data.capacity}`;
+      $('allowed').textContent = data.allowed; $('denied').textContent = data.denied;
+    }
+    async function load() {
+      const params = new URLSearchParams({ limit: $('limit').value });
+      if ($('requestId').value.trim()) params.set('requestId', $('requestId').value.trim());
+      const data = await fetch(`/api/security/events?${params}`).then(r => r.json());
+      render(data); await overview();
+    }
+    $('refresh').onclick = () => load().catch(console.error);
+    $('requestId').addEventListener('keydown', event => { if (event.key === 'Enter') load().catch(console.error); });
+    const stream = new EventSource('/api/security/stream');
+    stream.onopen = () => { $('live').textContent = '● 实时事件流已连接'; $('live').className = 'live'; };
+    stream.onerror = () => { $('live').textContent = '● 事件流重连中'; $('live').className = 'live off'; };
+    stream.addEventListener('security', () => load().catch(console.error));
+    load().catch(error => { $('meta').textContent = `无法读取安全事件：${error.message}`; });
+  </script>
+</body>
+</html>

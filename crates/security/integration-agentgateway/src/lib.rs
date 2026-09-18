@@ -75,17 +75,25 @@ pub struct SecurityConfig {
 #[derive(Clone)]
 pub struct SecurityConfigAuthorizer {
 	config: Arc<SecurityConfig>,
+	audit: Arc<dyn AuditSink>,
 }
 
 impl SecurityConfigAuthorizer {
 	pub fn new(config: Arc<SecurityConfig>) -> Self {
-		Self { config }
+		Self::with_audit(config, TracingAuditSink)
+	}
+
+	pub fn with_audit(config: Arc<SecurityConfig>, audit: impl AuditSink + 'static) -> Self {
+		Self {
+			config,
+			audit: Arc::new(audit),
+		}
 	}
 }
 
 impl Authorizer for SecurityConfigAuthorizer {
 	fn decide(&self, request: &ActionRequest) -> Decision {
-		match evaluate_with_arguments(&self.config, request, None) {
+		match evaluate_with_audit(&self.config, request, None, self.audit.as_ref()) {
 			Ok(()) => Decision {
 				request_id: request.request_id.clone(),
 				effect: DecisionEffect::Allow,
@@ -143,22 +151,34 @@ pub fn evaluate_with_arguments(
 	action: &ActionRequest,
 	arguments: Option<&serde_json::Value>,
 ) -> Result<(), GatewayError> {
+	evaluate_with_audit(config, action, arguments, &TracingAuditSink)
+}
+
+/// Evaluates a protocol action and writes its redacted decision to the caller-selected audit
+/// destination. This lets a runtime fan the same authoritative decision out to tracing and an
+/// administrative event feed without duplicating policy evaluation.
+pub fn evaluate_with_audit(
+	config: &SecurityConfig,
+	action: &ActionRequest,
+	arguments: Option<&serde_json::Value>,
+	audit: &dyn AuditSink,
+) -> Result<(), GatewayError> {
 	let decision = match runtime_security_controls(config) {
-		Err(reason) => Err(configuration_denial(action, reason)),
+		Err(reason) => Err(configuration_denial(action, reason, audit)),
 		Ok(controls) => match &config.remote_pdp {
 			Some(remote_pdp) => remote_pdp
 				.transport()
-				.map_err(|error| configuration_denial(action, error.reason))
+				.map_err(|error| configuration_denial(action, error.reason, audit))
 				.and_then(|transport| {
 					config
 						.pipeline
-						.build_with_remote_pdp_and_runtime_controls(TracingAuditSink, transport, controls)
-						.map_err(|error| configuration_denial(action, error.reason))
+						.build_with_remote_pdp_and_runtime_controls(audit, transport, controls)
+						.map_err(|error| configuration_denial(action, error.reason, audit))
 				})
 				.and_then(|pipeline| pipeline.authorize(action, arguments)),
 			None => config
 				.pipeline
-				.build_with_runtime_controls(TracingAuditSink, controls)
+				.build_with_runtime_controls(audit, controls)
 				.authorize(action, arguments),
 		},
 	};
@@ -187,7 +207,18 @@ pub fn authorize_tool_with_capability(
 	action: &ActionRequest,
 	arguments: &serde_json::Value,
 ) -> Result<Option<CapabilityGrant>, GatewayError> {
-	evaluate_with_arguments(config, action, Some(arguments))?;
+	authorize_tool_with_capability_with_audit(config, action, arguments, &TracingAuditSink)
+}
+
+/// Tool authorization variant that writes its authoritative policy decision to a caller-selected
+/// audit sink. The capability itself is intentionally never included in audit data.
+pub fn authorize_tool_with_capability_with_audit(
+	config: &SecurityConfig,
+	action: &ActionRequest,
+	arguments: &serde_json::Value,
+	audit: &dyn AuditSink,
+) -> Result<Option<CapabilityGrant>, GatewayError> {
+	evaluate_with_audit(config, action, Some(arguments), audit)?;
 	if config.mode != SecurityMode::Enforce || !config.pipeline.requires_tool_approval(action) {
 		return Ok(None);
 	}
@@ -196,11 +227,11 @@ pub fn authorize_tool_with_capability(
 	};
 	let issuer = broker
 		.issuer()
-		.map_err(|error| capability_denial(action, error.reason))?;
+		.map_err(|error| capability_denial(action, error.reason, audit))?;
 	issuer
 		.issue(action, arguments)
 		.map(Some)
-		.map_err(|error| capability_denial(action, error.reason))
+		.map_err(|error| capability_denial(action, error.reason, audit))
 }
 
 fn runtime_security_controls(config: &SecurityConfig) -> Result<RuntimeSecurityControls, String> {
@@ -232,7 +263,11 @@ fn runtime_security_controls(config: &SecurityConfig) -> Result<RuntimeSecurityC
 	Ok(controls)
 }
 
-fn configuration_denial(action: &ActionRequest, reason: String) -> GatewayError {
+fn configuration_denial(
+	action: &ActionRequest,
+	reason: String,
+	audit: &dyn AuditSink,
+) -> GatewayError {
 	tracing::error!(
 		target: "security_audit",
 		request_id = %action.request_id,
@@ -246,7 +281,7 @@ fn configuration_denial(action: &ActionRequest, reason: String) -> GatewayError 
 		policy_version: None,
 		expires_at: None,
 	};
-	TracingAuditSink.record(event_from_decision(
+	audit.record(event_from_decision(
 		format!("{}:security-configuration", action.request_id),
 		action,
 		&decision,
@@ -254,7 +289,11 @@ fn configuration_denial(action: &ActionRequest, reason: String) -> GatewayError 
 	GatewayError::Denied(decision)
 }
 
-fn capability_denial(action: &ActionRequest, reason: String) -> GatewayError {
+fn capability_denial(
+	action: &ActionRequest,
+	reason: String,
+	audit: &dyn AuditSink,
+) -> GatewayError {
 	tracing::error!(
 		target: "security_audit",
 		request_id = %action.request_id,
@@ -268,7 +307,7 @@ fn capability_denial(action: &ActionRequest, reason: String) -> GatewayError {
 		policy_version: None,
 		expires_at: None,
 	};
-	TracingAuditSink.record(event_from_decision(
+	audit.record(event_from_decision(
 		format!("{}:capability-broker", action.request_id),
 		action,
 		&decision,

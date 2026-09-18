@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use agent_core::version::BuildInfo;
-use axum::extract::State;
+use axum::extract::{Path, Query, State};
 use axum::http::{StatusCode, Uri};
 use axum::response::sse::Event;
 use axum::response::{IntoResponse, Redirect, Response, Sse};
@@ -65,6 +65,13 @@ pub fn router(
 		.route("/api/logs/analytics/summary", post(analytics_summary))
 		.route("/api/costs/models", get(cost_models))
 		.route("/api/costs/refresh-base", post(refresh_base_costs))
+		.route("/api/security/overview", get(security_overview))
+		.route("/api/security/events", get(security_events))
+		.route(
+			"/api/security/events/{request_id}",
+			get(security_events_for_request),
+		)
+		.route("/api/security/stream", get(security_event_stream))
 		.nest_service("/ui", ui_service)
 		.route("/", get(|| async { Redirect::permanent("/ui") }))
 		.with_state(App {
@@ -103,7 +110,7 @@ enum GatewayRuntimeMode {
 	Standalone,
 }
 
-async fn get_runtime(State(app): State<App>) -> Json<RuntimeInfo> {
+async fn get_runtime(State(_app): State<App>) -> Json<RuntimeInfo> {
 	let build = BuildInfo::new();
 	Json(RuntimeInfo {
 		build: RuntimeBuildInfo {
@@ -259,6 +266,62 @@ async fn cost_models(
 	State(app): State<App>,
 ) -> Result<Json<crate::llm::cost::ModelCatalogModels>, ErrorResponse> {
 	Ok(Json(app.model_catalog.list_models()))
+}
+
+/// Query contract for the redacted security timeline. `requestId` narrows the response to one
+/// end-to-end decision flow; no request bodies or credentials are available from this API.
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SecurityEventsQuery {
+	request_id: Option<String>,
+	limit: Option<usize>,
+}
+
+async fn security_overview() -> Json<crate::security_events::SecurityOverview> {
+	Json(crate::security_events::store().overview())
+}
+
+async fn security_events(
+	Query(query): Query<SecurityEventsQuery>,
+) -> Json<Vec<crate::security_events::SecurityTimelineEvent>> {
+	let limit = query.limit.unwrap_or(100).clamp(1, 500);
+	Json(crate::security_events::store().events(query.request_id.as_deref(), limit))
+}
+
+async fn security_events_for_request(
+	Path(request_id): Path<String>,
+	Query(query): Query<SecurityEventsQuery>,
+) -> Json<Vec<crate::security_events::SecurityTimelineEvent>> {
+	let limit = query.limit.unwrap_or(100).clamp(1, 500);
+	Json(crate::security_events::store().events(Some(&request_id), limit))
+}
+
+/// Streams new sanitized security events. A consumer reconnects and reads the REST timeline if
+/// it needs to recover events emitted while disconnected.
+async fn security_event_stream() -> Sse<ReceiverStream<Result<Event, std::convert::Infallible>>> {
+	let mut subscription = crate::security_events::store().subscribe();
+	let (tx, rx) = mpsc::channel(64);
+	tokio::spawn(async move {
+		loop {
+			match subscription.recv().await {
+				Ok(event) => {
+					let Ok(data) = serde_json::to_string(&event) else {
+						continue;
+					};
+					if tx
+						.send(Ok(Event::default().event("security").data(data)))
+						.await
+						.is_err()
+					{
+						return;
+					}
+				},
+				Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+				Err(tokio::sync::broadcast::error::RecvError::Closed) => return,
+			}
+		}
+	});
+	Sse::new(ReceiverStream::new(rx))
 }
 
 #[derive(serde::Deserialize)]

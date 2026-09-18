@@ -25,7 +25,7 @@ pub fn enforce_tool_call(
 	);
 	let arguments = serde_json::Value::Object(call.params.arguments.clone().unwrap_or_default());
 	config
-		.build(security_integration_agentgateway::TracingAuditSink)
+		.build(crate::security_events::UiSecurityAuditSink)
 		.authorize(&action, Some(&arguments))
 		.map(|_| ())
 		.map_err(|error| UpstreamError::InvalidRequest(error_message(error)))
@@ -58,10 +58,14 @@ pub fn audit_request(
 	};
 	match arguments {
 		Some(arguments) => {
-			let capability = security_integration_agentgateway::authorize_tool_with_capability(
-				config, &action, &arguments,
-			)
-			.map_err(|error| UpstreamError::InvalidRequest(error_message(error)))?;
+			let capability =
+				security_integration_agentgateway::authorize_tool_with_capability_with_audit(
+					config,
+					&action,
+					&arguments,
+					&crate::security_events::UiSecurityAuditSink,
+				)
+				.map_err(|error| UpstreamError::InvalidRequest(error_message(error)))?;
 			if let Some(capability) = capability {
 				let capability = ::http::HeaderValue::from_str(&capability.token).map_err(|_| {
 					UpstreamError::InvalidRequest("capability broker returned an invalid token".into())
@@ -83,8 +87,13 @@ pub fn audit_request(
 			}
 			Ok(())
 		},
-		None => security_integration_agentgateway::evaluate(config, &action)
-			.map_err(|error| UpstreamError::InvalidRequest(error_message(error))),
+		None => security_integration_agentgateway::evaluate_with_audit(
+			config,
+			&action,
+			None,
+			&crate::security_events::UiSecurityAuditSink,
+		)
+		.map_err(|error| UpstreamError::InvalidRequest(error_message(error))),
 	}
 }
 

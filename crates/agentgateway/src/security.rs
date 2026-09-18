@@ -20,7 +20,12 @@ pub(crate) fn evaluate(
 	config: &SecurityConfig,
 	action: &ActionRequest,
 ) -> Result<(), GatewayError> {
-	security_integration_agentgateway::evaluate(config, action)
+	security_integration_agentgateway::evaluate_with_audit(
+		config,
+		action,
+		None,
+		&crate::security_events::UiSecurityAuditSink,
+	)
 }
 
 fn string_claim(

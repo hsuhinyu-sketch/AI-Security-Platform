@@ -7,6 +7,7 @@
 use std::sync::Arc;
 
 use agent_core::drain;
+use audit_core::AuditSink;
 use axum::{
 	extract::{Request, State},
 	http::{StatusCode, header},
@@ -14,14 +15,28 @@ use axum::{
 	response::{IntoResponse, Response},
 };
 use gateway_adapter::{GatewayIdentity, SecurityPipeline};
-use security_integration_agentgateway::{SecurityConfigAuthorizer, TracingAuditSink};
+use security_contracts::{DecisionEffect, SecurityEvent};
+use security_integration_agentgateway::SecurityConfigAuthorizer;
 use security_rag::{
-	ContextAuditEvent, ContextAuditSink, ContextGuard, IngestionAuditEvent, IngestionAuditSink,
-	RetrievalAuditEvent, RetrievalAuditSink, SecureIngestor, SecureRetriever,
+	ContextAuditEvent, ContextAuditOutcome, ContextAuditSink, ContextGuard, IngestionAuditEvent,
+	IngestionAuditOutcome, IngestionAuditSink, RetrievalAuditEvent, RetrievalAuditOutcome,
+	RetrievalAuditSink, SecureIngestor, SecureRetriever,
 };
+use serde_json::json;
 use tracing::{info, warn};
 
+use crate::security_events::{SecurityEventKind, UiSecurityAuditSink};
 use crate::{Config, http::jwt::Claims, resource_manager::ResourceFetcher, serdes};
+
+/// The RAG adapter requires an outer `SecurityPipeline`, while `SecurityConfigAuthorizer` already
+/// executes and audits the configured policy pipeline. Suppressing the adapter's wrapper event
+/// prevents one authorization decision from appearing twice in the Security Console.
+#[derive(Clone, Copy)]
+struct DiscardAudit;
+
+impl AuditSink for DiscardAudit {
+	fn record(&self, _: SecurityEvent) {}
+}
 
 #[derive(Clone, Copy)]
 struct TracingIngestionAudit;
@@ -37,6 +52,37 @@ impl IngestionAuditSink for TracingIngestionAudit {
 			source_hash = ?event.source_hash,
 			outcome = ?event.outcome,
 			"RAG ingestion decision"
+		);
+		crate::security_events::store().record_rag_stage(
+			SecurityEventKind::RagIngestion,
+			event.request_id,
+			event.timestamp,
+			event.tenant_id,
+			"KnowledgeIngest:ingest",
+			"Document",
+			event.document_id,
+			Some(match event.outcome {
+				IngestionAuditOutcome::Denied => DecisionEffect::Deny,
+				IngestionAuditOutcome::Indexed | IngestionAuditOutcome::Quarantined => {
+					DecisionEffect::Allow
+				},
+			}),
+			std::collections::BTreeMap::from([
+				("outcome".into(), json!(format!("{:?}", event.outcome))),
+				("sourceHash".into(), json!(event.source_hash)),
+				("contentBytes".into(), json!(event.content_bytes)),
+				("labels".into(), json!(event.labels)),
+				(
+					"findingRuleIds".into(),
+					json!(
+						event
+							.findings
+							.into_iter()
+							.map(|finding| finding.rule_id)
+							.collect::<Vec<_>>()
+					),
+				),
+			]),
 		);
 	}
 }
@@ -56,6 +102,36 @@ impl RetrievalAuditSink for TracingRetrievalAudit {
 			rejected_chunks = event.rejected.len(),
 			"RAG retrieval decision"
 		);
+		crate::security_events::store().record_rag_stage(
+			SecurityEventKind::RagRetrieval,
+			event.request_id,
+			event.timestamp,
+			event.subject.tenant_id,
+			"KnowledgeRetrieve:retrieve",
+			"KnowledgeBase",
+			event.corpus_id,
+			Some(match event.outcome {
+				RetrievalAuditOutcome::Denied => DecisionEffect::Deny,
+				RetrievalAuditOutcome::Authorized => DecisionEffect::Allow,
+			}),
+			std::collections::BTreeMap::from([
+				("queryHash".into(), json!(event.query_hash)),
+				("acceptedChunkIds".into(), json!(event.accepted_chunk_ids)),
+				(
+					"rejectedChunks".into(),
+					json!(
+						event
+							.rejected
+							.into_iter()
+							.map(|rejection| json!({
+								"chunkId": rejection.chunk_id,
+								"reason": rejection.reason,
+							}))
+							.collect::<Vec<_>>()
+					),
+				),
+			]),
+		);
 	}
 }
 
@@ -74,6 +150,39 @@ impl ContextAuditSink for TracingContextAudit {
 			removed_chunks = event.removed_chunk_ids.len(),
 			redacted_chunks = event.redacted_chunk_ids.len(),
 			"RAG context assembly decision"
+		);
+		crate::security_events::store().record_rag_stage(
+			SecurityEventKind::RagContextAssembly,
+			event.request_id,
+			event.timestamp,
+			None,
+			"ContextAssemble:assemble",
+			"KnowledgeBase",
+			event.corpus_id,
+			Some(match event.outcome {
+				ContextAuditOutcome::Denied => DecisionEffect::Deny,
+				ContextAuditOutcome::Allowed | ContextAuditOutcome::Modified => DecisionEffect::Allow,
+			}),
+			std::collections::BTreeMap::from([
+				("queryHash".into(), json!(event.query_hash)),
+				("acceptedChunkIds".into(), json!(event.accepted_chunk_ids)),
+				("removedChunkIds".into(), json!(event.removed_chunk_ids)),
+				("redactedChunkIds".into(), json!(event.redacted_chunk_ids)),
+				(
+					"findings".into(),
+					json!(
+						event
+							.findings
+							.into_iter()
+							.map(|finding| json!({
+								"chunkId": finding.chunk_id,
+								"kind": format!("{:?}", finding.kind),
+								"ruleId": finding.rule_id,
+							}))
+							.collect::<Vec<_>>()
+					),
+				),
+			]),
 		);
 	}
 }
@@ -118,8 +227,8 @@ pub(crate) async fn start_configured_gateways(
 		let ingestor = SecureIngestor::new(
 			backend.clone(),
 			SecurityPipeline::new(
-				SecurityConfigAuthorizer::new(security.clone()),
-				TracingAuditSink,
+				SecurityConfigAuthorizer::with_audit(security.clone(), UiSecurityAuditSink),
+				DiscardAudit,
 			),
 			system.gateway.ingestion.clone(),
 			TracingIngestionAudit,
@@ -127,7 +236,10 @@ pub(crate) async fn start_configured_gateways(
 		.map_err(|error| anyhow::anyhow!("RAG ingestion guard for '{}': {error:?}", system.name))?;
 		let retriever = SecureRetriever::new(
 			backend,
-			SecurityPipeline::new(SecurityConfigAuthorizer::new(security), TracingAuditSink),
+			SecurityPipeline::new(
+				SecurityConfigAuthorizer::with_audit(security, UiSecurityAuditSink),
+				DiscardAudit,
+			),
 			system.gateway.retrieval.clone(),
 			TracingRetrievalAudit,
 		)
