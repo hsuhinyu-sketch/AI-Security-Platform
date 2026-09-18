@@ -43,6 +43,13 @@ to a separate quarantine backend rather than the vector index. `IndexedDocument:
 inherits its corpus, tenant, labels, and provenance hash into every `KnowledgeChunk`, while a
 trusted controller supplies only the Chunk ACL and expiry.
 
+`gateway-rag` now composes these stages as a transport-neutral `RagGatewayAdapter`. An HTTP,
+MCP, or application transport authenticates a request first, then supplies `GatewayIdentity` to
+the adapter; its request models deliberately contain no Tenant, ACL, or vector-filter fields. The
+adapter executes asynchronous ingestion and retrieval backends, then returns only
+`GuardedContext` after the separately authorized context-assembly stage. A Qdrant or pgvector
+adapter therefore implements only the backend traits and cannot bypass the common security chain.
+
 After retrieval, `ContextGuard` separately authorizes `ContextAssemble` and examines the approved
 Chunk text before it reaches the LLM. Its default Enforce mode removes Chunk content that matches
 configured indirect-instruction signals; Shadow mode preserves it while producing a finding for

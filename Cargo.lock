@@ -2835,6 +2835,19 @@ name = "gateway-composition"
 version = "0.0.0"
 
 [[package]]
+name = "gateway-rag"
+version = "0.0.0"
+dependencies = [
+ "async-trait",
+ "audit-core",
+ "gateway-adapter",
+ "security-contracts",
+ "security-policy",
+ "security-rag",
+ "tokio",
+]
+
+[[package]]
 name = "generic-array"
 version = "0.14.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6381,6 +6394,7 @@ dependencies = [
 name = "security-rag"
 version = "0.0.0"
 dependencies = [
+ "async-trait",
  "audit-core",
  "chrono",
  "gateway-adapter",
@@ -6390,6 +6404,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.11.0",
+ "tokio",
 ]
 
 [[package]]

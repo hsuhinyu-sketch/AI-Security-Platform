@@ -7,7 +7,7 @@
 //! broader candidate set than requested.
 
 use std::collections::HashSet;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use audit_core::AuditSink;
 use chrono::{DateTime, Utc};
@@ -134,12 +134,24 @@ pub struct KnowledgeChunk {
 }
 
 /// Retrieval adapter contract. Implementations receive the trusted filter before similarity search.
+#[async_trait::async_trait]
 pub trait RetrievalBackend: Send + Sync {
-	fn retrieve(
+	async fn retrieve(
 		&self,
 		query: &RetrievalQuery,
 		filter: &RetrievalFilter,
 	) -> Result<Vec<KnowledgeChunk>, String>;
+}
+
+#[async_trait::async_trait]
+impl<T: RetrievalBackend + ?Sized> RetrievalBackend for Arc<T> {
+	async fn retrieve(
+		&self,
+		query: &RetrievalQuery,
+		filter: &RetrievalFilter,
+	) -> Result<Vec<KnowledgeChunk>, String> {
+		(**self).retrieve(query, filter).await
+	}
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -261,7 +273,7 @@ where
 		})
 	}
 
-	pub fn retrieve(
+	pub async fn retrieve(
 		&self,
 		request_id: impl Into<String>,
 		identity: GatewayIdentity,
@@ -314,6 +326,7 @@ where
 		let candidates = self
 			.backend
 			.retrieve(&query, &filter)
+			.await
 			.map_err(RetrievalError::Backend)?;
 		let context = self.filter_candidates(&action, &query, candidates);
 		self.audit.record(RetrievalAuditEvent {
@@ -483,8 +496,9 @@ mod tests {
 		}
 	}
 
+	#[async_trait::async_trait]
 	impl RetrievalBackend for FixedBackend {
-		fn retrieve(
+		async fn retrieve(
 			&self,
 			_query: &RetrievalQuery,
 			filter: &RetrievalFilter,
@@ -539,8 +553,8 @@ mod tests {
 		}
 	}
 
-	#[test]
-	fn retrieval_pushes_filter_and_rechecks_every_chunk() {
+	#[tokio::test]
+	async fn retrieval_pushes_filter_and_rechecks_every_chunk() {
 		let mut cross_tenant = chunk("cross-tenant");
 		cross_tenant.tenant_id = "tenant-b".into();
 		let mut blocked = chunk("blocked");
@@ -580,6 +594,7 @@ mod tests {
 				"support-corpus",
 				RetrievalQuery::new("how do I reset my password?", 5),
 			)
+			.await
 			.unwrap();
 
 		assert_eq!(
@@ -603,8 +618,8 @@ mod tests {
 		assert!(!audit[0].query_hash.contains("password"));
 	}
 
-	#[test]
-	fn denied_corpus_search_never_calls_the_retrieval_backend() {
+	#[tokio::test]
+	async fn denied_corpus_search_never_calls_the_retrieval_backend() {
 		let backend = FixedBackend::new(vec![chunk("should-not-be-fetched")]);
 		let gateway_audit = InMemoryAuditSink::default();
 		let retrieval_audit = InMemoryRetrievalAuditSink::default();
@@ -624,6 +639,7 @@ mod tests {
 				"support-corpus",
 				RetrievalQuery::new("private query", 1),
 			)
+			.await
 			.unwrap_err();
 		assert!(matches!(error, RetrievalError::GatewayDenied(_)));
 		assert_eq!(retriever.backend.calls.load(Ordering::Relaxed), 0);
@@ -633,8 +649,8 @@ mod tests {
 		);
 	}
 
-	#[test]
-	fn post_retrieval_check_enforces_requested_limit_when_backend_overreturns() {
+	#[tokio::test]
+	async fn post_retrieval_check_enforces_requested_limit_when_backend_overreturns() {
 		let backend = FixedBackend::new(vec![chunk("first"), chunk("second")]);
 		let gateway_audit = InMemoryAuditSink::default();
 		let retrieval_audit = InMemoryRetrievalAuditSink::default();
@@ -657,6 +673,7 @@ mod tests {
 				"support-corpus",
 				RetrievalQuery::new("only one result", 1),
 			)
+			.await
 			.unwrap();
 		assert_eq!(result.chunks.len(), 1);
 		assert_eq!(result.chunks[0].id, "first");
@@ -667,8 +684,8 @@ mod tests {
 		);
 	}
 
-	#[test]
-	fn requested_chunk_budget_is_checked_before_authorization_or_retrieval() {
+	#[tokio::test]
+	async fn requested_chunk_budget_is_checked_before_authorization_or_retrieval() {
 		let backend = FixedBackend::new(vec![chunk("should-not-be-fetched")]);
 		let gateway_audit = InMemoryAuditSink::default();
 		let retrieval_audit = InMemoryRetrievalAuditSink::default();
@@ -694,6 +711,7 @@ mod tests {
 				"support-corpus",
 				RetrievalQuery::new("private query", 2),
 			)
+			.await
 			.unwrap_err();
 		assert_eq!(
 			error,

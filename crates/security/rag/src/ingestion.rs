@@ -4,7 +4,7 @@
 //! only receives [`IndexedDocument`] values that passed all checks; risky documents use the
 //! explicit quarantine path instead.
 
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use audit_core::AuditSink;
 use chrono::{DateTime, Utc};
@@ -141,9 +141,21 @@ pub struct QuarantinedDocument {
 
 /// Storage boundary for a RAG ingestion adapter. Indexing and quarantine are deliberately
 /// separate operations so a caller cannot accidentally index a document after a quarantine result.
+#[async_trait::async_trait]
 pub trait DocumentIngestBackend: Send + Sync {
-	fn index(&self, document: IndexedDocument) -> Result<(), String>;
-	fn quarantine(&self, document: QuarantinedDocument) -> Result<(), String>;
+	async fn index(&self, document: IndexedDocument) -> Result<(), String>;
+	async fn quarantine(&self, document: QuarantinedDocument) -> Result<(), String>;
+}
+
+#[async_trait::async_trait]
+impl<T: DocumentIngestBackend + ?Sized> DocumentIngestBackend for Arc<T> {
+	async fn index(&self, document: IndexedDocument) -> Result<(), String> {
+		(**self).index(document).await
+	}
+
+	async fn quarantine(&self, document: QuarantinedDocument) -> Result<(), String> {
+		(**self).quarantine(document).await
+	}
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -296,7 +308,7 @@ where
 		})
 	}
 
-	pub fn ingest(
+	pub async fn ingest(
 		&self,
 		request_id: impl Into<String>,
 		identity: GatewayIdentity,
@@ -396,6 +408,7 @@ where
 			self
 				.backend
 				.index(document.clone())
+				.await
 				.map_err(IngestionError::Backend)?;
 			self.record(
 				&action,
@@ -414,6 +427,7 @@ where
 			self
 				.backend
 				.quarantine(quarantined.clone())
+				.await
 				.map_err(IngestionError::Backend)?;
 			self.record(
 				&action,
@@ -538,13 +552,14 @@ mod tests {
 		quarantined: Mutex<Vec<QuarantinedDocument>>,
 	}
 
+	#[async_trait::async_trait]
 	impl DocumentIngestBackend for RecordingBackend {
-		fn index(&self, document: IndexedDocument) -> Result<(), String> {
+		async fn index(&self, document: IndexedDocument) -> Result<(), String> {
 			self.indexed.lock().unwrap().push(document);
 			Ok(())
 		}
 
-		fn quarantine(&self, document: QuarantinedDocument) -> Result<(), String> {
+		async fn quarantine(&self, document: QuarantinedDocument) -> Result<(), String> {
 			self.quarantined.lock().unwrap().push(document);
 			Ok(())
 		}
@@ -586,8 +601,8 @@ mod tests {
 		)
 	}
 
-	#[test]
-	fn authorized_document_is_labeled_and_indexed() {
+	#[tokio::test]
+	async fn authorized_document_is_labeled_and_indexed() {
 		let backend = RecordingBackend::default();
 		let gateway_audit = InMemoryAuditSink::default();
 		let ingestion_audit = InMemoryIngestionAuditSink::default();
@@ -615,6 +630,7 @@ mod tests {
 				identity(),
 				request("Customer email is used for password recovery."),
 			)
+			.await
 			.unwrap();
 		let IngestionResult::Indexed(document) = result else {
 			panic!("expected indexed document");
@@ -629,8 +645,8 @@ mod tests {
 		assert!(!event.source_hash.unwrap().contains("Customer"));
 	}
 
-	#[test]
-	fn risky_document_is_quarantined_not_indexed() {
+	#[tokio::test]
+	async fn risky_document_is_quarantined_not_indexed() {
 		let backend = RecordingBackend::default();
 		let gateway_audit = InMemoryAuditSink::default();
 		let ingestion_audit = InMemoryIngestionAuditSink::default();
@@ -652,6 +668,7 @@ mod tests {
 				identity(),
 				request("-----BEGIN PRIVATE KEY----- secret"),
 			)
+			.await
 			.unwrap();
 		assert!(matches!(result, IngestionResult::Quarantined(_)));
 		assert!(ingestor.backend.indexed.lock().unwrap().is_empty());
@@ -689,8 +706,8 @@ mod tests {
 		assert_eq!(chunk.allowed_users, ["alice"]);
 	}
 
-	#[test]
-	fn denied_document_never_reaches_index_or_quarantine() {
+	#[tokio::test]
+	async fn denied_document_never_reaches_index_or_quarantine() {
 		let backend = RecordingBackend::default();
 		let gateway_audit = InMemoryAuditSink::default();
 		let ingestion_audit = InMemoryIngestionAuditSink::default();
@@ -705,6 +722,7 @@ mod tests {
 
 		let error = ingestor
 			.ingest("ingest-request-3", identity(), request("benign document"))
+			.await
 			.unwrap_err();
 		assert!(matches!(error, IngestionError::GatewayDenied(_)));
 		assert!(ingestor.backend.indexed.lock().unwrap().is_empty());

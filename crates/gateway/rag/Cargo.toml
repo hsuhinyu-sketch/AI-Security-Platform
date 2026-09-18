@@ -1,0 +1,18 @@
+[package]
+name = "gateway-rag"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+audit-core = { path = "../../audit-core" }
+async-trait.workspace = true
+gateway-adapter = { path = "../../gateway-adapter" }
+security-rag = { path = "../../security/rag" }
+
+[dev-dependencies]
+security-contracts = { path = "../../contracts" }
+security-policy = { path = "../../policy" }
+tokio.workspace = true
