@@ -36,6 +36,13 @@ security subject; it intentionally excludes the query and Chunk text. `Knowledge
 `KnowledgeRetrieve`, and `ContextAssemble` are now first-class runtime action types, so static or
 dynamic policy can protect the full knowledge path.
 
+`SecureIngestor` protects the other end of the chain. A document is authorized as
+`KnowledgeIngest`, checked against trusted source-scheme and document-size limits, assigned a
+SHA-256 provenance hash, and classified with deterministic label rules. High-risk content is sent
+to a separate quarantine backend rather than the vector index. `IndexedDocument::to_chunk` then
+inherits its corpus, tenant, labels, and provenance hash into every `KnowledgeChunk`, while a
+trusted controller supplies only the Chunk ACL and expiry.
+
 After retrieval, `ContextGuard` separately authorizes `ContextAssemble` and examines the approved
 Chunk text before it reaches the LLM. Its default Enforce mode removes Chunk content that matches
 configured indirect-instruction signals; Shadow mode preserves it while producing a finding for
@@ -50,6 +57,16 @@ security:
   mode: enforce
   pipeline:
     policies:
+    - id: allow-support-knowledge-ingestion
+      tenantId: tenant-a
+      userId: alice
+      agentId: knowledge-curator
+      actionType: knowledgeIngest
+      actionName: ingest
+      resourceId: password-guide
+      resourceType: document
+      effect: allow
+      enabled: true
     - id: allow-support-knowledge
       tenantId: tenant-a
       userId: alice

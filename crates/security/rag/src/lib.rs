@@ -19,11 +19,18 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 pub mod context;
+pub mod ingestion;
 
 pub use context::{
 	ContextAssemblyError, ContextAuditEvent, ContextAuditOutcome, ContextAuditSink, ContextFinding,
 	ContextFindingKind, ContextGuard, ContextGuardConfig, ContextGuardMode, GuardedContext,
 	InMemoryContextAuditSink,
+};
+pub use ingestion::{
+	ContentLabelRule, DocumentIngestBackend, DocumentIngestRequest, InMemoryIngestionAuditSink,
+	IndexedDocument, IngestionAuditEvent, IngestionAuditOutcome, IngestionAuditSink, IngestionError,
+	IngestionFinding, IngestionFindingKind, IngestionGuardConfig, IngestionResult,
+	QuarantinedDocument, SecureIngestor, TrustedChunkAccess,
 };
 
 /// System-level controls for one RAG corpus integration.
