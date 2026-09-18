@@ -36,6 +36,13 @@ security subject; it intentionally excludes the query and Chunk text. `Knowledge
 `KnowledgeRetrieve`, and `ContextAssemble` are now first-class runtime action types, so static or
 dynamic policy can protect the full knowledge path.
 
+After retrieval, `ContextGuard` separately authorizes `ContextAssemble` and examines the approved
+Chunk text before it reaches the LLM. Its default Enforce mode removes Chunk content that matches
+configured indirect-instruction signals; Shadow mode preserves it while producing a finding for
+staged rollout. Chunks with configured sensitive labels can instead retain their provenance while
+their content is replaced by a redaction marker. This deterministic signal is a PoC safety net;
+a classifier or DLP engine can be added behind the same context-guard boundary later.
+
 For example, corpus retrieval remains deny-by-default until an explicit policy permits it:
 
 ```yaml
@@ -49,6 +56,16 @@ security:
       agentId: support-agent
       actionType: knowledgeRetrieve
       actionName: retrieve
+      resourceId: support-corpus
+      resourceType: knowledgeBase
+      effect: allow
+      enabled: true
+    - id: allow-support-context-assembly
+      tenantId: tenant-a
+      userId: alice
+      agentId: support-agent
+      actionType: contextAssemble
+      actionName: assemble
       resourceId: support-corpus
       resourceType: knowledgeBase
       effect: allow

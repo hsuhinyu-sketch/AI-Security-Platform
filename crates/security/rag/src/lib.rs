@@ -18,6 +18,14 @@ use security_contracts::Subject;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
+pub mod context;
+
+pub use context::{
+	ContextAssemblyError, ContextAuditEvent, ContextAuditOutcome, ContextAuditSink, ContextFinding,
+	ContextFindingKind, ContextGuard, ContextGuardConfig, ContextGuardMode, GuardedContext,
+	InMemoryContextAuditSink,
+};
+
 /// System-level controls for one RAG corpus integration.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -317,6 +325,12 @@ where
 			timestamp: Utc::now(),
 		});
 		Ok(context)
+	}
+
+	/// Exposes the common pipeline to the next RAG stage. Callers use this with `ContextGuard` so
+	/// retrieval and context assembly share the same identity, authorization, and audit boundary.
+	pub fn security_pipeline(&self) -> &SecurityPipeline<A, S> {
+		&self.pipeline
 	}
 
 	fn filter_candidates(
