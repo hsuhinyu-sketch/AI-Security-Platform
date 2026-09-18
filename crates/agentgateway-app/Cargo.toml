@@ -51,6 +51,7 @@ gateway-mcp = ["agentgateway/gateway-mcp"]
 inference-routing = ["agentgateway/inference-routing", "gateway-llm"]
 security-s1 = ["agentgateway/security-s1"]
 gateway-rag = ["agentgateway/gateway-rag"]
+ui = ["agentgateway/ui"]
 gateway-full = [
 	"gateway-llm",
 	"gateway-a2a",
