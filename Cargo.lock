@@ -6378,6 +6378,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "security-rag"
+version = "0.0.0"
+dependencies = [
+ "audit-core",
+ "chrono",
+ "gateway-adapter",
+ "hex",
+ "security-contracts",
+ "security-policy",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+]
+
+[[package]]
 name = "seize"
 version = "0.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"

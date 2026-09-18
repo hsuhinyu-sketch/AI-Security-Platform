@@ -153,6 +153,77 @@ pub fn inference_route_for_identity(
 	}
 }
 
+/// Normalizes a RAG corpus search into an authorization action. The query itself is deliberately
+/// not part of the action: callers pass only its hash as action arguments so security audit events
+/// cannot become another store of potentially sensitive prompt text.
+pub fn knowledge_retrieve_for_identity(
+	request_id: impl Into<String>,
+	identity: GatewayIdentity,
+	corpus_id: impl Into<String>,
+) -> ActionRequest {
+	let authorization_context = identity.authorization_context();
+	ActionRequest {
+		request_id: request_id.into(),
+		subject: identity.into(),
+		action: Action {
+			action_type: ActionType::KnowledgeRetrieve,
+			name: "retrieve".into(),
+		},
+		resource: Resource {
+			id: corpus_id.into(),
+			resource_type: ResourceType::KnowledgeBase,
+		},
+		authorization_context,
+	}
+}
+
+/// Normalizes an ingestion request before a document is chunked or indexed. This action can be
+/// protected separately from retrieval because write access to a corpus is a distinct risk.
+pub fn knowledge_ingest_for_identity(
+	request_id: impl Into<String>,
+	identity: GatewayIdentity,
+	document_id: impl Into<String>,
+) -> ActionRequest {
+	let authorization_context = identity.authorization_context();
+	ActionRequest {
+		request_id: request_id.into(),
+		subject: identity.into(),
+		action: Action {
+			action_type: ActionType::KnowledgeIngest,
+			name: "ingest".into(),
+		},
+		resource: Resource {
+			id: document_id.into(),
+			resource_type: ResourceType::Document,
+		},
+		authorization_context,
+	}
+}
+
+/// Normalizes the final step that turns authorized chunks into LLM context. A later ContextGuard
+/// can use this action to apply prompt-injection and redaction controls without coupling those
+/// controls to a particular vector store.
+pub fn context_assemble_for_identity(
+	request_id: impl Into<String>,
+	identity: GatewayIdentity,
+	corpus_id: impl Into<String>,
+) -> ActionRequest {
+	let authorization_context = identity.authorization_context();
+	ActionRequest {
+		request_id: request_id.into(),
+		subject: identity.into(),
+		action: Action {
+			action_type: ActionType::ContextAssemble,
+			name: "assemble".into(),
+		},
+		resource: Resource {
+			id: corpus_id.into(),
+			resource_type: ResourceType::KnowledgeBase,
+		},
+		authorization_context,
+	}
+}
+
 pub fn tool_invoke(
 	request_id: impl Into<String>,
 	user_id: Option<String>,

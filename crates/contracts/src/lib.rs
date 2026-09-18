@@ -22,6 +22,12 @@ pub enum ActionType {
 	AgentInvoke,
 	ToolList,
 	ToolInvoke,
+	/// Accept a document into a knowledge corpus before chunking and indexing.
+	KnowledgeIngest,
+	/// Search a knowledge corpus and select document chunks for an AI context.
+	KnowledgeRetrieve,
+	/// Assemble already-authorized knowledge chunks into an LLM context.
+	ContextAssemble,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -39,6 +45,9 @@ pub enum ResourceType {
 	Agent,
 	McpServer,
 	Tool,
+	KnowledgeBase,
+	Document,
+	DocumentChunk,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

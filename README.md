@@ -9,6 +9,8 @@ the boundary of the product.
 - Security engine: normalize requests and return fail-closed ALLOW / DENY decisions.
 - Policy: tenant/user/agent/action/resource matching, deny override, and priority.
 - Tool enforcement: issue short-lived, one-time capabilities bound to an authorized request and its arguments.
+- RAG retrieval security: authorize corpus search, enforce tenant and Chunk ACLs before and after
+  vector retrieval, and enforce context budgets with provenance-only audit events.
 - Audit: create an event for every security decision; the PoC includes an in-memory sink.
 - Composition: assemble an identity control, an authorizer, optional action controls, optional capability broker, and an audit sink into a `SecurityPipeline`.
 
@@ -19,6 +21,39 @@ the product boundary. New platform code is introduced under `crates/gateway/*`,
 The capability broker is intentionally process-local for the PoC. A production deployment must
 replace it with a durable, encrypted broker and place the protected Tool/API behind a network
 boundary that only the broker can reach.
+
+## RAG retrieval security
+
+`security-rag` is a vector-database-neutral security brick. A `SecureRetriever` first normalizes
+a corpus search as `KnowledgeRetrieve` and passes it through the common `SecurityPipeline`. It
+then derives a trusted `RetrievalFilter` from verified User/Agent/Tenant identity for the vector
+backend and independently re-checks every returned Chunk. A Chunk is rejected unless its corpus,
+tenant, ACL, expiry, provenance hash, labels, requested Chunk limit, and context-token budget all
+pass. This prevents an overly broad or stale vector index from becoming an authorization bypass.
+
+The RAG audit record contains a query hash, corpus and Chunk IDs, rejection reasons, and the
+security subject; it intentionally excludes the query and Chunk text. `KnowledgeIngest`,
+`KnowledgeRetrieve`, and `ContextAssemble` are now first-class runtime action types, so static or
+dynamic policy can protect the full knowledge path.
+
+For example, corpus retrieval remains deny-by-default until an explicit policy permits it:
+
+```yaml
+security:
+  mode: enforce
+  pipeline:
+    policies:
+    - id: allow-support-knowledge
+      tenantId: tenant-a
+      userId: alice
+      agentId: support-agent
+      actionType: knowledgeRetrieve
+      actionName: retrieve
+      resourceId: support-corpus
+      resourceType: knowledgeBase
+      effect: allow
+      enabled: true
+```
 
 ## Composable security pipeline
 

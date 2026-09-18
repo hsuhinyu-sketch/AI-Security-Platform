@@ -1,0 +1,19 @@
+[package]
+name = "security-rag"
+version = { workspace = true }
+edition = { workspace = true }
+license = { workspace = true }
+publish = { workspace = true }
+
+[dependencies]
+audit-core = { path = "../../audit-core" }
+chrono.workspace = true
+gateway-adapter = { path = "../../gateway-adapter" }
+hex.workspace = true
+security-contracts = { path = "../../contracts" }
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+
+[dev-dependencies]
+security-policy = { path = "../../policy" }

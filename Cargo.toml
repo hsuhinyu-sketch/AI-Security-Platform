@@ -15,6 +15,7 @@ members = [
     "crates/gateway-adapter",
     "crates/security/integration-agentgateway",
     "crates/security/capability-broker",
+    "crates/security/rag",
     # First-party AI Gateway Platform
     "crates/gateway/composition",
     "crates/gateway/runtime",
