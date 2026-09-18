@@ -1,4 +1,5 @@
-import { Bot, Database, GitBranch, Network, Server, ShieldCheck } from 'lucide-react';
+import { Link } from '@tanstack/react-router';
+import { Bot, Database, GitBranch, Network, Play, Server, ShieldCheck } from 'lucide-react';
 
 import { PageHeader, Panel } from '@/components/Primitives';
 
@@ -16,6 +17,12 @@ export function PlatformHomePage() {
 			<PageHeader
 				title="AI Security Platform"
 				description="按需组合网关能力，并在统一 Runtime Security Pipeline 中执行身份、授权、审批、Guardrails 与审计。"
+				actions={
+				<div className="button-row">
+					<Link className="button" to="/gateway-workbench">Gateway Workbench</Link>
+					<Link className="button primary" to="/llm/playground"><Play size={16} aria-hidden="true" /> Open Playground</Link>
+				</div>
+			}
 			/>
 			<section className="platform-capability-grid" aria-label="Gateway capabilities">
 				{capabilities.map(capability => {

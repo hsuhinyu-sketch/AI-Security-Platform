@@ -9,6 +9,7 @@ import { CelPage } from '@/pages/Cel';
 import { ClientSetupPage } from '@/pages/ClientSetup';
 import { CostsPage } from '@/pages/Costs';
 import { DumpPoliciesPage } from '@/pages/DumpPolicies';
+import { GatewayWorkbenchPage } from '@/pages/GatewayWorkbench';
 import { LlmGetStartedPage, McpGetStartedPage, TrafficGetStartedPage } from '@/pages/GetStarted';
 import { GuardrailsPage } from '@/pages/Guardrails';
 import { KeysPage } from '@/pages/Keys';
@@ -64,6 +65,12 @@ const securityEventsRoute = createRoute({
 	getParentRoute: () => appRoute,
 	path: '/security/events',
 	component: SecurityEventsPage
+});
+
+const gatewayWorkbenchRoute = createRoute({
+	getParentRoute: () => appRoute,
+	path: '/gateway-workbench',
+	component: GatewayWorkbenchPage
 });
 
 const dumpPoliciesRoute = createRoute({
@@ -225,6 +232,7 @@ const router = createRouter({
 		appRoute.addChildren([
 			indexRoute,
 			securityEventsRoute,
+			gatewayWorkbenchRoute,
 			dumpPoliciesRoute,
 			llmGetStartedRoute,
 			modelsRoute,

@@ -7019,6 +7019,69 @@ details summary {
 	border-color: color-mix(in srgb, var(--primary) 45%, var(--line));
 }
 
+.platform-runtime-strip,
+.gateway-workbench-card-header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 18px;
+}
+
+.platform-runtime-strip > div {
+	display: grid;
+	gap: 5px;
+}
+
+.gateway-workbench-grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+	gap: 12px;
+}
+
+.gateway-workbench-card {
+	display: grid;
+	gap: 13px;
+}
+
+.gateway-workbench-card h3,
+.gateway-workbench-card p {
+	margin: 0;
+}
+
+.gateway-workbench-card p {
+	color: var(--muted);
+	line-height: 1.5;
+}
+
+.gateway-workbench-card svg {
+	color: var(--primary);
+}
+
+.module-status {
+	border: 1px solid var(--line);
+	border-radius: 999px;
+	padding: 3px 8px;
+	font-size: 12px;
+	font-weight: 600;
+}
+
+.module-status.ready {
+	color: var(--success);
+	border-color: color-mix(in srgb, var(--success) 50%, var(--line));
+}
+
+.module-status.pending {
+	color: var(--warning);
+	border-color: color-mix(in srgb, var(--warning) 50%, var(--line));
+}
+
+@media (max-width: 720px) {
+	.platform-runtime-strip {
+		align-items: flex-start;
+		flex-direction: column;
+	}
+}
+
 .security-summary {
 	display: grid;
 	gap: 8px;

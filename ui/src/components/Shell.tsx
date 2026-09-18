@@ -279,128 +279,67 @@ function navigationGroups(options: {
 	hasTraffic: boolean;
 	dumpMode: boolean;
 }): ReadonlyArray<{ title: string; items: readonly NavItemConfig[] }> {
-	const groups: Array<{ title: string; items: readonly NavItemConfig[] }> = [
+	// Platform navigation is intentionally capability-first rather than configuration-first.
+	// A missing bind must surface as an in-page setup state, never make an available module vanish.
+	void options;
+	return [
 		{
 			title: 'Gateway',
-			items: [{ to: '/', label: 'Home', icon: Home }]
+			items: [
+				{ to: '/', label: 'Home', icon: Home },
+				{ to: '/gateway-workbench', label: 'Gateway Workbench', icon: Boxes }
+			]
+		},
+		{
+			title: 'LLM',
+			items: [
+				{ to: '/llm/models', label: 'Models', icon: Bot },
+				{ to: '/llm/providers', label: 'Providers', icon: Boxes },
+				{ to: '/llm/policies', label: 'Policies', icon: Bolt, groupStart: true },
+				{ to: '/llm/guardrails', label: 'Guardrails', icon: Shield },
+				{ to: '/llm/keys', label: 'Virtual API Keys', icon: KeyRound },
+				{ to: '/llm/costs', label: 'Costs', icon: Coins },
+				{ to: '/llm/analytics', label: 'Analytics', icon: BarChart3, groupStart: true },
+				{ to: '/llm/logs', label: 'Logs', icon: ScrollText },
+				{ to: '/llm/client-setup', label: 'Client Setup', icon: Cable, groupStart: true }
+			]
+		},
+		{
+			title: 'MCP',
+			items: [
+				{ to: '/mcp/servers', label: 'Servers', icon: Server },
+				{ to: '/mcp/policies', label: 'Policies', icon: ShieldCheck }
+			]
+		},
+		{
+			title: 'Inference Routing',
+			items: [
+				{ to: '/traffic/gateways', label: 'Gateways', icon: Network },
+				{ to: '/traffic/listeners', label: 'Listeners', icon: Network },
+				{ to: '/traffic/routes', label: 'Routes', icon: Route },
+				{ to: '/traffic/policies', label: 'Policies', icon: ShieldCheck }
+			]
+		},
+		{
+			title: 'Security',
+			items: [{ to: '/security/events', label: 'Security Events', icon: Shield }]
+		},
+		{
+			title: 'Validation',
+			items: [
+				{ to: '/llm/playground', label: 'Chat Playground', icon: Play },
+				{ to: '/mcp/playground', label: 'Tool Playground', icon: Play },
+				{ to: '/cel', label: 'CEL Playground', icon: Braces }
+			]
+		},
+		{
+			title: 'Platform',
+			items: [
+				{ to: '/raw-config', label: 'Raw Configuration', icon: FileCode2, exact: true },
+				{ to: '/settings', label: 'Settings', icon: SlidersHorizontal }
+			]
 		}
 	];
-	groups.push({
-		title: 'Security',
-		items: [{ to: '/security/events', label: 'Security Events', icon: Shield }]
-	});
-	if (!options.dumpMode) {
-		groups.push({
-			title: 'LLM',
-			items: options.hasLlm
-				? [
-						{ to: '/llm/models', label: 'Models', icon: Bot },
-						{ to: '/llm/providers', label: 'Providers', icon: Boxes },
-
-						{
-							to: '/llm/policies',
-							label: 'Policies',
-							icon: Bolt,
-							groupStart: true
-						},
-						{ to: '/llm/guardrails', label: 'Guardrails', icon: Shield },
-						{ to: '/llm/keys', label: 'Virtual API Keys', icon: KeyRound },
-						{ to: '/llm/costs', label: 'Costs', icon: Coins },
-
-						{
-							to: '/llm/analytics',
-							label: 'Analytics',
-							icon: BarChart3,
-							groupStart: true
-						},
-						{ to: '/llm/logs', label: 'Logs', icon: ScrollText },
-
-						{
-							to: '/llm/client-setup',
-							label: 'Client Setup',
-							icon: Cable,
-							groupStart: true
-						},
-						{ to: '/llm/playground', label: 'Chat Playground', icon: Play }
-					]
-				: [
-						{
-							to: '/llm/get-started',
-							label: 'Get started',
-							icon: Bot,
-							placeholder: true
-						}
-					]
-		});
-		groups.push({
-			title: 'MCP',
-			items: options.hasMcp
-				? [
-						{ to: '/mcp/servers', label: 'Servers', icon: Server },
-						{ to: '/mcp/policies', label: 'Policies', icon: ShieldCheck },
-						{ to: '/mcp/playground', label: 'Tool Playground', icon: Play }
-					]
-				: [
-						{
-							to: '/mcp/get-started',
-							label: 'Get started',
-							icon: Server,
-							placeholder: true
-						}
-					]
-		});
-	}
-	groups.push({
-		title: 'Traffic',
-		items: options.dumpMode
-			? [
-					{ to: '/traffic/listeners', label: 'Listeners', icon: Network },
-					{ to: '/traffic/routes', label: 'Routes', icon: Route },
-					{ to: '/traffic/policies', label: 'Policies', icon: ShieldCheck }
-				]
-			: options.hasTraffic
-				? [
-						{ to: '/traffic/gateways', label: 'Gateways', icon: Network },
-						...(options.hasBinds
-							? [
-									{
-										to: '/traffic/listeners',
-										label: 'Listeners',
-										icon: Network
-									}
-								]
-							: []),
-						{ to: '/traffic/routes', label: 'Routes', icon: Route }
-					]
-				: [
-						{
-							to: '/traffic/get-started',
-							label: 'Get started',
-							icon: Network,
-							placeholder: true
-						}
-					]
-	});
-	groups.push({
-		title: 'Tools',
-		items: options.dumpMode
-			? [{ to: '/cel', label: 'CEL Playground', icon: Braces }]
-			: [
-					{ to: '/cel', label: 'CEL Playground', icon: Braces },
-					{
-						to: '/raw-config',
-						label: 'Raw Configuration',
-						icon: FileCode2,
-						exact: true
-					},
-					{
-						to: '/settings',
-						label: 'Settings',
-						icon: SlidersHorizontal
-					}
-				]
-	});
-	return groups;
 }
 
 function NavSection(props: {
