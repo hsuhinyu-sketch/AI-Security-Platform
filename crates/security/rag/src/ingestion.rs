@@ -99,7 +99,8 @@ pub struct IndexedDocument {
 /// ACL and lifetime facts supplied by a trusted ingestion controller when it chunks an indexed
 /// document. Corpus, tenant, labels, and provenance are deliberately absent because they are
 /// inherited from [`IndexedDocument`] and cannot be weakened at the Chunk boundary.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
 pub struct TrustedChunkAccess {
 	pub allowed_users: Vec<String>,
 	pub allowed_agents: Vec<String>,

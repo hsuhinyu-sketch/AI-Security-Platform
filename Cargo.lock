@@ -2840,10 +2840,14 @@ version = "0.0.0"
 dependencies = [
  "async-trait",
  "audit-core",
+ "chrono",
  "gateway-adapter",
+ "reqwest 0.13.3",
  "security-contracts",
  "security-policy",
  "security-rag",
+ "serde",
+ "serde_json",
  "tokio",
 ]
 

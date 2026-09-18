@@ -50,6 +50,14 @@ adapter executes asynchronous ingestion and retrieval backends, then returns onl
 `GuardedContext` after the separately authorized context-assembly stage. A Qdrant or pgvector
 adapter therefore implements only the backend traits and cannot bypass the common security chain.
 
+The first concrete provider is `gateway-rag::QdrantBackend`. It receives an injected HTTP client
+(so deployment can require mTLS and custom CA roots), an embedding provider, and a trusted Chunk
+access policy. It writes Chunk security metadata into Qdrant Payload and performs a query with
+mandatory `tenantId` and `corpusId` matches plus a `min_should` ACL condition over tenant-wide,
+User, or Agent access. The `SecureRetriever` still revalidates every returned point. Qdrant
+collections must be provisioned ahead of time with the matching vector dimension and keyword
+Payload indexes for `tenantId`, `corpusId`, `allowedUsers`, and `allowedAgents`.
+
 After retrieval, `ContextGuard` separately authorizes `ContextAssemble` and examines the approved
 Chunk text before it reaches the LLM. Its default Enforce mode removes Chunk content that matches
 configured indirect-instruction signals; Shadow mode preserves it while producing a finding for

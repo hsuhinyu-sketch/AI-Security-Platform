@@ -13,6 +13,12 @@ use security_rag::{
 	SecureRetriever,
 };
 
+pub mod qdrant;
+
+pub use qdrant::{
+	DocumentChunker, EmbeddingProvider, FixedWindowChunker, QdrantBackend, QdrantBackendConfig,
+};
+
 /// Transport payload for a corpus query. Identity is intentionally not included: a transport must
 /// derive it from verified authentication and provide it separately to [`RagGatewayAdapter::query`].
 #[derive(Debug, Clone, PartialEq, Eq)]
