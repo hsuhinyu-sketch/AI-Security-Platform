@@ -347,6 +347,169 @@ pub fn seed_demo_events() {
 		Some("tool:approval-required"),
 		tagged(&[("reason", json!("trusted approval was not present"))]),
 	));
+
+	// Add one hundred varied observations so the console can demonstrate filtering, aggregation,
+	// deny paths, shadow behavior, and all three RAG protection boundaries at realistic volume.
+	for index in 0..100 {
+		let (kind, action, resource_type, decision, policy_id, details) = match index % 12 {
+			0 => (
+				SecurityEventKind::Authorization,
+				"ModelInvoke:chat.completions",
+				"Model",
+				Some(DecisionEffect::Allow),
+				Some("llm:production-model-access"),
+				tagged(&[
+					("model", json!("support-assistant")),
+					("mode", json!("enforce")),
+				]),
+			),
+			1 => (
+				SecurityEventKind::Authorization,
+				"ModelInvoke:chat.completions",
+				"Model",
+				Some(DecisionEffect::Deny),
+				Some("llm:tenant-rate-limit"),
+				tagged(&[
+					("limit", json!(60)),
+					("windowSeconds", json!(60)),
+					("reason", json!("rate limit exceeded")),
+				]),
+			),
+			2 => (
+				SecurityEventKind::Authorization,
+				"InferenceRoute:select",
+				"InferenceBackend",
+				Some(DecisionEffect::Allow),
+				Some("routing:trusted-backend"),
+				tagged(&[
+					("selectedBackend", json!("edge-inference")),
+					("circuitState", json!("Closed")),
+				]),
+			),
+			3 => (
+				SecurityEventKind::Authorization,
+				"InferenceRoute:select",
+				"InferenceBackend",
+				Some(DecisionEffect::Allow),
+				Some("routing:fallback-allowed"),
+				tagged(&[
+					("selectedBackend", json!("cloud-fallback")),
+					("outcome", json!("Fallback")),
+					("circuitState", json!("Open")),
+				]),
+			),
+			4 => (
+				SecurityEventKind::Authorization,
+				"AgentInvoke:delegate",
+				"Agent",
+				Some(DecisionEffect::Allow),
+				Some("agent:delegation-scope"),
+				tagged(&[
+					("delegationDepth", json!(1)),
+					("expiresInSeconds", json!(300)),
+				]),
+			),
+			5 => (
+				SecurityEventKind::Authorization,
+				"AgentInvoke:delegate",
+				"Agent",
+				Some(DecisionEffect::Deny),
+				Some("agent:identity-revoked"),
+				tagged(&[
+					("reason", json!("delegation has been revoked")),
+					("revocationSource", json!("directory")),
+				]),
+			),
+			6 => (
+				SecurityEventKind::Authorization,
+				"ToolInvoke:ticket.create",
+				"Tool",
+				Some(DecisionEffect::Allow),
+				Some("tool:approved-capability"),
+				tagged(&[
+					("approvalId", json!(format!("approval-demo-{index:03}"))),
+					("capabilityBinding", json!("request-bound")),
+				]),
+			),
+			7 => (
+				SecurityEventKind::Authorization,
+				"ToolInvoke:customer.export",
+				"Tool",
+				Some(DecisionEffect::Deny),
+				Some("tool:argument-constraint"),
+				tagged(&[
+					("reason", json!("required argument constraint failed")),
+					("requiredField", json!("customerId")),
+				]),
+			),
+			8 => (
+				SecurityEventKind::RagIngestion,
+				"KnowledgeIngest:ingest",
+				"Document",
+				Some(DecisionEffect::Allow),
+				None,
+				tagged(&[
+					("outcome", json!("Quarantined")),
+					("sourceHash", json!(format!("sha256:demo-{index:04}"))),
+					("findingRuleIds", json!(["rag:malware-scan"])),
+				]),
+			),
+			9 => (
+				SecurityEventKind::RagRetrieval,
+				"KnowledgeRetrieve:retrieve",
+				"KnowledgeBase",
+				Some(DecisionEffect::Deny),
+				Some("rag:tenant-corpus-read"),
+				tagged(&[
+					("queryHash", json!(format!("sha256:query-{index:04}"))),
+					("reason", json!("corpus is outside tenant scope")),
+				]),
+			),
+			10 => (
+				SecurityEventKind::RagContextAssembly,
+				"ContextAssemble:assemble",
+				"KnowledgeBase",
+				Some(DecisionEffect::Allow),
+				None,
+				tagged(&[
+					("outcome", json!("Modified")),
+					("removedChunkIds", json!([format!("chunk-risk-{index:03}")])),
+					(
+						"findings",
+						json!([{"kind":"IndirectInstruction","ruleId":"rag:context-injection"}]),
+					),
+				]),
+			),
+			_ => (
+				SecurityEventKind::Authorization,
+				"ModelInvoke:chat.completions",
+				"Model",
+				None,
+				Some("guardrail:prompt-injection"),
+				tagged(&[
+					("mode", json!("shadow")),
+					("wouldDeny", json!(true)),
+					("reason", json!("prompt guardrail finding")),
+				]),
+			),
+		};
+		let mut event = demo(
+			kind,
+			&format!("demo-flow-{:03}", index / 5),
+			5 + index as i64,
+			action,
+			resource_type,
+			&format!("demo-resource-{index:03}"),
+			decision,
+			policy_id,
+			details,
+		);
+		event.user_id = Some(format!("demo-user-{:02}", index % 8));
+		event.agent_id = Some(format!("demo-agent-{:02}", index % 5));
+		event.tenant_id = Some(format!("demo-tenant-{:02}", index % 3));
+		event.delegation_id = (index % 4 != 0).then(|| format!("delegation-demo-{index:03}"));
+		store.record(event);
+	}
 }
 
 /// Fan-out sink used by security pipelines: tracing remains the operational record while the
