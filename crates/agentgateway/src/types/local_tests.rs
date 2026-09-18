@@ -118,6 +118,11 @@ aiSystems:
     embedding:
       endpoint: https://embeddings.example.test/v1/embeddings
       model: text-embedding-3-small
+    authentication:
+      mode: strict
+      issuer: https://issuer.example.test
+      audiences: [rag]
+      jwks: '{"keys":[]}'
 "#,
 	)
 	.expect("test configuration should deserialize");

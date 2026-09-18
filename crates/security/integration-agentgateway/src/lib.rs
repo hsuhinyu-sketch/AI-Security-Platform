@@ -1,6 +1,8 @@
+use std::sync::Arc;
+
 use audit_core::{AuditSink, event_from_decision};
 use gateway_adapter::{
-	AgentIdentityRegistry, AgentIdentityRegistryConfig, DelegationRevocationCheck,
+	AgentIdentityRegistry, AgentIdentityRegistryConfig, Authorizer, DelegationRevocationCheck,
 	ExternalAgentIdentityCheck, GatewayError, RuntimeSecurityControls, SecurityPipelineConfig,
 };
 use security_contracts::{ActionRequest, Decision, DecisionEffect, SecurityEvent};
@@ -62,6 +64,47 @@ pub struct SecurityConfig {
 	pub remote_agent_identity: Option<RemoteAgentIdentityConfig>,
 	#[serde(flatten)]
 	pub pipeline: SecurityPipelineConfig,
+}
+
+/// Adapts the full gateway security configuration to a protocol-specific security pipeline.
+///
+/// RAG uses this at each of its three action boundaries. It deliberately delegates to
+/// [`evaluate_with_arguments`] instead of reconstructing policies, so SecurityMode, remote PDP,
+/// agent-directory binding, and delegation-revocation controls behave consistently across gateway
+/// protocols.
+#[derive(Clone)]
+pub struct SecurityConfigAuthorizer {
+	config: Arc<SecurityConfig>,
+}
+
+impl SecurityConfigAuthorizer {
+	pub fn new(config: Arc<SecurityConfig>) -> Self {
+		Self { config }
+	}
+}
+
+impl Authorizer for SecurityConfigAuthorizer {
+	fn decide(&self, request: &ActionRequest) -> Decision {
+		match evaluate_with_arguments(&self.config, request, None) {
+			Ok(()) => Decision {
+				request_id: request.request_id.clone(),
+				effect: DecisionEffect::Allow,
+				policy_id: Some("security:runtime".into()),
+				policy_version: None,
+				expires_at: None,
+			},
+			Err(GatewayError::Denied(decision) | GatewayError::DeniedByControl { decision, .. }) => {
+				decision
+			},
+			Err(GatewayError::Capability(_) | GatewayError::CapabilityUnavailable) => Decision {
+				request_id: request.request_id.clone(),
+				effect: DecisionEffect::Deny,
+				policy_id: Some("security:runtime-unavailable".into()),
+				policy_version: None,
+				expires_at: None,
+			},
+		}
+	}
 }
 
 impl AuditSink for TracingAuditSink {
@@ -235,12 +278,16 @@ fn capability_denial(action: &ActionRequest, reason: String) -> GatewayError {
 
 #[cfg(test)]
 mod tests {
-	use super::{SecurityConfig, SecurityMode, evaluate, evaluate_with_arguments};
+	use std::sync::Arc;
+
+	use super::{
+		SecurityConfig, SecurityConfigAuthorizer, SecurityMode, evaluate, evaluate_with_arguments,
+	};
 	use chrono::{Duration, Utc};
 	use gateway_adapter::{
-		AgentDelegationConfig, AgentIdentityRegistryConfig, DelegationScope, GatewayIdentity,
-		RegisteredAgentConfig, RequiredIdentity, SecurityPipelineConfig, agent_action_for_identity,
-		model_invoke_for_identity, tool_invoke_for_identity,
+		AgentDelegationConfig, AgentIdentityRegistryConfig, Authorizer, DelegationScope,
+		GatewayIdentity, RegisteredAgentConfig, RequiredIdentity, SecurityPipelineConfig,
+		agent_action_for_identity, model_invoke_for_identity, tool_invoke_for_identity,
 	};
 	use security_contracts::{ActionType, DecisionEffect, ResourceType};
 	use security_policy::Policy;
@@ -269,6 +316,23 @@ mod tests {
 			)
 			.is_err()
 		);
+	}
+
+	#[test]
+	fn config_authorizer_preserves_enforced_deny_by_default() {
+		let authorizer = SecurityConfigAuthorizer::new(Arc::new(SecurityConfig {
+			mode: SecurityMode::Enforce,
+			..Default::default()
+		}));
+		let action = gateway_adapter::knowledge_retrieve_for_identity(
+			"request",
+			GatewayIdentity {
+				tenant_id: Some("tenant-a".into()),
+				..Default::default()
+			},
+			"support",
+		);
+		assert_eq!(authorizer.decide(&action).effect, DecisionEffect::Deny);
 	}
 
 	#[test]

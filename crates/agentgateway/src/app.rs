@@ -84,6 +84,18 @@ pub async fn run(config: Arc<Config>) -> anyhow::Result<Bound> {
 	.await?;
 	let stores = state_mgr.stores();
 	let resource_manager = state_mgr.resource_manager();
+	let rag_listener_count = crate::rag::start_configured_gateways(
+		&config,
+		&crate::resource_manager::ResourceFetcher::managed(resource_manager.clone()),
+		drain_rx.clone(),
+	)
+	.await?;
+	if rag_listener_count > 0 {
+		info!(
+			rag_listener_count,
+			"configured secure RAG gateway listeners"
+		);
+	}
 
 	runtime::state_manager::start_self_workload_resolution(&config, stores.clone(), &ready);
 

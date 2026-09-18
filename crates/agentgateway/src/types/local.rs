@@ -503,7 +503,7 @@ pub struct LocalAiSystemConfig {
 	/// are validated here and used when the RAG router is mounted by the host application.
 	#[serde(default, skip_serializing_if = "Option::is_none")]
 	#[cfg_attr(feature = "schema", schemars(with = "Option<serde_json::Value>"))]
-	rag: Option<gateway_rag::RagGatewayConfig>,
+	rag: Option<LocalRagGatewayConfig>,
 }
 
 impl LocalConfig {
@@ -516,7 +516,60 @@ impl LocalConfig {
 impl LocalAiSystemConfig {
 	/// Returns the RAG listener configuration, if this AI system enables the RAG capability.
 	pub fn rag_config(&self) -> Option<&gateway_rag::RagGatewayConfig> {
-		self.rag.as_ref()
+		self.rag.as_ref().map(|rag| &rag.gateway)
+	}
+}
+
+/// RAG's storage and context controls are provider-neutral, while authentication is intentionally
+/// supplied by the host gateway's existing JWT validator rather than by the vector backend.
+#[apply(schema_de!)]
+pub struct LocalRagGatewayConfig {
+	#[serde(flatten)]
+	#[cfg_attr(feature = "schema", schemars(with = "serde_json::Value"))]
+	gateway: gateway_rag::RagGatewayConfig,
+	/// Every RAG listener requires a signature-verifying JWT configuration. The listener derives
+	/// Subject / Tenant / Agent facts from its validated claims and never accepts them in JSON.
+	authentication: crate::http::jwt::LocalJwtConfig,
+}
+
+/// An owned RAG listener declaration extracted from one local AI-system configuration. It is the
+/// boundary used by the runtime host, keeping local YAML parsing out of RAG core crates.
+pub struct RagSystemConfig {
+	pub name: String,
+	pub gateway: gateway_rag::RagGatewayConfig,
+	pub security: security_integration_agentgateway::SecurityConfig,
+	pub authentication: crate::http::jwt::LocalJwtConfig,
+}
+
+impl LocalConfig {
+	/// Consumes the local configuration and extracts RAG listener declarations for the runtime.
+	pub fn into_rag_systems(self) -> anyhow::Result<Vec<RagSystemConfig>> {
+		validate_gateway_capabilities(&self)?;
+		validate_local_listener_ports(&self)?;
+		self
+			.ai_systems
+			.into_iter()
+			.filter_map(|system| {
+				let rag = system.rag?;
+				Some((system.name, system.security, rag))
+			})
+			.map(|(name, security, rag)| {
+				let security = security
+					.ok_or_else(|| anyhow!("aiSystems['{name}'].rag requires a security configuration"))?;
+				if security.mode != security_integration_agentgateway::SecurityMode::Enforce {
+					bail!("aiSystems['{name}'].rag requires security.mode: enforce");
+				}
+				if !rag.authentication.is_strict() {
+					bail!("aiSystems['{name}'].rag requires authentication.mode: strict");
+				}
+				Ok(RagSystemConfig {
+					name: name.to_string(),
+					gateway: rag.gateway,
+					security,
+					authentication: rag.authentication,
+				})
+			})
+			.collect()
 	}
 }
 
@@ -2737,7 +2790,7 @@ async fn convert(
 			llm,
 			a2a,
 			mcp,
-			rag: _,
+			rag,
 		} = ai_system;
 		if name.is_empty() {
 			bail!("aiSystems[].name must not be empty");
@@ -2745,7 +2798,7 @@ async fn convert(
 		if !ai_system_names.insert(name.clone()) {
 			bail!("aiSystems contains duplicate system name '{name}'");
 		}
-		if llm.is_none() && a2a.is_none() && mcp.is_none() {
+		if llm.is_none() && a2a.is_none() && mcp.is_none() && rag.is_none() {
 			bail!("aiSystems['{name}'] must enable at least one gateway");
 		}
 		if llm.is_none() && inference.is_some() {
@@ -2875,8 +2928,19 @@ fn validate_gateway_capabilities_for_profile(
 				&format!("{prefix}.rag"),
 			)?;
 			rag
+				.gateway
 				.validate()
 				.map_err(|error| anyhow!("{prefix}.rag is invalid: {error}"))?;
+			let security = system
+				.security
+				.as_ref()
+				.ok_or_else(|| anyhow!("{prefix}.rag requires a security configuration"))?;
+			if security.mode != security_integration_agentgateway::SecurityMode::Enforce {
+				bail!("{prefix}.rag requires security.mode: enforce");
+			}
+			if !rag.authentication.is_strict() {
+				bail!("{prefix}.rag requires authentication.mode: strict");
+			}
 		}
 	}
 	Ok(())
@@ -2982,7 +3046,10 @@ fn validate_local_listener_ports(config: &LocalConfig) -> anyhow::Result<()> {
 			)?;
 		}
 		if let Some(rag) = &ai_system.rag {
-			insert_local_listener_port(rag.port, format!("aiSystems[{}].rag", ai_system.name))?;
+			insert_local_listener_port(
+				rag.gateway.port,
+				format!("aiSystems[{}].rag", ai_system.name),
+			)?;
 		}
 	}
 	Ok(())

@@ -244,6 +244,16 @@ impl Default for JWTValidationOptions {
 }
 
 impl LocalJwtConfig {
+	/// Whether the listener must reject a request without a valid JWT. Security-sensitive gateway
+	/// surfaces use this to reject optional/permissive validators at configuration time.
+	pub fn is_strict(&self) -> bool {
+		match self {
+			LocalJwtConfig::Multi { mode, .. } | LocalJwtConfig::Single { mode, .. } => {
+				matches!(mode, Mode::Strict)
+			},
+		}
+	}
+
 	pub async fn try_into(
 		self,
 		resources: &crate::resource_manager::ResourceFetcher,

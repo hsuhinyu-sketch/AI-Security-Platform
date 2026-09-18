@@ -77,6 +77,8 @@ agent-pool.workspace = true
 gateway-composition = { path = "../gateway/composition", default-features = false }
 gateway-rag = { path = "../gateway/rag" }
 gateway-adapter = { path = "../gateway-adapter" }
+audit-core = { path = "../audit-core" }
+security-rag = { path = "../security/rag" }
 security-integration-agentgateway = { path = "../security/integration-agentgateway" }
 security-capability-broker = { path = "../security/capability-broker" }
 security-contracts = { path = "../contracts" }

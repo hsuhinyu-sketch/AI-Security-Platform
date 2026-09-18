@@ -170,6 +170,29 @@ inference routing, LLM plus A2A, or all three LLM/A2A/MCP gateways without chang
 ```yaml
 aiSystems:
 - id: support-agent # `name` remains supported for compatibility
+  # RAG requires enforced policy. These three rules separately authorize document writes,
+  # corpus retrieval, and final context assembly for a verified tenant principal.
+  security:
+    mode: enforce
+    policies:
+    - id: support-ingest
+      actionType: knowledgeIngest
+      actionName: ingest
+      resourceType: document
+      tenantId: tenant-a
+      effect: allow
+    - id: support-retrieve
+      actionType: knowledgeRetrieve
+      actionName: retrieve
+      resourceType: knowledgeBase
+      tenantId: tenant-a
+      effect: allow
+    - id: support-context
+      actionType: contextAssemble
+      actionName: assemble
+      resourceType: knowledgeBase
+      tenantId: tenant-a
+      effect: allow
   # System-wide inference controls compile into the existing LLM execution policies.
   # They are shared by every model below, while model-level settings can refine them.
   inference:
@@ -207,7 +230,7 @@ aiSystems:
     - name: customer-tools
       mcp:
         host: 127.0.0.1:8200
-  # The RAG Router is mounted by the host application from this validated configuration.
+  # The application starts this RAG listener from the validated configuration.
   # Its HTTP input deliberately has no tenantId, ACL, or vector-store filter fields.
   rag:
     port: 4103
@@ -229,6 +252,12 @@ aiSystems:
       maxContextTokens: 6000
     contextGuard:
       mode: enforce
+    authentication:
+      mode: strict
+      issuer: https://issuer.example
+      audiences: [support-rag]
+      jwks:
+        url: https://issuer.example/.well-known/jwks.json
 ```
 
 The A2A gateway automatically adds the A2A protocol adapter to its backend route. `inference`
@@ -239,9 +268,10 @@ legacy `llm.policies.localRateLimit` and `llm.policies.inferenceRouting` locatio
 local rate limits compose, while routing must be declared in only one location. Ports must be
 unique across all listeners. `rag` is the corresponding RAG-gateway configuration boundary: it
 selects Qdrant, an OpenAI-compatible embedding endpoint, chunking, ingestion controls, retrieval
-budgets, and context-injection handling. The host mounts `gateway_rag::router` at the configured
-RAG listener after verified authentication; the route contract accepts identity only through its
-request extension and rejects caller-supplied tenant or ACL fields.
+budgets, and context-injection handling. RAG requires a strict JWT validator and
+`security.mode: enforce`; the runtime starts its listener and derives identity only from validated
+claims before mounting `gateway_rag::router`. The route contract rejects caller-supplied tenant or
+ACL fields.
 
 The mounted RAG router exposes `POST /v1/rag/documents` and `POST /v1/rag/query`. Its host must
 verify authentication and insert `gateway_rag::VerifiedGatewayIdentity` into the request before
