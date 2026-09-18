@@ -56,6 +56,9 @@ pub fn router(
 		// Redirect to the UI
 		.route("/api/runtime", get(get_runtime))
 		.route("/api/config", get(get_config).post(write_config))
+		// The upstream UI reads the resolved view separately. This compatibility runtime has one
+		// local configuration source, so the persisted and effective views are identical.
+		.route("/api/config/effective", get(get_effective_config))
 		// Legacy path
 		.route("/cel", axum::routing::post(handle_cel))
 		.route("/api/cel", axum::routing::post(handle_cel))
@@ -183,6 +186,10 @@ async fn get_config(State(app): State<App>) -> Result<Json<Value>, ErrorResponse
 	let s = app.cfg()?.read_to_string().await?;
 	let v: Value = yamlviajson::from_str(&s).map_err(|e| ErrorResponse::Anyhow(e.into()))?;
 	Ok(Json(v))
+}
+
+async fn get_effective_config(State(app): State<App>) -> Result<Json<Value>, ErrorResponse> {
+	get_config(State(app)).await
 }
 
 async fn write_config(

@@ -1,0 +1,8 @@
+import { requestJson } from '@/api/base';
+
+export async function evaluateCel(expression: string, data: unknown) {
+	return requestJson<{ result: unknown; error: string | null }>('/api/cel', {
+		method: 'POST',
+		body: JSON.stringify({ expression, data })
+	});
+}
