@@ -20,6 +20,8 @@
     table { border-collapse: collapse; width: 100%; font-size: 13px; } th { color: #9eb0c7; font-weight: 600; text-align: left; } th, td { padding: 11px 8px; border-bottom: 1px solid #1b304c; vertical-align: top; }
     .decision { font-weight: 700; text-transform: uppercase; } code { color: #b8d4fb; word-break: break-word; }
     details { max-width: 360px; } summary { cursor: pointer; color: #9eb0c7; } pre { white-space: pre-wrap; margin: 8px 0 0; color: #b9c9dd; }
+    .evidence { margin-top: 8px; padding: 9px; border-left: 3px solid #f0b46b; background: #172237; display: grid; gap: 5px; max-width: 430px; color: #d7e1ef; }
+    .evidence strong { color: #f0c36e; font-size: 12px; } .evidence span { color: #9eb0c7; font-size: 12px; }
     #empty { padding: 34px 0; text-align: center; } @media (max-width: 760px) { .cards { grid-template-columns: repeat(2, 1fr); } header { align-items: flex-start; flex-direction: column; } .events { overflow-x: auto; } }
   </style>
 </head>
@@ -42,7 +44,7 @@
       <button id="refresh">刷新</button>
       <span class="muted" id="meta"></span>
     </div>
-    <div class="events"><table><thead><tr><th>时间</th><th>请求 / 主体</th><th>阶段</th><th>资源</th><th>决策</th><th>规则与脱敏详情</th></tr></thead><tbody id="events"></tbody></table></div>
+    <div class="events"><table><thead><tr><th>时间</th><th>请求 / 主体</th><th>阶段</th><th>资源</th><th>决策</th><th>规则、检测证据与脱敏详情</th></tr></thead><tbody id="events"></tbody></table></div>
     <p id="empty">尚无安全事件。发起受保护的 LLM、MCP 或 RAG 请求后，事件会实时显示在这里。</p>
   </section>
   <script>
@@ -50,6 +52,12 @@
     const escape = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
     const timestamp = value => value ? new Date(value).toLocaleString() : '—';
     const decision = event => event.decision ? `<span class="decision ${event.decision === 'deny' ? 'deny' : 'allow'}">${escape(event.decision)}</span>` : '<span class="other">观察</span>';
+    const evidence = event => {
+      const value = event.details && event.details.inputEvidence;
+      if (!value) return '';
+      const patterns = (value.matchedPatterns || []).map(escape).join(' · ');
+      return `<div class="evidence"><strong>注入测试输入（已脱敏）</strong><code>${escape(value.redactedPayload || '—')}</code><span>命中：${patterns || '—'}</span><span>指纹：${escape(value.payloadFingerprint || '—')}</span></div>`;
+    };
     const render = events => {
       $('events').innerHTML = events.map(event => `<tr>
         <td>${timestamp(event.timestamp)}</td>
@@ -57,10 +65,10 @@
         <td>${escape(event.kind)}<br><span class="muted">${escape(event.action)}</span></td>
         <td>${escape(event.resourceType)}<br><code>${escape(event.resourceId)}</code></td>
         <td>${decision(event)}</td>
-        <td><code>${escape(event.policyId || '—')}</code><details><summary>详情</summary><pre>${escape(JSON.stringify(event.details, null, 2))}</pre></details></td>
+        <td><code>${escape(event.policyId || '—')}</code>${evidence(event)}<details ${event.details && event.details.inputEvidence ? 'open' : ''}><summary>详情</summary><pre>${escape(JSON.stringify(event.details, null, 2))}</pre></details></td>
       </tr>`).join('');
       $('empty').hidden = events.length !== 0;
-      $('meta').textContent = `${events.length} 条事件（内容、JWT 与 Capability Token 不会出现在此处）`;
+      $('meta').textContent = `${events.length} 条事件（真实内容、JWT 与 Capability Token 不会出现在此处；演示事件仅展示脱敏测试样例）`;
     };
     async function overview() {
       const data = await fetch('/api/security/overview').then(r => r.json());
