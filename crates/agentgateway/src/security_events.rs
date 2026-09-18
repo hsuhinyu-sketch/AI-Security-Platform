@@ -235,6 +235,120 @@ pub fn store() -> SecurityEventStore {
 	initialize(DEFAULT_CAPACITY)
 }
 
+/// Adds a clearly marked, representative event sequence for a local UI demonstration.
+///
+/// This is only invoked when the runtime explicitly enables `SECURITY_UI_DEMO=1`; normal
+/// deployments never manufacture audit events.
+pub fn seed_demo_events() {
+	let store = store();
+	let base = Utc::now();
+	let demo = |kind,
+	            request_id: &str,
+	            offset_seconds,
+	            action: &str,
+	            resource_type: &str,
+	            resource_id: &str,
+	            decision,
+	            policy_id: Option<&str>,
+	            details: BTreeMap<String, Value>| {
+		SecurityTimelineEvent {
+			sequence: 0,
+			kind,
+			request_id: request_id.into(),
+			timestamp: base + chrono::Duration::seconds(offset_seconds),
+			user_id: Some("demo-analyst".into()),
+			agent_id: Some("support-agent".into()),
+			tenant_id: Some("demo-tenant".into()),
+			delegation_id: Some("delegation-demo-01".into()),
+			action: action.into(),
+			resource_type: resource_type.into(),
+			resource_id: resource_id.into(),
+			decision,
+			policy_id: policy_id.map(Into::into),
+			policy_version: Some("demo-v1".into()),
+			details,
+		}
+	};
+	let tagged = |values: &[(&str, Value)]| {
+		let mut details = BTreeMap::from([("source".into(), json!("demo"))]);
+		details.extend(
+			values
+				.iter()
+				.map(|(key, value)| ((*key).into(), value.clone())),
+		);
+		details
+	};
+
+	store.record(demo(
+		SecurityEventKind::Authorization,
+		"demo-rag-001",
+		0,
+		"KnowledgeIngest:ingest",
+		"Document",
+		"employee-handbook.pdf",
+		Some(DecisionEffect::Allow),
+		Some("rag:ingest-tenant-write"),
+		tagged(&[("decisionExpiresAt", Value::Null)]),
+	));
+	store.record(demo(
+		SecurityEventKind::RagIngestion,
+		"demo-rag-001",
+		1,
+		"KnowledgeIngest:ingest",
+		"Document",
+		"employee-handbook.pdf",
+		Some(DecisionEffect::Allow),
+		None,
+		tagged(&[
+			("outcome", json!("Indexed")),
+			("sourceHash", json!("sha256:3ab8…ac2f")),
+			("contentBytes", json!(18432)),
+			("findingRuleIds", json!([])),
+		]),
+	));
+	store.record(demo(
+		SecurityEventKind::Authorization,
+		"demo-rag-002",
+		2,
+		"KnowledgeRetrieve:retrieve",
+		"KnowledgeBase",
+		"hr-support",
+		Some(DecisionEffect::Allow),
+		Some("rag:tenant-corpus-read"),
+		tagged(&[("decisionExpiresAt", Value::Null)]),
+	));
+	store.record(demo(
+		SecurityEventKind::RagContextAssembly,
+		"demo-rag-002",
+		3,
+		"ContextAssemble:assemble",
+		"KnowledgeBase",
+		"hr-support",
+		Some(DecisionEffect::Allow),
+		None,
+		tagged(&[
+			("queryHash", json!("sha256:98d1…71e0")),
+			("acceptedChunkIds", json!(["chunk-017"])),
+			("removedChunkIds", json!(["chunk-042"])),
+			(
+				"findings",
+				json!([{"chunkId":"chunk-042","kind":"IndirectInstruction","ruleId":"rag:context-injection"}]),
+			),
+		]),
+	));
+	store.record(demo(
+		SecurityEventKind::Authorization,
+		"demo-mcp-003",
+		4,
+		"ToolInvoke:db.delete",
+		"Tool",
+		"db.delete",
+		Some(DecisionEffect::Deny),
+		Some("tool:approval-required"),
+		tagged(&[("reason", json!("trusted approval was not present"))]),
+	));
+}
+
 /// Fan-out sink used by security pipelines: tracing remains the operational record while the
 /// bounded projection makes sanitized events available to the UI.
 #[derive(Clone, Copy, Default)]

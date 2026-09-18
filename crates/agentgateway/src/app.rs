@@ -15,6 +15,10 @@ pub async fn run(config: Arc<Config>) -> anyhow::Result<Bound> {
 	crate::transport::tls::warn_if_key_log_enabled();
 	// Keep a bounded, redacted projection of security decisions for the administrative API.
 	crate::security_events::initialize(10_000);
+	if std::env::var("SECURITY_UI_DEMO").as_deref() == Ok("1") {
+		crate::security_events::seed_demo_events();
+		info!("loaded explicitly requested Security Console demo events");
+	}
 	let (data_plane_handle, data_plane_pool) = new_data_plane_pool(config.num_worker_threads);
 
 	// Initialize OpenTelemetry resource defaults from gateway + proxy metadata
@@ -79,11 +83,8 @@ pub async fn run(config: Arc<Config>) -> anyhow::Result<Bound> {
 		Some(metrics_handle.clone()),
 	);
 
-	let state_mgr = runtime::state_manager::StateManager::new(
-		config.clone(),
-		control_client.clone(),
-	)
-	.await?;
+	let state_mgr =
+		runtime::state_manager::StateManager::new(config.clone(), control_client.clone()).await?;
 	let stores = state_mgr.stores();
 	let resource_manager = state_mgr.resource_manager();
 	let rag_listener_count = crate::rag::start_configured_gateways(
