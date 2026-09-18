@@ -498,6 +498,26 @@ pub struct LocalAiSystemConfig {
 	a2a: Option<LocalA2aGatewayConfig>,
 	#[serde(default, skip_serializing_if = "Option::is_none")]
 	mcp: Option<LocalSimpleMcpConfig>,
+	/// RAG declares the separately mounted retrieval/ingestion HTTP gateway. Its security policy
+	/// stays in this AI system's `security` block; RAG-specific source, context, and backend values
+	/// are validated here and used when the RAG router is mounted by the host application.
+	#[serde(default, skip_serializing_if = "Option::is_none")]
+	#[cfg_attr(feature = "schema", schemars(with = "Option<serde_json::Value>"))]
+	rag: Option<gateway_rag::RagGatewayConfig>,
+}
+
+impl LocalConfig {
+	/// Exposes declared AI-system compositions to a host that mounts additional protocol routers.
+	pub fn ai_systems(&self) -> &[LocalAiSystemConfig] {
+		&self.ai_systems
+	}
+}
+
+impl LocalAiSystemConfig {
+	/// Returns the RAG listener configuration, if this AI system enables the RAG capability.
+	pub fn rag_config(&self) -> Option<&gateway_rag::RagGatewayConfig> {
+		self.rag.as_ref()
+	}
 }
 
 /// System-level inference controls. This is intentionally an input model, not a second runtime
@@ -2717,6 +2737,7 @@ async fn convert(
 			llm,
 			a2a,
 			mcp,
+			rag: _,
 		} = ai_system;
 		if name.is_empty() {
 			bail!("aiSystems[].name must not be empty");
@@ -2847,6 +2868,16 @@ fn validate_gateway_capabilities_for_profile(
 				&format!("{prefix}.security"),
 			)?;
 		}
+		if let Some(rag) = &system.rag {
+			require_gateway_capability(
+				profile,
+				crate::capabilities::GatewayCapability::Rag,
+				&format!("{prefix}.rag"),
+			)?;
+			rag
+				.validate()
+				.map_err(|error| anyhow!("{prefix}.rag is invalid: {error}"))?;
+		}
 	}
 	Ok(())
 }
@@ -2949,6 +2980,9 @@ fn validate_local_listener_ports(config: &LocalConfig) -> anyhow::Result<()> {
 				mcp.port.unwrap_or(DEFAULT_MCP_PORT),
 				format!("aiSystems[{}].mcp", ai_system.name),
 			)?;
+		}
+		if let Some(rag) = &ai_system.rag {
+			insert_local_listener_port(rag.port, format!("aiSystems[{}].rag", ai_system.name))?;
 		}
 	}
 	Ok(())

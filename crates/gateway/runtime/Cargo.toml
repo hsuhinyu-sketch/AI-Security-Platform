@@ -20,12 +20,14 @@ gateway-a2a = ["agentgateway/gateway-a2a"]
 gateway-mcp = ["agentgateway/gateway-mcp"]
 inference-routing = ["agentgateway/inference-routing", "gateway-llm"]
 security-s1 = ["agentgateway/security-s1"]
+gateway-rag = ["agentgateway/gateway-rag"]
 gateway-full = [
 	"gateway-llm",
 	"gateway-a2a",
 	"gateway-mcp",
 	"inference-routing",
 	"security-s1",
+	"gateway-rag",
 ]
 jemalloc = ["agentgateway/jemalloc"]
 mimalloc = ["agentgateway/mimalloc"]

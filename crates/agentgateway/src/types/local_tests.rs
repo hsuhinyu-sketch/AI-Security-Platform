@@ -93,13 +93,43 @@ aiSystems:
 	.expect("test configuration should deserialize");
 	let error = super::validate_gateway_capabilities_for_profile(
 		&config,
-		crate::capabilities::GatewayProfile::new(true, false, false, false, false),
+		crate::capabilities::GatewayProfile::new(true, false, false, false, false, false),
 	)
 	.expect_err("an LLM-only profile must reject A2A configuration");
 	assert!(
 		error
 			.to_string()
 			.contains("requires A2A Gateway, which is not compiled into this gateway profile")
+	);
+}
+
+#[test]
+fn gateway_profile_rejects_rag_not_compiled_into_the_binary() {
+	let config: super::LocalConfig = serde_yaml::from_str(
+		r#"
+aiSystems:
+- name: restricted
+  rag:
+    port: 4103
+    qdrant:
+      endpoint: https://qdrant.example.test
+      collection: knowledge
+      quarantineCollection: knowledge-quarantine
+    embedding:
+      endpoint: https://embeddings.example.test/v1/embeddings
+      model: text-embedding-3-small
+"#,
+	)
+	.expect("test configuration should deserialize");
+	let error = super::validate_gateway_capabilities_for_profile(
+		&config,
+		crate::capabilities::GatewayProfile::new(true, false, false, false, false, false),
+	)
+	.expect_err("a profile without RAG must reject RAG configuration");
+	assert!(
+		error
+			.to_string()
+			.contains("requires RAG Gateway, which is not compiled into this gateway profile")
 	);
 }
 

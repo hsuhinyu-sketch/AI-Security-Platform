@@ -13,8 +13,12 @@ use security_rag::{
 	SecureRetriever,
 };
 
+pub mod config;
+pub mod http;
 pub mod qdrant;
 
+pub use config::{HttpEmbeddingProvider, OpenAiCompatibleEmbeddingConfig, RagGatewayConfig};
+pub use http::{RagHttpService, VerifiedGatewayIdentity, router};
 pub use qdrant::{
 	DocumentChunker, EmbeddingProvider, FixedWindowChunker, QdrantBackend, QdrantBackendConfig,
 };

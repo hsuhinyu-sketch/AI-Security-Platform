@@ -165,6 +165,7 @@ dependencies = [
  "futures-util",
  "gateway-adapter",
  "gateway-composition",
+ "gateway-rag",
  "google-cloud-auth",
  "hashbrown 0.17.1",
  "headers",
@@ -2840,6 +2841,7 @@ version = "0.0.0"
 dependencies = [
  "async-trait",
  "audit-core",
+ "axum",
  "chrono",
  "gateway-adapter",
  "reqwest 0.13.3",
@@ -2849,6 +2851,8 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
+ "tower",
+ "uuid",
 ]
 
 [[package]]

@@ -13,10 +13,12 @@ gateway-a2a = []
 gateway-mcp = []
 inference-routing = ["gateway-llm"]
 security-s1 = []
+gateway-rag = []
 gateway-full = [
     "gateway-llm",
     "gateway-a2a",
     "gateway-mcp",
     "inference-routing",
     "security-s1",
+	"gateway-rag",
 ]

@@ -207,6 +207,28 @@ aiSystems:
     - name: customer-tools
       mcp:
         host: 127.0.0.1:8200
+  # The RAG Router is mounted by the host application from this validated configuration.
+  # Its HTTP input deliberately has no tenantId, ACL, or vector-store filter fields.
+  rag:
+    port: 4103
+    qdrant:
+      endpoint: https://qdrant.internal.example
+      collection: support-knowledge
+      quarantineCollection: support-knowledge-quarantine
+      defaultChunkAccess:
+        allowTenantAuthenticated: true
+    embedding:
+      endpoint: https://embeddings.internal.example/v1/embeddings
+      model: text-embedding-3-small
+    chunkMaxChars: 2000
+    ingestion:
+      allowedSourceSchemes: [https, s3]
+      maxDocumentBytes: 10485760
+    retrieval:
+      maxChunks: 8
+      maxContextTokens: 6000
+    contextGuard:
+      mode: enforce
 ```
 
 The A2A gateway automatically adds the A2A protocol adapter to its backend route. `inference`
@@ -215,7 +237,17 @@ policy, `quota` becomes request and token local-rate-limit policies, and `routin
 each generated model backend so an endpoint picker can select an edge or cloud destination. The
 legacy `llm.policies.localRateLimit` and `llm.policies.inferenceRouting` locations remain valid;
 local rate limits compose, while routing must be declared in only one location. Ports must be
-unique across all listeners.
+unique across all listeners. `rag` is the corresponding RAG-gateway configuration boundary: it
+selects Qdrant, an OpenAI-compatible embedding endpoint, chunking, ingestion controls, retrieval
+budgets, and context-injection handling. The host mounts `gateway_rag::router` at the configured
+RAG listener after verified authentication; the route contract accepts identity only through its
+request extension and rejects caller-supplied tenant or ACL fields.
+
+The mounted RAG router exposes `POST /v1/rag/documents` and `POST /v1/rag/query`. Its host must
+verify authentication and insert `gateway_rag::VerifiedGatewayIdentity` into the request before
+the router runs. The document endpoint accepts only `corpusId`, `documentId`, `sourceUri`, and
+`content`; the query endpoint accepts only `corpusId`, `query`, and `limit`. Therefore tenant,
+principal ACL, and Qdrant filtering are exclusively derived inside the trusted processing chain.
 
 ### Compile-time gateway profiles
 

@@ -30,12 +30,14 @@ gateway-a2a = ["gateway-composition/gateway-a2a"]
 gateway-mcp = ["gateway-composition/gateway-mcp"]
 inference-routing = ["gateway-composition/inference-routing", "gateway-llm"]
 security-s1 = ["gateway-composition/security-s1"]
+gateway-rag = ["gateway-composition/gateway-rag"]
 gateway-full = [
 	"gateway-llm",
 	"gateway-a2a",
 	"gateway-mcp",
 	"inference-routing",
 	"security-s1",
+	"gateway-rag",
 ]
 jemalloc = ["dep:tikv-jemallocator", "dep:jemalloc_pprof"]
 mimalloc = ["pprof-alloc/allocator-mimalloc", "dep:mimalloc"]
@@ -73,6 +75,7 @@ agent-celx.workspace = true
 agent-hbone.workspace = true
 agent-pool.workspace = true
 gateway-composition = { path = "../gateway/composition", default-features = false }
+gateway-rag = { path = "../gateway/rag" }
 gateway-adapter = { path = "../gateway-adapter" }
 security-integration-agentgateway = { path = "../security/integration-agentgateway" }
 security-capability-broker = { path = "../security/capability-broker" }

@@ -12,6 +12,7 @@ pub enum GatewayCapability {
 	Mcp,
 	InferenceRouting,
 	SecurityS1,
+	Rag,
 }
 
 impl GatewayCapability {
@@ -22,6 +23,7 @@ impl GatewayCapability {
 			Self::Mcp => "MCP Gateway",
 			Self::InferenceRouting => "Inference Routing",
 			Self::SecurityS1 => "S1 common security controls",
+			Self::Rag => "RAG Gateway",
 		}
 	}
 }
@@ -34,6 +36,7 @@ pub struct GatewayProfile {
 	mcp: bool,
 	inference_routing: bool,
 	security_s1: bool,
+	rag: bool,
 }
 
 impl GatewayProfile {
@@ -44,6 +47,7 @@ impl GatewayProfile {
 		mcp: bool,
 		inference_routing: bool,
 		security_s1: bool,
+		rag: bool,
 	) -> Self {
 		Self {
 			llm,
@@ -51,6 +55,7 @@ impl GatewayProfile {
 			mcp,
 			inference_routing,
 			security_s1,
+			rag,
 		}
 	}
 
@@ -61,6 +66,7 @@ impl GatewayProfile {
 			GatewayCapability::Mcp => self.mcp,
 			GatewayCapability::InferenceRouting => self.inference_routing,
 			GatewayCapability::SecurityS1 => self.security_s1,
+			GatewayCapability::Rag => self.rag,
 		}
 	}
 }
@@ -81,6 +87,7 @@ impl GatewayProfileProvider for CompiledGatewayProfile {
 			cfg!(feature = "gateway-mcp"),
 			cfg!(feature = "inference-routing"),
 			cfg!(feature = "security-s1"),
+			cfg!(feature = "gateway-rag"),
 		)
 	}
 }
@@ -111,6 +118,10 @@ mod tests {
 		assert_eq!(
 			profile.supports(GatewayCapability::SecurityS1),
 			cfg!(feature = "security-s1")
+		);
+		assert_eq!(
+			profile.supports(GatewayCapability::Rag),
+			cfg!(feature = "gateway-rag")
 		);
 	}
 }
