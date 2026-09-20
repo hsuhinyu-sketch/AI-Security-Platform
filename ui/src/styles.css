@@ -7057,6 +7057,34 @@ details summary {
 	color: var(--primary);
 }
 
+.deployment-profile-panel {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 18px;
+	border-color: color-mix(in srgb, var(--primary) 45%, var(--line));
+}
+
+.deployment-profile-panel h3 {
+	margin: 5px 0 0;
+}
+
+.profile-capabilities {
+	display: flex;
+	flex-wrap: wrap;
+	justify-content: flex-end;
+	gap: 7px;
+}
+
+.profile-capabilities span {
+	border: 1px solid color-mix(in srgb, var(--primary) 45%, var(--line));
+	border-radius: 999px;
+	color: var(--primary);
+	font-size: 12px;
+	font-weight: 600;
+	padding: 4px 9px;
+}
+
 .module-status {
 	border: 1px solid var(--line);
 	border-radius: 999px;
@@ -7079,6 +7107,15 @@ details summary {
 	.platform-runtime-strip {
 		align-items: flex-start;
 		flex-direction: column;
+	}
+
+	.deployment-profile-panel {
+		align-items: flex-start;
+		flex-direction: column;
+	}
+
+	.profile-capabilities {
+		justify-content: flex-start;
 	}
 }
 

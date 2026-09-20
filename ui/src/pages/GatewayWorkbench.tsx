@@ -24,7 +24,7 @@ const modules: ModuleDefinition[] = [
 		configLabel: 'Configure LLM',
 		testPath: '/llm/playground',
 		testLabel: 'Open Chat Playground',
-		configured: config => Boolean(config?.llm)
+		configured: config => moduleEnabled(config, 'llm')
 	},
 	{
 		title: 'Inference Routing',
@@ -34,7 +34,10 @@ const modules: ModuleDefinition[] = [
 		configLabel: 'Configure Routes',
 		testPath: '/llm/playground',
 		testLabel: 'Test an Inference Request',
-		configured: config => configuredList(config?.binds) || configuredList(config?.routes)
+		configured: config =>
+			moduleEnabled(config, 'inference') ||
+			configuredList(config?.binds) ||
+			configuredList(config?.routes)
 	},
 	{
 		title: 'A2A Gateway',
@@ -44,7 +47,7 @@ const modules: ModuleDefinition[] = [
 		configLabel: 'View Effective Config',
 		testPath: '/security/events',
 		testLabel: 'Inspect Agent Events',
-		configured: config => Boolean(config?.a2a)
+		configured: config => moduleEnabled(config, 'a2a')
 	},
 	{
 		title: 'MCP Gateway',
@@ -54,7 +57,7 @@ const modules: ModuleDefinition[] = [
 		configLabel: 'Configure MCP',
 		testPath: '/mcp/playground',
 		testLabel: 'Open Tool Playground',
-		configured: config => Boolean(config?.mcp)
+		configured: config => moduleEnabled(config, 'mcp')
 	},
 	{
 		title: 'RAG Gateway',
@@ -64,7 +67,7 @@ const modules: ModuleDefinition[] = [
 		configLabel: 'View Effective Config',
 		testPath: '/security/events',
 		testLabel: 'Inspect RAG Events',
-		configured: config => Boolean(config?.rag)
+		configured: config => moduleEnabled(config, 'rag')
 	}
 ];
 
@@ -72,6 +75,7 @@ export function GatewayWorkbenchPage() {
 	const config = useEffectiveGatewayConfig();
 	const runtime = useRuntimeInfo();
 	const effectiveConfig = config.data as Record<string, unknown> | undefined;
+	const systems = configuredAiSystems(effectiveConfig);
 
 	return (
 		<div className="page-stack">
@@ -98,6 +102,19 @@ export function GatewayWorkbenchPage() {
 					<strong>Playgrounds available</strong>
 				</div>
 			</Panel>
+			{systems.length ? (
+				<Panel className="deployment-profile-panel">
+					<div>
+						<span className="eyebrow">Deployment Profile</span>
+						<h3>{systems.length === 1 ? systems[0].name : `${systems.length} AI systems configured`}</h3>
+					</div>
+					<div className="profile-capabilities">
+						{systems.flatMap(system => system.capabilities).map(capability => (
+							<span key={capability}>{capability}</span>
+						))}
+					</div>
+				</Panel>
+			) : null}
 			<section className="gateway-workbench-grid" aria-label="Gateway module workbenches">
 				{modules.map(module => {
 					const Icon = module.icon;
@@ -140,4 +157,29 @@ export function GatewayWorkbenchPage() {
 
 function configuredList(value: unknown) {
 	return Array.isArray(value) && value.length > 0;
+}
+
+function moduleEnabled(config: Record<string, unknown> | undefined, module: string) {
+	return Boolean(config?.[module]) || configuredAiSystems(config).some(system => system.modules.has(module));
+}
+
+function configuredAiSystems(config: Record<string, unknown> | undefined) {
+	const declared = config?.aiSystems;
+	if (!Array.isArray(declared)) return [];
+	return declared
+		.filter((system): system is Record<string, unknown> => Boolean(system && typeof system === 'object'))
+		.map(system => {
+			const modules = new Set(['llm', 'inference', 'a2a', 'mcp', 'rag'].filter(key => Boolean(system[key])));
+			return {
+				name: String(system.id ?? system.name ?? 'Unnamed AI system'),
+				modules,
+				capabilities: [
+					modules.has('llm') ? 'LLM' : null,
+					modules.has('inference') ? 'Inference Routing' : null,
+					modules.has('a2a') ? 'A2A' : null,
+					modules.has('mcp') ? 'MCP' : null,
+					modules.has('rag') ? 'RAG' : null
+				].filter((capability): capability is string => Boolean(capability))
+			};
+		});
 }

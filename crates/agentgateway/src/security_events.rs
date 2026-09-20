@@ -242,6 +242,17 @@ pub fn store() -> SecurityEventStore {
 pub fn seed_demo_events() {
 	let store = store();
 	let base = Utc::now();
+	// Screenshot/demo profiles must not show capabilities that are absent from the configured
+	// deployment. `full` keeps the mixed event corpus used by the generic platform demo.
+	let demo_profile = std::env::var("SECURITY_UI_DEMO_PROFILE").unwrap_or_else(|_| "full".into());
+	let record = |event: SecurityTimelineEvent| {
+		let visible_in_profile = demo_profile != "trusted-rag"
+			|| event.action.starts_with("ModelInvoke:")
+			|| event.action.starts_with("Knowledge");
+		if visible_in_profile {
+			store.record(event);
+		}
+	};
 	let demo = |kind,
 	            request_id: &str,
 	            offset_seconds,
@@ -279,7 +290,7 @@ pub fn seed_demo_events() {
 		details
 	};
 
-	store.record(demo(
+	record(demo(
 		SecurityEventKind::Authorization,
 		"demo-rag-001",
 		0,
@@ -290,7 +301,7 @@ pub fn seed_demo_events() {
 		Some("rag:ingest-tenant-write"),
 		tagged(&[("decisionExpiresAt", Value::Null)]),
 	));
-	store.record(demo(
+	record(demo(
 		SecurityEventKind::RagIngestion,
 		"demo-rag-001",
 		1,
@@ -306,7 +317,7 @@ pub fn seed_demo_events() {
 			("findingRuleIds", json!([])),
 		]),
 	));
-	store.record(demo(
+	record(demo(
 		SecurityEventKind::Authorization,
 		"demo-rag-002",
 		2,
@@ -317,7 +328,7 @@ pub fn seed_demo_events() {
 		Some("rag:tenant-corpus-read"),
 		tagged(&[("decisionExpiresAt", Value::Null)]),
 	));
-	store.record(demo(
+	record(demo(
 		SecurityEventKind::RagContextAssembly,
 		"demo-rag-002",
 		3,
@@ -336,7 +347,7 @@ pub fn seed_demo_events() {
 			),
 		]),
 	));
-	store.record(demo(
+	record(demo(
 		SecurityEventKind::Authorization,
 		"demo-mcp-003",
 		4,
@@ -518,7 +529,7 @@ pub fn seed_demo_events() {
 		event.agent_id = Some(format!("demo-agent-{:02}", index % 5));
 		event.tenant_id = Some(format!("demo-tenant-{:02}", index % 3));
 		event.delegation_id = (index % 4 != 0).then(|| format!("delegation-demo-{index:03}"));
-		store.record(event);
+		record(event);
 	}
 }
 

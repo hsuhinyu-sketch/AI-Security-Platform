@@ -1,0 +1,64 @@
+# Path 1 — a minimal, tenant-isolated knowledge assistant.
+# Deliberately excludes A2A and MCP: the deployment exposes only LLM and RAG surfaces.
+aiSystems:
+  - id: trusted-knowledge-assistant
+    security:
+      mode: enforce
+      requiredIdentity:
+        user: true
+        agent: false
+        tenant: true
+      policies:
+        - id: allow-tenant-knowledge-ingestion
+          tenantId: tenant-a
+          actionType: knowledgeIngest
+          actionName: ingest
+          resourceType: document
+          effect: allow
+          enabled: true
+        - id: allow-tenant-knowledge-retrieval
+          tenantId: tenant-a
+          actionType: knowledgeRetrieve
+          actionName: retrieve
+          resourceType: knowledgeBase
+          effect: allow
+          enabled: true
+        - id: allow-tenant-context-assembly
+          tenantId: tenant-a
+          actionType: contextAssemble
+          actionName: assemble
+          resourceType: knowledgeBase
+          effect: allow
+          enabled: true
+    llm:
+      port: 14100
+      models:
+        - name: knowledge-chat
+          provider: openAI
+    rag:
+      port: 14103
+      qdrant:
+        endpoint: https://qdrant.demo.invalid
+        collection: tenant-a-knowledge
+        quarantineCollection: tenant-a-knowledge-quarantine
+        defaultChunkAccess:
+          allowedUsers: []
+          allowedAgents: []
+          allowTenantAuthenticated: true
+      embedding:
+        endpoint: https://embeddings.demo.invalid/v1/embeddings
+        model: text-embedding-3-small
+      chunkMaxChars: 2000
+      ingestion:
+        allowedSourceSchemes: [https, s3]
+        maxDocumentBytes: 10485760
+      retrieval:
+        maxChunks: 8
+        maxContextTokens: 6000
+      contextGuard:
+        mode: enforce
+      authentication:
+        mode: strict
+        issuer: https://issuer.demo.invalid
+        audiences: [trusted-knowledge-assistant]
+        jwks: '{"keys":[]}'

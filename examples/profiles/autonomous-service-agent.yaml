@@ -1,0 +1,139 @@
+# Path 2 — an autonomous service Agent with all gateway capabilities enabled.
+aiSystems:
+  - id: autonomous-service-agent
+    security:
+      mode: enforce
+      requiredIdentity:
+        user: true
+        agent: true
+        tenant: true
+      agentIdentity:
+        required: true
+        agents:
+          - agentId: service-agent
+            tenantId: tenant-a
+            clientIds: [service-agent-workload]
+            enabled: true
+      policies:
+        - id: allow-service-chat
+          tenantId: tenant-a
+          agentId: service-agent
+          actionType: modelInvoke
+          actionName: invoke
+          resourceId: service-chat
+          resourceType: model
+          effect: allow
+          enabled: true
+        - id: allow-ticket-create
+          tenantId: tenant-a
+          agentId: service-agent
+          actionType: toolInvoke
+          actionName: ticket.create
+          resourceId: ticket.create
+          resourceType: tool
+          effect: allow
+          enabled: true
+        - id: allow-customer-export-with-approval
+          tenantId: tenant-a
+          agentId: service-agent
+          actionType: toolInvoke
+          actionName: customer.export
+          resourceId: customer.export
+          resourceType: tool
+          effect: allow
+          enabled: true
+        - id: allow-agent-task-send
+          tenantId: tenant-a
+          agentId: service-agent
+          actionType: agentInvoke
+          actionName: tasks/send
+          resourceType: agent
+          effect: allow
+          enabled: true
+        - id: allow-knowledge-retrieval
+          tenantId: tenant-a
+          agentId: service-agent
+          actionType: knowledgeRetrieve
+          actionName: retrieve
+          resourceType: knowledgeBase
+          effect: allow
+          enabled: true
+        - id: allow-context-assembly
+          tenantId: tenant-a
+          agentId: service-agent
+          actionType: contextAssemble
+          actionName: assemble
+          resourceType: knowledgeBase
+          effect: allow
+          enabled: true
+      requiredToolApprovals:
+        - toolName: customer.export
+      delegations:
+        - id: delegation-alice-service-agent
+          userId: alice
+          agentId: service-agent
+          tenantId: tenant-a
+          expiresAt: 2027-12-31T23:59:59Z
+          scopes:
+            - actionType: toolInvoke
+              actionName: customer.export
+              resourceId: customer.export
+              resourceType: tool
+    inference:
+      parameters:
+        defaults:
+          temperature: 0.2
+          max_tokens: 1024
+        overrides:
+          max_tokens: 512
+      quota:
+        requests:
+          maxTokens: 120
+          tokensPerFill: 120
+          fillInterval: 1m
+      routing:
+        endpointPicker:
+          host: 127.0.0.1:19300
+        destinationMode: passthrough
+    llm:
+      port: 14200
+      models:
+        - name: service-chat
+          provider: openAI
+    a2a:
+      port: 14201
+      backend:
+        host: 127.0.0.1:18100
+    mcp:
+      port: 14202
+      targets:
+        - name: service-tools
+          mcp:
+            host: 127.0.0.1:18200
+    rag:
+      port: 14203
+      qdrant:
+        endpoint: https://qdrant.demo.invalid
+        collection: service-knowledge
+        quarantineCollection: service-knowledge-quarantine
+        defaultChunkAccess:
+          allowedUsers: []
+          allowedAgents: []
+          allowTenantAuthenticated: true
+      embedding:
+        endpoint: https://embeddings.demo.invalid/v1/embeddings
+        model: text-embedding-3-small
+      chunkMaxChars: 2000
+      ingestion:
+        allowedSourceSchemes: [https, s3]
+        maxDocumentBytes: 10485760
+      retrieval:
+        maxChunks: 8
+        maxContextTokens: 6000
+      contextGuard:
+        mode: enforce
+      authentication:
+        mode: strict
+        issuer: https://issuer.demo.invalid
+        audiences: [autonomous-service-agent]
+        jwks: '{"keys":[]}'
