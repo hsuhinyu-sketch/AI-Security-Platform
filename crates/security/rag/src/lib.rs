@@ -9,12 +9,12 @@
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
 
-use audit_core::AuditSink;
+use security_audit::AuditSink;
 use chrono::{DateTime, Utc};
-use gateway_adapter::{
+use security_pipeline::{
 	Authorizer, GatewayError, GatewayIdentity, SecurityPipeline, knowledge_retrieve_for_identity,
 };
-use security_contracts::Subject;
+use security_types::Subject;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
@@ -355,7 +355,7 @@ where
 
 	fn filter_candidates(
 		&self,
-		action: &security_contracts::ActionRequest,
+		action: &security_types::ActionRequest,
 		query: &RetrievalQuery,
 		candidates: Vec<KnowledgeChunk>,
 	) -> AuthorizedContext {
@@ -399,7 +399,7 @@ where
 
 	fn chunk_access_reason(
 		&self,
-		action: &security_contracts::ActionRequest,
+		action: &security_types::ActionRequest,
 		chunk: &KnowledgeChunk,
 		current_tokens: u64,
 	) -> Result<(), String> {
@@ -450,7 +450,7 @@ where
 
 	fn deny<T>(
 		&self,
-		action: &security_contracts::ActionRequest,
+		action: &security_types::ActionRequest,
 		query_hash: &str,
 		error: RetrievalError,
 	) -> Result<T, RetrievalError> {
@@ -473,9 +473,9 @@ where
 mod tests {
 	use std::sync::atomic::{AtomicUsize, Ordering};
 
-	use audit_core::InMemoryAuditSink;
-	use gateway_adapter::{GatewayIdentity, PolicyAuthorizer, SecurityPipeline};
-	use security_contracts::{ActionType, DecisionEffect, ResourceType};
+	use security_audit::InMemoryAuditSink;
+	use security_pipeline::{GatewayIdentity, PolicyAuthorizer, SecurityPipeline};
+	use security_types::{ActionType, DecisionEffect, ResourceType};
 	use security_policy::Policy;
 
 	use super::*;

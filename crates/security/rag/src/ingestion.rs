@@ -6,9 +6,9 @@
 
 use std::sync::{Arc, Mutex};
 
-use audit_core::AuditSink;
+use security_audit::AuditSink;
 use chrono::{DateTime, Utc};
-use gateway_adapter::{
+use security_pipeline::{
 	Authorizer, GatewayError, GatewayIdentity, SecurityPipeline, knowledge_ingest_for_identity,
 };
 use serde::{Deserialize, Serialize};
@@ -474,7 +474,7 @@ where
 	#[allow(clippy::too_many_arguments)]
 	fn deny<T>(
 		&self,
-		action: &security_contracts::ActionRequest,
+		action: &security_types::ActionRequest,
 		request: &DocumentIngestRequest,
 		source_scheme: Option<String>,
 		source_hash: Option<String>,
@@ -501,7 +501,7 @@ where
 	#[allow(clippy::too_many_arguments)]
 	fn record(
 		&self,
-		action: &security_contracts::ActionRequest,
+		action: &security_types::ActionRequest,
 		corpus_id: &str,
 		source_scheme: Option<String>,
 		source_hash: Option<String>,
@@ -540,9 +540,9 @@ fn source_scheme(source_uri: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-	use audit_core::InMemoryAuditSink;
-	use gateway_adapter::PolicyAuthorizer;
-	use security_contracts::{ActionType, DecisionEffect, ResourceType};
+	use security_audit::InMemoryAuditSink;
+	use security_pipeline::PolicyAuthorizer;
+	use security_types::{ActionType, DecisionEffect, ResourceType};
 	use security_policy::Policy;
 
 	use super::*;

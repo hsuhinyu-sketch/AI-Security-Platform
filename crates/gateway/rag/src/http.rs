@@ -12,7 +12,7 @@ use axum::{
 	http::{HeaderMap, StatusCode},
 	routing::post,
 };
-use gateway_adapter::GatewayIdentity;
+use security_pipeline::GatewayIdentity;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -53,11 +53,11 @@ impl<IB, RB, IA, IS, IAudit, RA, RS, RAudit, CA> RagHttpService
 where
 	IB: security_rag::DocumentIngestBackend,
 	RB: security_rag::RetrievalBackend,
-	IA: gateway_adapter::Authorizer,
-	IS: audit_core::AuditSink,
+	IA: security_pipeline::Authorizer,
+	IS: security_audit::AuditSink,
 	IAudit: security_rag::IngestionAuditSink,
-	RA: gateway_adapter::Authorizer,
-	RS: audit_core::AuditSink,
+	RA: security_pipeline::Authorizer,
+	RS: security_audit::AuditSink,
 	RAudit: security_rag::RetrievalAuditSink,
 	CA: security_rag::ContextAuditSink,
 {

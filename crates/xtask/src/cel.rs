@@ -1,6 +1,6 @@
 use std::env;
 
-use agentgateway::cel;
+use ai_security_platform_runtime::cel;
 
 pub fn evaluate_command() -> anyhow::Result<()> {
 	let mut args: Vec<String> = env::args().collect();

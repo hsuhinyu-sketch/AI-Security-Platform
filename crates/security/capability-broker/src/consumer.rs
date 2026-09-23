@@ -5,7 +5,7 @@ use std::time::Duration;
 use axum::http::HeaderMap;
 use base64::Engine;
 use chrono::Utc;
-use security_contracts::ActionRequest;
+use security_types::ActionRequest;
 use sha2::{Digest, Sha256};
 
 use crate::{
@@ -255,7 +255,7 @@ fn validate_consume_response(
 #[cfg(test)]
 mod tests {
 	use chrono::{Duration, Utc};
-	use security_contracts::{
+	use security_types::{
 		Action, ActionRequest, ActionType, AuthorizationContext, Resource, ResourceType, Subject,
 	};
 

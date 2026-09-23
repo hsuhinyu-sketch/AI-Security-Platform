@@ -1,4 +1,4 @@
-# AI Gateway Platform
+# AI Security Platform
 
 Composable Rust-first AI gateway platform. Security is a core, optional capability rather than
 the boundary of the product.
@@ -14,9 +14,9 @@ the boundary of the product.
 - Audit: create an event for every security decision; the PoC includes an in-memory sink.
 - Composition: assemble an identity control, an authorizer, optional action controls, optional capability broker, and an audit sink into a `SecurityPipeline`.
 
-`agentgateway` is an AgentGateway-derived compatibility runtime used during migration; it is not
-the product boundary. New platform code is introduced under `crates/gateway/*`,
-`crates/security/*`, and `crates/platform/*`.
+The complete runtime is now owned by `crates/gateway/runtime`; product entry points are
+`ai-security-platform-runtime` and `ai-security-platform-app`. The repository no longer builds through an
+AgentGateway compatibility package.
 
 The capability broker is intentionally process-local for the PoC. A production deployment must
 replace it with a durable, encrypted broker and place the protected Tool/API behind a network
@@ -106,7 +106,7 @@ security:
 
 ## Composable security pipeline
 
-`gateway-adapter` provides small security bricks rather than a mandatory all-in-one gateway:
+`security-pipeline` provides small security bricks rather than a mandatory all-in-one gateway:
 
 ```rust
 let pipeline = SecurityPipeline::new(PolicyAuthorizer::new(policies), audit_sink)
@@ -281,33 +281,32 @@ principal ACL, and Qdrant filtering are exclusively derived inside the trusted p
 
 ### Compile-time gateway profiles
 
-The default `ai-gateway` build retains every gateway capability for compatibility. A selected
+The default `ai-security-platform` build retains every gateway capability. A selected
 profile rejects configuration for
 capabilities that were not selected at build time, so deployment configuration cannot accidentally
 enable an unapproved gateway surface.
 
 ```bash
 # LLM only
-cargo build -p ai-gateway-app --bin ai-gateway --no-default-features \
+cargo build -p ai-security-platform-app --bin ai-security-platform --no-default-features \
   --features tls-aws-lc,mimalloc,runtime-base,gateway-llm
 
 # LLM plus multiple inference endpoints / routing
-cargo build -p ai-gateway-app --bin ai-gateway --no-default-features \
+cargo build -p ai-security-platform-app --bin ai-security-platform --no-default-features \
   --features tls-aws-lc,mimalloc,runtime-base,gateway-llm,inference-routing
 
 # LLM plus an A2A agent runtime
-cargo build -p ai-gateway-app --bin ai-gateway --no-default-features \
+cargo build -p ai-security-platform-app --bin ai-security-platform --no-default-features \
   --features tls-aws-lc,mimalloc,runtime-base,gateway-llm,gateway-a2a
 
 # LLM, A2A, and MCP, with common S1 security controls
-cargo build -p ai-gateway-app --bin ai-gateway --no-default-features \
+cargo build -p ai-security-platform-app --bin ai-security-platform --no-default-features \
   --features tls-aws-lc,mimalloc,runtime-base,gateway-llm,gateway-a2a,gateway-mcp,security-s1
 ```
 
 `gateway-composition` owns the compile-time capability profile and its small trait boundary.
-This is deliberately a light split: protocol implementation remains in the `agentgateway`
-compatibility runtime until its standalone API is stable, while feature profiles already provide
-distinct deployable contracts.
+Protocol implementation is owned by `ai-security-platform-runtime`; feature profiles provide distinct
+deployable contracts while protocol crates are progressively extracted behind stable APIs.
 `runtime-base` is temporarily required because cloud SDK, storage, and telemetry modules have not
 yet all been conditionally compiled; the profile already constrains the enabled gateway surface,
 but those dependencies are not yet removed from a smaller binary.
@@ -679,22 +678,23 @@ security:
 ## Core crates
 
 ```text
-crates/contracts
-crates/policy
-crates/security-engine
-crates/audit-core
-crates/gateway-adapter
+crates/security/types
+crates/security/policy
+crates/security/engine
+crates/security/audit
+crates/security/pipeline
 crates/gateway/composition
-crates/gateway/runtime       # ai-gateway-runtime, compatibility facade
-crates/gateway/app           # ai-gateway-app / ai-gateway binary
-crates/agentgateway*         # AgentGateway-derived compatibility runtime
+crates/gateway/runtime       # ai-security-platform-runtime, complete runtime implementation
+crates/gateway/app           # ai-security-platform-app / ai-security-platform binary
+crates/platform/*            # shared first-party platform utilities
+crates/third-party/*         # retained third-party source dependencies
 ```
 
 ## Build and test
 
 ```bash
-cargo check -p security-contracts -p security-policy -p security-engine -p audit-core -p gateway-adapter -p ai-gateway-app
-cargo test -p security-engine -p security-policy -p audit-core -p gateway-adapter
+cargo check -p security-types -p security-policy -p security-engine -p security-audit -p security-pipeline -p ai-security-platform-app
+cargo test -p security-engine -p security-policy -p security-audit -p security-pipeline
 ```
 
 ## License

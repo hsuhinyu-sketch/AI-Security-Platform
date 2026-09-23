@@ -16,7 +16,7 @@ chrono.workspace = true
 reqwest = { workspace = true, features = ["blocking", "json"], optional = true }
 serde.workspace = true
 serde_json.workspace = true
-security-contracts = { path = "../../contracts" }
+security-types = { path = "../types" }
 sha2 = { workspace = true, optional = true }
 thiserror.workspace = true
 tracing.workspace = true

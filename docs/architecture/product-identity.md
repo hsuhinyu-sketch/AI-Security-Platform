@@ -1,28 +1,28 @@
-# AI Gateway Platform identity and migration
+# AI Security Platform identity and architecture
 
 ## Product boundary
 
-This repository is a composable AI Gateway Platform. Its product capabilities are LLM Gateway,
+This repository is a composable AI Security Platform. Its product capabilities are LLM Gateway,
 Inference Routing, A2A Gateway, MCP Gateway, and protocol-neutral security controls.
 
 Security is a first-class, optional layer; it does not define the outer product boundary.
 
-## Compatibility boundary
+## Runtime ownership
 
-`agentgateway` and `agentgateway-app` are AgentGateway-derived compatibility packages used to
-reuse the mature HTTP/proxy runtime during migration. They remain buildable to preserve existing
-configuration and integration behavior, but new first-party code must not take a new dependency
-on either package when a `crates/gateway/*`, `crates/security/*`, or `crates/platform/*` boundary
-is available.
+The complete Rust runtime is owned by `crates/gateway/runtime` as the `ai-security-platform-runtime`
+package. The application and all product binaries are owned by `crates/gateway/app` as
+`ai-security-platform-app`. No `agentgateway` or `agentgateway-app` package remains in the workspace.
 
-The Apache-2.0 license and upstream attribution for reused AgentGateway code remain in force.
+Some runtime source originated from AgentGateway and retains the required Apache-2.0 license and
+source attribution. That provenance does not create a compatibility layer or a dependency boundary
+in the current project.
 
 ## First-party entry points
 
 | Package | Role | Current implementation |
 | --- | --- | --- |
-| `ai-gateway-runtime` | Product runtime API | Re-exports the compatibility runtime during migration. |
-| `ai-gateway-app` | Product application and `ai-gateway` binary | Delegates to the compatibility application during migration. |
+| `ai-security-platform-runtime` | Product runtime API | Complete protocol runtime implementation. |
+| `ai-security-platform-app` | Product application and `ai-security-platform` binary | Complete CLI and application implementation. |
 | `gateway-composition` | Compile-time capability contract | First-party implementation. |
 | `security-*` | Security contracts and controls | First-party implementation. |
 
@@ -61,8 +61,8 @@ The Apache-2.0 license and upstream attribution for reused AgentGateway code rem
   a shared HTTPS/mTLS source and queries it without an allow cache for each verified delegation;
   the in-process registry remains available only for tests and local PoCs.
 
-## Migration rule
+## Development rule
 
-New gateway functionality is added to the first-party namespace first. Code is extracted from
-the compatibility runtime only after its request, response, configuration, and test interfaces
-are stable. This prevents a repository-wide rename from obscuring functional changes.
+New functionality is added directly to `crates/gateway`, `crates/security`, or
+`crates/platform`. Protocol modules are extracted from `ai-security-platform-runtime` only after their
+request, response, configuration, and test interfaces are stable.

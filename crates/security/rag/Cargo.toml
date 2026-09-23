@@ -7,15 +7,15 @@ publish = { workspace = true }
 
 [dependencies]
 async-trait.workspace = true
-audit-core = { path = "../../audit-core" }
+security-audit = { path = "../audit" }
 chrono.workspace = true
-gateway-adapter = { path = "../../gateway-adapter" }
+security-pipeline = { path = "../pipeline" }
 hex.workspace = true
-security-contracts = { path = "../../contracts" }
+security-types = { path = "../types" }
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
 
 [dev-dependencies]
-security-policy = { path = "../../policy" }
+security-policy = { path = "../policy" }
 tokio.workspace = true

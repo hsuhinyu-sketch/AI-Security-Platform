@@ -4,8 +4,8 @@
 //! [`GatewayIdentity`] to this adapter. The adapter never accepts caller-supplied tenant, ACL, or
 //! vector-store filter fields: those are derived inside `security-rag` from verified identity.
 
-use audit_core::AuditSink;
-use gateway_adapter::{Authorizer, GatewayIdentity};
+use security_audit::AuditSink;
+use security_pipeline::{Authorizer, GatewayIdentity};
 use security_rag::{
 	AuthorizedContext, ContextAssemblyError, ContextAuditSink, ContextGuard, DocumentIngestBackend,
 	DocumentIngestRequest, GuardedContext, IngestionAuditSink, IngestionError, IngestionResult,
@@ -146,9 +146,9 @@ where
 mod tests {
 	use std::sync::{Arc, Mutex};
 
-	use audit_core::InMemoryAuditSink;
-	use gateway_adapter::{PolicyAuthorizer, SecurityPipeline};
-	use security_contracts::{ActionType, DecisionEffect, ResourceType};
+	use security_audit::InMemoryAuditSink;
+	use security_pipeline::{PolicyAuthorizer, SecurityPipeline};
+	use security_types::{ActionType, DecisionEffect, ResourceType};
 	use security_policy::Policy;
 	use security_rag::{
 		ContentLabelRule, ContextGuardConfig, DocumentIngestBackend, InMemoryContextAuditSink,

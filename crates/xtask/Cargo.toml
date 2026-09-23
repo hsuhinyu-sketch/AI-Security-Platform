@@ -5,7 +5,7 @@ version = "0.0.0"
 edition.workspace = true
 
 [dependencies]
-agentgateway = {workspace = true, features = ["schema"]}
+ai-security-platform-runtime = { workspace = true, features = ["schema"] }
 anyhow.workspace = true
 cel.workspace = true
 fs-err.workspace = true

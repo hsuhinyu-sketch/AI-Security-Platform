@@ -11,8 +11,8 @@ platform can compose a minimal knowledge assistant or a full autonomous Agent sy
 Validate either profile before use:
 
 ```bash
-cargo run -p ai-gateway-app --bin ai-gateway -- --file examples/profiles/minimal-trusted-rag.yaml --validate-only
-cargo run -p ai-gateway-app --bin ai-gateway -- --file examples/profiles/autonomous-service-agent.yaml --validate-only
+cargo run -p ai-security-platform-app --bin ai-security-platform -- --file examples/profiles/minimal-trusted-rag.yaml --validate-only
+cargo run -p ai-security-platform-app --bin ai-security-platform -- --file examples/profiles/autonomous-service-agent.yaml --validate-only
 ```
 
 For an isolated UI demonstration, start each process with its own `ADMIN_ADDR`, `STATS_ADDR`, and

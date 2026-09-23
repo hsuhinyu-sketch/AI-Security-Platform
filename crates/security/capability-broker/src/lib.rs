@@ -14,7 +14,7 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::post;
 use axum::{Json, Router};
 use chrono::{DateTime, Duration, Utc};
-use security_contracts::ActionRequest;
+use security_types::ActionRequest;
 use thiserror::Error;
 use uuid::Uuid;
 
@@ -377,7 +377,7 @@ mod tests {
 	use axum::body::Body;
 	use axum::http::{Request, StatusCode};
 	use chrono::{Duration, Utc};
-	use security_contracts::{
+	use security_types::{
 		Action, ActionRequest, ActionType, AuthorizationContext, Resource, ResourceType, Subject,
 	};
 

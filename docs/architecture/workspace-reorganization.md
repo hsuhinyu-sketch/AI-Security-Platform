@@ -1,4 +1,4 @@
-# AI Gateway Platform workspace reorganization plan
+# AI Security Platform workspace architecture
 
 ## Goal
 
@@ -9,26 +9,27 @@ small crates own stable contracts and mechanics; runtime-specific adapters live 
 ```text
 crates/
   gateway/
-    runtime/                         # ai-gateway-runtime compatibility facade
-    app/                             # ai-gateway-app / ai-gateway binary
+    runtime/                         # ai-security-platform-runtime implementation
+    app/                             # ai-security-platform-app / binary
     protocol-llm/                    # future extraction
     protocol-mcp/                    # future extraction
     protocol-a2a/                    # future extraction
     inference-routing/               # future extraction
   security/
-    types/                           # current security-contracts
+    types/                           # security-types
     policy/                          # current security-policy
     engine/                          # current security-engine
-    audit/                           # current audit-core
-    pipeline/                        # current gateway-adapter
-    integration-agentgateway/        # runtime adapter extraction
+    audit/                           # security-audit
+    pipeline/                        # security-pipeline
+    integration-runtime/             # runtime adapter
   platform/
     core/, pool/, hbone/, protos/, celx/
+  third-party/
+    cel-fork/, htpasswd-verify-fork/ # retained compatibility dependencies
 ```
 
-The first-party `ai-gateway-runtime` and `ai-gateway-app` entry points are in place. Legacy
-`agentgateway*` packages remain compatible implementation dependencies until each protocol API
-is extracted and stabilized.
+`ai-security-platform-runtime` and `ai-security-platform-app` contain the complete runtime and application
+implementations. The workspace has no AgentGateway compatibility package.
 
 ## Dependency rules
 
@@ -36,13 +37,13 @@ is extracted and stabilized.
 security/types -> security/policy -> security/engine -> security/pipeline
                                                         ^
 gateway/* ---------------------------------------------|
-gateway/runtime -> security/integration-agentgateway -> security/pipeline
+gateway/runtime -> security/integration-runtime -> security/pipeline
 ```
 
-- Security core crates must not depend on `agentgateway`, HTTP, MCP, LLM, or A2A types.
+- Security core crates must not depend on the gateway runtime, HTTP, MCP, LLM, or A2A types.
 - Protocol normalization belongs in gateway adapters; policy evaluation and audit event creation
   belong in security crates.
-- `agentgateway` remains the composition runtime until protocol crates have stable standalone APIs.
+- `ai-security-platform-runtime` remains the composition runtime until protocol crates have stable standalone APIs.
 - Applications depend on gateway runtime, never directly on security implementation crates.
 
 ## Migration phases
@@ -51,28 +52,27 @@ gateway/runtime -> security/integration-agentgateway -> security/pipeline
 
 - Record ownership and dependency rules in this document.
 - Mark workspace members by domain without changing code paths.
-- Preserve every package name and existing configuration schema.
+- Preserve configuration schema compatibility while establishing first-party package names.
 
-### Phase 1 — extract security runtime integration
+### Phase 1 — extract security runtime integration (complete)
 
-- Move audit dispatch and audit-only/enforce mode handling from `agentgateway/src/security.rs`
-  into `security/integration-agentgateway`.
+- Move audit dispatch and audit-only/enforce mode handling from `gateway/runtime/src/security.rs`
+  into `security/integration-runtime`.
 - Keep JWT-claim extraction in the gateway runtime initially; it depends on request extensions.
 - Make LLM, A2A, MCP, and inference-routing adapters call one shared security integration API.
 
 ### Phase 1.5 — compile-time gateway profiles (complete)
 
 - `gateway-composition` owns the protocol/security capability vocabulary and the profile trait.
-- `agentgateway` and `agentgateway-app` forward `gateway-llm`, `gateway-a2a`, `gateway-mcp`,
+- `ai-security-platform-runtime` and `ai-security-platform-app` forward `gateway-llm`, `gateway-a2a`, `gateway-mcp`,
   `inference-routing`, and `security-s1` Cargo features.
 - The runtime rejects local `llm`, `mcp`, and `aiSystems` configuration that requests a capability
   omitted from the compiled profile. This establishes deployable composition contracts without
   prematurely extracting protocol implementation modules.
 
-### Phase 2 — stabilize the security pipeline
+### Phase 2 — stabilize the security pipeline (complete)
 
-- Rename the package directory for `gateway-adapter` to `security/pipeline` while retaining its
-  package name through a compatibility period.
+- Move the security pipeline to `crates/security/pipeline` as the `security-pipeline` package.
 - Add explicit `audit`, `shadow`, and `enforce` modes to the shared integration API.
 - Move capability broker implementations behind a durable-broker trait.
 
@@ -82,11 +82,13 @@ gateway/runtime -> security/integration-agentgateway -> security/pipeline
   response, configuration, and test surface.
 - Do not split modules merely to match the target directory diagram.
 
-### Phase 4 — physical rename and compatibility cleanup
+### Phase 4 — physical layout and product-baseline migration (complete)
 
-- Move package paths to `crates/gateway/*`, `crates/security/*`, and `crates/platform/*`.
-- Update workspace paths, CI, examples, and documentation in one compatibility release.
-- Remove temporary re-export crates only after downstream users migrate.
+- Move all runtime and application source to `crates/gateway/*` and remove the temporary
+  `agentgateway` / `agentgateway-app` packages.
+- Move security and platform source to their owned namespaces; retain only third-party forks in
+  `crates/third-party/*`.
+- Update workspace paths, embedded-asset paths, build-script paths, examples, and documentation.
 
 ## Acceptance criteria for every phase
 

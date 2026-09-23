@@ -1,3 +1,2 @@
-fn main() -> anyhow::Result<()> {
-	agentgateway_app::run()
-}
+#[rustfmt::skip]
+fn main() -> anyhow::Result<()> { ai_security_platform_app::run() }

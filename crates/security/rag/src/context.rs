@@ -2,9 +2,9 @@
 
 use std::sync::Mutex;
 
-use audit_core::AuditSink;
+use security_audit::AuditSink;
 use chrono::{DateTime, Utc};
-use gateway_adapter::{
+use security_pipeline::{
 	Authorizer, GatewayError, GatewayIdentity, SecurityPipeline, context_assemble_for_identity,
 };
 use serde::{Deserialize, Serialize};
@@ -295,9 +295,9 @@ impl ContextGuard {
 
 #[cfg(test)]
 mod tests {
-	use audit_core::InMemoryAuditSink;
-	use gateway_adapter::PolicyAuthorizer;
-	use security_contracts::{ActionType, DecisionEffect, ResourceType};
+	use security_audit::InMemoryAuditSink;
+	use security_pipeline::PolicyAuthorizer;
+	use security_types::{ActionType, DecisionEffect, ResourceType};
 	use security_policy::Policy;
 
 	use super::*;

@@ -1,0 +1,948 @@
+use std::collections::HashMap;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+
+use platform_core::telemetry::ValueBag;
+use http::Version;
+use itertools::Itertools;
+use once_cell::sync::OnceCell;
+use opentelemetry::trace::{SpanContext, SpanId, SpanKind, Status, TraceId, TraceState};
+use opentelemetry::{InstrumentationScope, Key, KeyValue, TraceFlags};
+use opentelemetry_otlp::{WithExportConfig, WithHttpConfig};
+use opentelemetry_sdk::Resource;
+use opentelemetry_sdk::trace::{
+	BatchSpanProcessor, SdkTracerProvider, SpanData, SpanEvents, SpanExporter, SpanLinks,
+	SpanProcessor,
+};
+pub use traceparent::TraceParent;
+
+use crate::cel;
+use crate::telemetry::log::{CelLoggingExecutor, LoggingFields, RequestLog};
+use crate::types::agent::{BackendTrafficPolicy, SimpleBackendReference, TracingConfig};
+
+#[derive(Clone, Debug)]
+pub struct Tracer {
+	pub provider: SdkTracerProvider,
+	pub processor: SharedSpanProcessor,
+	pub fields: Arc<LoggingFields>,
+	pub(crate) filter: Option<Arc<cel::Expression>>,
+}
+
+/// Decides whether a trace span should be exported given an optional CEL *keep* filter.
+/// Keep semantics (matching `accessLog.filter`): when `filter` evaluates to `true`, the span is
+/// exported (returns true); otherwise it is dropped. On eval error / missing fields, `eval_bool`
+/// returns false, so the span is dropped. `None` => no filtering (always export).
+pub(crate) fn should_export_span(filter: Option<&cel::Expression>, exec: &cel::Executor) -> bool {
+	match filter {
+		Some(f) => exec.eval_bool(f),
+		None => true,
+	}
+}
+
+#[derive(Clone)]
+pub struct SharedSpanProcessor {
+	inner: Arc<dyn SpanProcessor>,
+}
+
+impl std::fmt::Debug for SharedSpanProcessor {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		f.debug_struct("SharedSpanProcessor").finish()
+	}
+}
+
+impl SharedSpanProcessor {
+	pub fn new(processor: impl SpanProcessor + 'static) -> Self {
+		Self {
+			inner: Arc::new(processor),
+		}
+	}
+
+	pub fn emit(&self, span: SpanData) {
+		SpanProcessor::on_end(self, span);
+	}
+}
+
+impl SpanProcessor for SharedSpanProcessor {
+	fn on_start(&self, span: &mut opentelemetry_sdk::trace::Span, cx: &opentelemetry::Context) {
+		self.inner.on_start(span, cx);
+	}
+
+	fn on_end(&self, span: SpanData) {
+		self.inner.on_end(span);
+	}
+
+	fn force_flush(&self) -> opentelemetry_sdk::error::OTelSdkResult {
+		self.inner.force_flush()
+	}
+
+	fn shutdown_with_timeout(
+		&self,
+		timeout: std::time::Duration,
+	) -> opentelemetry_sdk::error::OTelSdkResult {
+		self.inner.shutdown_with_timeout(timeout)
+	}
+
+	fn set_resource(&mut self, _resource: &Resource) {
+		// Production processors are given their resource before they are wrapped in Arc by
+		// `new_trace_processor`. The provider may call this later on a cloned wrapper,
+		// where the inner processor is intentionally no longer uniquely owned.
+	}
+}
+
+pub fn new_trace_processor(
+	resource: &Resource,
+	exporter: impl SpanExporter + 'static,
+) -> SharedSpanProcessor {
+	let mut processor = BatchSpanProcessor::builder(exporter).build();
+	processor.set_resource(resource);
+	SharedSpanProcessor::new(processor)
+}
+
+pub fn trace_span_data(
+	name: impl Into<std::borrow::Cow<'static, str>>,
+	span_kind: SpanKind,
+	span: &TraceParent,
+	parent: Option<&TraceParent>,
+	start_time: std::time::SystemTime,
+	end_time: std::time::SystemTime,
+	attributes: Vec<KeyValue>,
+) -> SpanData {
+	let parent_span_id = parent
+		.map(|parent| SpanId::from(parent.span_id))
+		.unwrap_or(SpanId::INVALID);
+	SpanData {
+		span_context: SpanContext::new(
+			TraceId::from(span.trace_id),
+			SpanId::from(span.span_id),
+			TraceFlags::new(span.flags),
+			false,
+			TraceState::default(),
+		),
+		parent_span_id,
+		parent_span_is_remote: parent.is_some(),
+		span_kind,
+		name: name.into(),
+		start_time,
+		end_time,
+		attributes,
+		dropped_attributes_count: 0,
+		events: SpanEvents::default(),
+		links: SpanLinks::default(),
+		status: Status::default(),
+		instrumentation_scope: InstrumentationScope::builder("agentgateway").build(),
+	}
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Default, Copy, Eq, PartialEq, Clone, Debug)]
+#[serde(rename_all = "lowercase", deny_unknown_fields)]
+#[cfg_attr(feature = "schema", derive(crate::JsonSchema))]
+pub enum Protocol {
+	#[default]
+	Grpc,
+	Http,
+}
+
+#[derive(serde::Serialize, Clone, Debug)]
+pub struct DeprecatedConfig {
+	pub endpoint: Option<String>,
+	#[serde(serialize_with = "crate::serdes::ser_sensitive_header_map")]
+	pub headers: HashMap<String, String>,
+	pub protocol: Protocol,
+	pub fields: LoggingFields,
+	pub random_sampling: Option<Arc<cel::Expression>>,
+	pub client_sampling: Option<Arc<cel::Expression>>,
+	pub path: String,
+}
+
+mod semconv {
+	use opentelemetry::Key;
+
+	pub static PROTOCOL_VERSION: Key = Key::from_static_str("network.protocol.version");
+	pub static URL_SCHEME: Key = Key::from_static_str("url.scheme");
+}
+
+impl Tracer {
+	pub fn new(
+		config: &TracingConfig,
+		fields: Arc<LoggingFields>,
+		policy_client: crate::proxy::httpproxy::PolicyClient,
+	) -> anyhow::Result<Tracer> {
+		// Important: this may be called from the dataplane runtime (policy lazy init),
+		// but we want exporter tasks/spans to run on the admin runtime when available.
+		let exporter_runtime = policy_client
+			.inputs
+			.cfg
+			.admin_runtime_handle
+			.clone()
+			.unwrap_or_else(tokio::runtime::Handle::current);
+
+		let defaults = GLOBAL_RESOURCE_DEFAULTS.get();
+		let mut resource_builder = Resource::builder();
+		if let Some(d) = defaults {
+			for kv in &d.attrs {
+				resource_builder = resource_builder.with_attribute(kv.clone());
+			}
+		}
+		resource_builder = resource_builder.with_attribute(KeyValue::new(
+			"service.version",
+			platform_core::version::BuildInfo::new().version,
+		));
+		let exec = cel::Executor::new_empty();
+		let mut tracer_name: Option<String> = None;
+		for (name, expr) in config.resources.iter() {
+			let name: &str = name.as_ref();
+			if let Ok(value) = exec.eval(expr.as_ref()) {
+				use opentelemetry::Value;
+				let otel_value = match value {
+					cel::Value::String(s) => {
+						if name == "service.name" && tracer_name.is_none() {
+							tracer_name = Some(s.to_string());
+						}
+						Value::String(s.to_string().into())
+					},
+					cel::Value::Int(i) => Value::I64(i),
+					cel::Value::UInt(u) => Value::I64(u as i64),
+					cel::Value::Float(f) => Value::F64(f),
+					cel::Value::Bool(b) => Value::Bool(b),
+					_ => {
+						let json_str = value
+							.json()
+							.ok()
+							.and_then(|j| serde_json::to_string(&j).ok())
+							.unwrap_or_else(|| format!("{:?}", value));
+						Value::String(json_str.into())
+					},
+				};
+				resource_builder =
+					resource_builder.with_attribute(KeyValue::new(name.to_string(), otel_value));
+			}
+		}
+		let tracer_name = tracer_name
+			.or_else(|| defaults.and_then(|d| d.service_name.clone()))
+			.unwrap_or_else(|| "agentgateway".to_string());
+		resource_builder = resource_builder.with_service_name(tracer_name.clone());
+
+		// Build once and reuse in the provider
+		let resource = resource_builder.build();
+
+		// Choose exporter based on per-policy protocol:
+		// - gRPC when protocol is "grpc"
+		// - otherwise HTTP (fall back to gRPC if no HTTP path is available)
+		let (provider, processor) = if config.protocol == crate::types::agent::TracingProtocol::Grpc {
+			// Use gRPC exporter that routes via PolicyClient/GrpcReferenceChannel
+			let exporter = PolicyGrpcSpanExporter::new(
+				policy_client.inputs.clone(),
+				Arc::new(config.provider_backend.clone()),
+				config.policies.clone(),
+				exporter_runtime.clone(),
+			);
+			let processor = new_trace_processor(&resource, exporter);
+			let provider = opentelemetry_sdk::trace::SdkTracerProvider::builder()
+				.with_resource(resource.clone())
+				.with_span_processor(processor.clone())
+				.build();
+			(provider, processor)
+		} else {
+			let path = config.path.clone();
+			let http_client = PolicyOtelHttpClient {
+				policy_client,
+				backend_ref: config.provider_backend.clone(),
+				policies: config.policies.clone(),
+				runtime: exporter_runtime,
+			};
+			let exporter = opentelemetry_otlp::SpanExporter::builder()
+				.with_http()
+				.with_http_client(http_client)
+				.with_endpoint(path)
+				.build()?;
+			let processor = new_trace_processor(&resource, exporter);
+			let provider = opentelemetry_sdk::trace::SdkTracerProvider::builder()
+				.with_resource(resource.clone())
+				.with_span_processor(processor.clone())
+				.build();
+			(provider, processor)
+		};
+		Ok(Tracer {
+			provider,
+			processor,
+			fields,
+			filter: config.filter.clone(),
+		})
+	}
+
+	pub fn shutdown(&self) {
+		let _ = self.provider.shutdown();
+	}
+
+	pub fn send<'v>(
+		&self,
+		request: &RequestLog,
+		end: &platform_core::Timestamp,
+		cel_exec: &CelLoggingExecutor,
+		attrs: &[(&str, Option<ValueBag<'v>>)],
+	) {
+		let mut attributes = attrs
+			.iter()
+			.filter(|(k, _)| !self.fields.has(k))
+			.filter_map(|(k, v)| v.as_ref().map(|v| (k, v)))
+			.map(|(k, v)| KeyValue::new(Key::new(k.to_string()), to_otel(v)))
+			.collect_vec();
+		let out_span = request.outgoing_span.as_ref().unwrap();
+		if !out_span.is_sampled() {
+			return;
+		}
+		if !should_export_span(self.filter.as_deref(), &cel_exec.executor) {
+			return;
+		}
+		let start = request.start.as_system_time();
+		let end = end.as_system_time();
+
+		// For now we only accept HTTP(?)
+		attributes.push(KeyValue::new(semconv::URL_SCHEME.clone(), "http"));
+		// Otel spec has a special format here
+		match &request.version {
+			Some(Version::HTTP_11) => {
+				attributes.push(KeyValue::new(semconv::PROTOCOL_VERSION.clone(), "1.1"));
+			},
+			Some(Version::HTTP_2) => {
+				attributes.push(KeyValue::new(semconv::PROTOCOL_VERSION.clone(), "2"));
+			},
+			_ => {},
+		}
+
+		attributes.reserve(self.fields.add.len());
+
+		// To avoid lifetime issues need to store the expression before we give it to ValueBag reference.
+		// TODO: we could allow log() to take a list of borrows and then a list of OwnedValueBag
+		let raws = cel_exec.eval(&self.fields.add);
+		let mut span_name = None;
+		for (k, v) in raws {
+			if k == "span.name"
+				&& let Some(serde_json::Value::String(s)) = v
+			{
+				span_name = Some(s);
+			} else if let Some(eval) = v.as_ref().map(ValueBag::capture_serde1) {
+				attributes.push(KeyValue::new(Key::new(k.to_string()), to_otel(&eval)));
+			}
+		}
+
+		let span_name = span_name.unwrap_or_else(|| match (&request.method, &request.path_match) {
+			(Some(method), Some(path_match)) => {
+				format!("{method} {path_match}")
+			},
+			_ => "unknown".to_string(),
+		});
+
+		let out_span = request.outgoing_span.as_ref().unwrap();
+		self.processor.emit(trace_span_data(
+			span_name,
+			SpanKind::Server,
+			out_span,
+			request.incoming_span.as_ref(),
+			start,
+			end,
+			attributes,
+		));
+	}
+}
+
+/// Policy-aware OTLP gRPC exporter that routes via `GrpcReferenceChannel`, ensuring
+/// backend policies are looked up and applied by `PolicyClient::call_reference`.
+/// For now we implement SpanExporter ourslves for grpc until https://github.com/open-telemetry/opentelemetry-rust/issues/3147 is addressed.
+#[derive(Clone)]
+struct PolicyGrpcSpanExporter {
+	tonic_client:
+		opentelemetry_proto::tonic::collector::trace::v1::trace_service_client::TraceServiceClient<
+			crate::http::ext_proc::GrpcReferenceChannel,
+		>,
+	is_shutdown: Arc<AtomicBool>,
+	resource: Resource,
+	runtime: tokio::runtime::Handle,
+}
+
+impl std::fmt::Debug for PolicyGrpcSpanExporter {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		f.debug_struct("PolicyGrpcSpanExporter").finish()
+	}
+}
+
+impl PolicyGrpcSpanExporter {
+	fn new(
+		inputs: Arc<crate::ProxyInputs>,
+		target: Arc<SimpleBackendReference>,
+		policies: Vec<BackendTrafficPolicy>,
+		runtime: tokio::runtime::Handle,
+	) -> Self {
+		use crate::http::ext_proc::GrpcReferenceChannel;
+		let channel = GrpcReferenceChannel {
+			target,
+			policies: Arc::new(policies),
+			client: crate::proxy::httpproxy::PolicyClient::new(inputs),
+		};
+		let tonic_client = opentelemetry_proto::tonic::collector::trace::v1::trace_service_client::TraceServiceClient::new(
+			channel,
+		);
+		Self {
+			tonic_client,
+			is_shutdown: Arc::new(AtomicBool::new(false)),
+			resource: Resource::builder().build(),
+			runtime,
+		}
+	}
+}
+
+#[async_trait::async_trait]
+impl opentelemetry_sdk::trace::SpanExporter for PolicyGrpcSpanExporter {
+	fn export(
+		&self,
+		batch: Vec<opentelemetry_sdk::trace::SpanData>,
+	) -> impl futures_util::Future<Output = opentelemetry_sdk::error::OTelSdkResult> + Send {
+		use opentelemetry_sdk::error::{OTelSdkError, OTelSdkResult};
+		let is_shutdown = self.is_shutdown.clone();
+		let mut client = self.tonic_client.clone();
+		let resource = self.resource.clone();
+		let handle = self.runtime.clone();
+		async move {
+			if is_shutdown.load(Ordering::Relaxed) {
+				return Err(OTelSdkError::AlreadyShutdown);
+			}
+			// Reuse OTLP transform to convert SDK spans to ResourceSpans
+			let resource_spans = from_span_data(&resource, batch);
+			let req = opentelemetry_proto::tonic::collector::trace::v1::ExportTraceServiceRequest {
+				resource_spans,
+			};
+			// Drop tonic Response inside the spawned task so guard is released on the Tokio runtime, not on
+			// the BatchProcessor OS thread which has no Tokio context.
+			handle
+				.spawn(async move {
+					client
+						.export(req)
+						.await
+						.map(|_| ())
+						.map_err(|e| e.message().to_string())
+				})
+				.await
+				.map_err(|e| OTelSdkError::InternalFailure(e.to_string()))?
+				.map_err(OTelSdkError::InternalFailure) as OTelSdkResult
+		}
+	}
+
+	fn shutdown(&self) -> opentelemetry_sdk::error::OTelSdkResult {
+		self.is_shutdown.store(true, Ordering::Relaxed);
+		Ok(())
+	}
+
+	fn set_resource(&mut self, res: &opentelemetry_sdk::Resource) {
+		self.resource = res.clone();
+	}
+}
+
+pub(crate) fn to_otel(v: &ValueBag) -> opentelemetry::Value {
+	if let Some(b) = v.to_str() {
+		opentelemetry::Value::String(b.to_string().into())
+	} else if let Some(b) = v.to_i64() {
+		opentelemetry::Value::I64(b)
+	} else if let Some(b) = v.to_f64() {
+		opentelemetry::Value::F64(b)
+	} else {
+		opentelemetry::Value::String(v.to_string().into())
+	}
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct PolicyOtelHttpClient {
+	pub(crate) policy_client: crate::proxy::httpproxy::PolicyClient,
+	pub(crate) backend_ref: SimpleBackendReference,
+	pub(crate) runtime: tokio::runtime::Handle,
+	pub(crate) policies: Vec<BackendTrafficPolicy>,
+}
+
+#[async_trait::async_trait]
+impl opentelemetry_http::HttpClient for PolicyOtelHttpClient {
+	async fn send_bytes(
+		&self,
+		request: http::Request<bytes::Bytes>,
+	) -> Result<http::Response<bytes::Bytes>, Box<dyn std::error::Error + Send + Sync + 'static>> {
+		let client = self.policy_client.clone();
+		let backend_ref = self.backend_ref.clone();
+		let policies = self.policies.clone();
+		let handle = self.runtime.clone();
+
+		let (mut head, body_bytes) = request.into_parts();
+		let mut uri_parts = head.uri.into_parts();
+		uri_parts.scheme = None;
+		uri_parts.authority = None;
+		head.uri = http::Uri::from_parts(uri_parts).map_err(Box::new)?;
+		let req = crate::http::Request::from_parts(head, crate::http::Body::from(body_bytes));
+
+		let resp = handle
+			.spawn(async move {
+				client
+					.call_reference_with_policies(req, &backend_ref, &policies)
+					.await
+					.map_err(Box::new)
+			})
+			.await
+			.map_err(Box::new)??;
+
+		use http_body_util::BodyExt as _;
+		let (parts, body) = resp.into_parts();
+		let collected = body.collect().await.map_err(Box::new)?;
+		let bytes = collected.to_bytes();
+		Ok(http::Response::from_parts(parts, bytes))
+	}
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct GlobalResourceDefaults {
+	pub(crate) service_name: Option<String>,
+	pub(crate) attrs: Vec<KeyValue>,
+}
+
+static GLOBAL_RESOURCE_DEFAULTS: OnceCell<GlobalResourceDefaults> = OnceCell::new();
+
+pub(crate) fn global_resource_defaults() -> Option<&'static GlobalResourceDefaults> {
+	GLOBAL_RESOURCE_DEFAULTS.get()
+}
+
+/// Build a tonic ResourceSpans payload from SDK SpanData.
+/// Unblock exports for our custom exporter until https://github.com/open-telemetry/opentelemetry-rust/issues/3147 is addressed.
+fn from_span_data(
+	resource: &opentelemetry_sdk::Resource,
+	spans: Vec<opentelemetry_sdk::trace::SpanData>,
+) -> Vec<opentelemetry_proto::tonic::trace::v1::ResourceSpans> {
+	let resource: opentelemetry_proto::transform::common::tonic::ResourceAttributesWithSchema =
+		resource.into();
+	// Group spans by their instrumentation scope
+	let scope_map = spans.iter().fold(
+		HashMap::new(),
+		|mut scope_map: HashMap<
+			&opentelemetry::InstrumentationScope,
+			Vec<&opentelemetry_sdk::trace::SpanData>,
+		>,
+		 span| {
+			let instrumentation = &span.instrumentation_scope;
+			scope_map.entry(instrumentation).or_default().push(span);
+			scope_map
+		},
+	);
+
+	// Convert the grouped spans into ScopeSpans
+	let scope_spans = scope_map
+		.into_iter()
+		.map(
+			|(instrumentation, span_records)| opentelemetry_proto::tonic::trace::v1::ScopeSpans {
+				scope: Some((instrumentation, None).into()),
+				schema_url: instrumentation
+					.schema_url()
+					.map(ToOwned::to_owned)
+					.unwrap_or_default(),
+				spans: span_records
+					.into_iter()
+					.map(|span_data| span_data.clone().into())
+					.collect(),
+			},
+		)
+		.collect();
+	// We currently do not extract resource attributes; send empty resource payload.
+	// This is sufficient for collector ingestion and can be enhanced later if needed.
+	vec![opentelemetry_proto::tonic::trace::v1::ResourceSpans {
+		resource: Some(opentelemetry_proto::tonic::resource::v1::Resource {
+			attributes: resource.attributes.0.clone(),
+			dropped_attributes_count: 0,
+			entity_refs: vec![],
+		}),
+		schema_url: String::new(),
+		scope_spans,
+	}]
+}
+
+/// Initialize defaults using gateway name/namespace from config.
+///
+/// Per the OpenTelemetry specification, the standardized environment variables
+/// `OTEL_SERVICE_NAME` and `OTEL_RESOURCE_ATTRIBUTES` are also respected.
+/// Config-derived values take precedence over env vars, which in turn take
+/// precedence over the compiled-in defaults.
+pub fn set_resource_defaults_from_config(cfg: &crate::Config) {
+	let pm = &cfg.proxy_metadata;
+	let mut attrs: Vec<KeyValue> = Vec::new();
+
+	// Start with attributes from OTEL_RESOURCE_ATTRIBUTES (lowest precedence).
+	// Format: key1=value1,key2=value2
+	if let Ok(env_attrs) = std::env::var("OTEL_RESOURCE_ATTRIBUTES") {
+		for pair in env_attrs.split(',') {
+			let pair = pair.trim();
+			if let Some((k, v)) = pair.split_once('=') {
+				let k = k.trim();
+				let v = v.trim();
+				if !k.is_empty() {
+					attrs.push(KeyValue::new(k.to_string(), v.to_string()));
+				}
+			}
+		}
+	}
+
+	// Config-derived attributes override env-sourced ones.
+	let mut push_if_present = |k: &'static str, v: &str| {
+		if !v.is_empty() {
+			// Remove any env-sourced duplicate so config wins.
+			attrs.retain(|kv| kv.key.as_str() != k);
+			attrs.push(KeyValue::new(k, v.to_string()));
+		}
+	};
+
+	push_if_present("k8s.pod.name", pm.pod_name.as_str());
+	push_if_present("k8s.namespace.name", pm.pod_namespace.as_str());
+	push_if_present("k8s.node.name", pm.node_name.as_str());
+	if let Some(instance_ip) = &pm.instance_ip {
+		attrs.retain(|kv| kv.key.as_str() != "k8s.pod.ip");
+		attrs.push(KeyValue::new("k8s.pod.ip", instance_ip.clone()));
+	}
+	// `node_id` is derived from pod name/namespace, only set if we have those set
+	if !pm.node_id.is_empty() && !pm.pod_name.is_empty() && !pm.pod_namespace.is_empty() {
+		attrs.retain(|kv| kv.key.as_str() != "service.instance.id");
+		attrs.push(KeyValue::new("service.instance.id", pm.node_id.clone()));
+	}
+	if let Some(ref self_id) = cfg.self_addr {
+		attrs.retain(|kv| kv.key.as_str() != "host.name");
+		attrs.push(KeyValue::new("host.name", self_id.hostname().to_string()));
+	}
+	let (service_name, service_namespace) = (String::new(), String::new());
+
+	if !service_namespace.is_empty() {
+		attrs.retain(|kv| kv.key.as_str() != "service.namespace");
+		attrs.push(KeyValue::new("service.namespace", service_namespace));
+	}
+
+	// Resolve service name: config > OTEL_SERVICE_NAME env > default
+	let resolved_service_name = if service_name.is_empty() {
+		std::env::var("OTEL_SERVICE_NAME")
+			.ok()
+			.filter(|s| !s.is_empty())
+	} else {
+		Some(service_name)
+	};
+
+	let _ = GLOBAL_RESOURCE_DEFAULTS.set(GlobalResourceDefaults {
+		service_name: resolved_service_name,
+		attrs,
+	});
+}
+
+mod traceparent {
+	use std::fmt;
+
+	use rand::RngExt;
+
+	use crate::http::Request;
+	use crate::http::x_headers::TRACEPARENT;
+
+	/// Represents a traceparent, as defined by https://www.w3.org/TR/trace-context/
+	#[derive(Clone, Eq, PartialEq)]
+	pub struct TraceParent {
+		pub version: u8,
+		pub trace_id: u128,
+		pub span_id: u64,
+		pub flags: u8,
+	}
+
+	impl Default for TraceParent {
+		fn default() -> Self {
+			Self::new()
+		}
+	}
+
+	impl TraceParent {
+		pub fn new() -> Self {
+			let mut rng = rand::rng();
+			Self {
+				version: 0,
+				trace_id: rng.random(),
+				span_id: rng.random(),
+				flags: 0,
+			}
+		}
+		pub fn insert_header(&self, req: &mut Request) {
+			let hv = hyper::header::HeaderValue::from_bytes(format!("{self:?}").as_bytes()).unwrap();
+			req.headers_mut().insert(TRACEPARENT, hv);
+		}
+		pub fn from_request(req: &Request) -> Option<Self> {
+			req
+				.headers()
+				.get(TRACEPARENT)
+				.and_then(|b| b.to_str().ok())
+				.and_then(|b| TraceParent::try_from(b).ok())
+		}
+		pub fn new_span(&self) -> Self {
+			let mut rng = rand::rng();
+			let mut cpy: TraceParent = self.clone();
+			cpy.span_id = rng.random();
+			cpy
+		}
+		pub fn trace_id(&self) -> String {
+			format!("{:032x}", self.trace_id)
+		}
+		pub fn span_id(&self) -> String {
+			format!("{:016x}", self.span_id)
+		}
+		pub fn is_sampled(&self) -> bool {
+			(self.flags & 0x01) == 0x01
+		}
+	}
+
+	impl fmt::Debug for TraceParent {
+		fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+			write!(
+				f,
+				"{:02x}-{:032x}-{:016x}-{:02x}",
+				self.version, self.trace_id, self.span_id, self.flags
+			)
+		}
+	}
+
+	impl fmt::Display for TraceParent {
+		fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+			write!(f, "{:032x}", self.trace_id,)
+		}
+	}
+
+	impl TryFrom<&str> for TraceParent {
+		type Error = anyhow::Error;
+
+		fn try_from(value: &str) -> Result<Self, Self::Error> {
+			if value.len() != 55 {
+				anyhow::bail!("traceparent malformed length was {}", value.len())
+			}
+
+			let segs: Vec<&str> = value.split('-').collect();
+
+			Ok(Self {
+				version: u8::from_str_radix(segs[0], 16)?,
+				trace_id: u128::from_str_radix(segs[1], 16)?,
+				span_id: u64::from_str_radix(segs[2], 16)?,
+				flags: u8::from_str_radix(segs[3], 16)?,
+			})
+		}
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use std::future::ready;
+	use std::net::SocketAddr;
+	use std::sync::{Arc, Mutex};
+	use std::time::Instant;
+
+	use platform_core::{Timestamp, strng};
+	use opentelemetry::trace::SpanKind;
+	use opentelemetry_sdk::error::OTelSdkResult;
+	use opentelemetry_sdk::trace::{SimpleSpanProcessor, SpanData, SpanExporter};
+	use prometheus_client::registry::Registry;
+
+	use super::*;
+	use crate::llm::cost::ModelCatalog;
+	use crate::telemetry::log::{
+		CelLogging, CelLoggingExecutor, LoggingFields, MetricFields, RequestLog,
+	};
+	use crate::telemetry::metrics::Metrics;
+	use crate::transport::stream::TCPConnectionInfo;
+
+	#[derive(Clone, Debug, Default)]
+	struct RecordingSpanExporter {
+		spans: Arc<Mutex<Vec<SpanData>>>,
+	}
+
+	impl RecordingSpanExporter {
+		fn finished_spans(&self) -> Vec<SpanData> {
+			self.spans.lock().unwrap().clone()
+		}
+	}
+
+	impl SpanExporter for RecordingSpanExporter {
+		fn export(
+			&self,
+			batch: Vec<SpanData>,
+		) -> impl std::future::Future<Output = OTelSdkResult> + Send {
+			self.spans.lock().unwrap().extend(batch);
+			ready(Ok(()))
+		}
+	}
+
+	fn test_tracer() -> (Tracer, RecordingSpanExporter) {
+		let exporter = RecordingSpanExporter::default();
+		let processor = SharedSpanProcessor::new(SimpleSpanProcessor::new(exporter.clone()));
+		let provider = SdkTracerProvider::builder()
+			.with_span_processor(processor.clone())
+			.build();
+		(
+			Tracer {
+				provider,
+				processor,
+				fields: Arc::new(LoggingFields::default()),
+				filter: None,
+			},
+			exporter,
+		)
+	}
+
+	fn test_request_log() -> RequestLog {
+		let cel = CelLogging {
+			cel_context: crate::cel::ContextBuilder::new(),
+			filter: None,
+			fields: LoggingFields::default(),
+			otlp_filter: None,
+			otlp_fields: LoggingFields::default(),
+			metric_fields: MetricFields::default(),
+			database_fields: LoggingFields::default(),
+		};
+		let mut registry = Registry::default();
+		let metrics = Arc::new(Metrics::new(&mut registry, Default::default()));
+		RequestLog::new(
+			cel,
+			metrics,
+			ModelCatalog::empty(),
+			Timestamp::now(),
+			TCPConnectionInfo {
+				peer_addr: "127.0.0.1:12345".parse::<SocketAddr>().unwrap(),
+				local_addr: "127.0.0.1:8080".parse::<SocketAddr>().unwrap(),
+				start: Instant::now(),
+				raw_peer_addr: None,
+			},
+		)
+	}
+
+	#[test]
+	fn send_uses_incoming_span_as_parent_and_preserves_manual_ids() {
+		let (tracer, exporter) = test_tracer();
+		let mut request = test_request_log();
+		request.method = Some(http::Method::GET);
+		request.path_match = Some(strng::new("/trace"));
+
+		let mut incoming = TraceParent::new();
+		incoming.flags = 1;
+		let mut outgoing = incoming.new_span();
+		outgoing.flags = 1;
+		request.incoming_span = Some(incoming.clone());
+		request.outgoing_span = Some(outgoing.clone());
+
+		let filter = None;
+		let fields = LoggingFields::default();
+		let otlp_filter = None;
+		let otlp_fields = LoggingFields::default();
+		let metric_fields = Arc::new(MetricFields::default());
+		let database_fields = LoggingFields::default();
+		let cel_exec = CelLoggingExecutor {
+			executor: crate::cel::Executor::new_empty(),
+			filter: &filter,
+			fields: &fields,
+			otlp_filter: &otlp_filter,
+			otlp_fields: &otlp_fields,
+			metric_fields: &metric_fields,
+			database_fields: &database_fields,
+		};
+
+		tracer.send(&request, &Timestamp::now(), &cel_exec, &[]);
+		let _ = tracer.provider.force_flush();
+
+		let spans = exporter.finished_spans();
+		assert_eq!(spans.len(), 1);
+		let span = &spans[0];
+		assert_eq!(span.span_kind, SpanKind::Server);
+		assert_eq!(span.span_context.trace_id(), outgoing.trace_id.into());
+		assert_eq!(span.span_context.span_id(), outgoing.span_id.into());
+		assert_eq!(span.parent_span_id, incoming.span_id.into());
+		assert!(span.parent_span_is_remote);
+		assert!(span.links.iter().next().is_none());
+	}
+
+	#[test]
+	fn should_export_span_keep_filter_cases() {
+		use crate::cel::{Executor, Expression, snapshot_request, snapshot_response};
+
+		// Keep-semantics: the expression returns `true` for spans we want to export.
+		// Here we export everything except the noisy probe/SSE-connection spans.
+		let keep_expr = Expression::new_strict(
+			"!((request.method == 'GET' && response.code == 405) || (mcp != null && request.method == 'GET' && response.code == 200))",
+		)
+		.unwrap();
+
+		fn req(method: ::http::Method) -> crate::http::Request {
+			::http::Request::builder()
+				.method(method)
+				.uri("http://example.com/")
+				.body(crate::http::Body::empty())
+				.unwrap()
+		}
+		fn resp(code: u16) -> crate::http::Response {
+			::http::Response::builder()
+				.status(code)
+				.body(crate::http::Body::empty())
+				.unwrap()
+		}
+
+		let mcp = crate::mcp::MCPInfo {
+			method_name: Some("tools/call".to_string()),
+			..Default::default()
+		};
+
+		// GET + 405, no mcp => drop (should_export == false)
+		{
+			let req_snap = snapshot_request(&mut req(::http::Method::GET), true);
+			let resp_snap = snapshot_response(&mut resp(405));
+			let exec = Executor::new_logger(Some(&req_snap), Some(&resp_snap), None, None, None, None);
+			assert!(!should_export_span(Some(&keep_expr), &exec));
+		}
+
+		// GET + 200, mcp present => drop (false)
+		{
+			let req_snap = snapshot_request(&mut req(::http::Method::GET), true);
+			let resp_snap = snapshot_response(&mut resp(200));
+			let exec = Executor::new_logger(
+				Some(&req_snap),
+				Some(&resp_snap),
+				None,
+				Some(&mcp),
+				None,
+				None,
+			);
+			assert!(!should_export_span(Some(&keep_expr), &exec));
+		}
+
+		// POST + 200, mcp present (tool call) => keep (true)
+		{
+			let req_snap = snapshot_request(&mut req(::http::Method::POST), true);
+			let resp_snap = snapshot_response(&mut resp(200));
+			let exec = Executor::new_logger(
+				Some(&req_snap),
+				Some(&resp_snap),
+				None,
+				Some(&mcp),
+				None,
+				None,
+			);
+			assert!(should_export_span(Some(&keep_expr), &exec));
+		}
+
+		// GET + 200, no mcp => keep (true)
+		{
+			let req_snap = snapshot_request(&mut req(::http::Method::GET), true);
+			let resp_snap = snapshot_response(&mut resp(200));
+			let exec = Executor::new_logger(Some(&req_snap), Some(&resp_snap), None, None, None, None);
+			assert!(should_export_span(Some(&keep_expr), &exec));
+		}
+
+		// GET + no response snapshot (unknown status) => expression errors => drop (false).
+		// Under keep-semantics, eval errors fail closed (the span is dropped).
+		{
+			let req_snap = snapshot_request(&mut req(::http::Method::GET), true);
+			let exec = Executor::new_logger(Some(&req_snap), None, None, None, None, None);
+			assert!(!should_export_span(Some(&keep_expr), &exec));
+		}
+
+		// filter == None => keep (true)
+		{
+			let exec = Executor::new_empty();
+			assert!(should_export_span(None, &exec));
+		}
+	}
+}

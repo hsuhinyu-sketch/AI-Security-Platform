@@ -1,0 +1,20 @@
+[package]
+name = "security-integration-runtime"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+security-audit = { path = "../audit" }
+security-pipeline = { path = "../pipeline" }
+security-types = { path = "../types" }
+serde.workspace = true
+serde_json.workspace = true
+tracing.workspace = true
+reqwest = { workspace = true, features = ["blocking", "json"] }
+chrono.workspace = true
+
+[dev-dependencies]
+security-policy = { path = "../policy" }

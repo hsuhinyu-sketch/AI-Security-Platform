@@ -1,0 +1,1842 @@
+use std::borrow::Cow;
+use std::sync::Arc;
+
+use platform_core::{metrics, strng};
+use hickory_resolver::config::{ResolverConfig, ResolverOpts};
+use openapiv3::{OpenAPI, ReferenceOr};
+use prometheus_client::registry::Registry;
+use rmcp::model::Tool;
+use rstest::rstest;
+use serde_json::json;
+use wiremock::matchers::{body_json, header, method, path, query_param};
+use wiremock::{Match, Mock, MockServer, Request, ResponseTemplate};
+
+use super::*;
+use crate::client::Client;
+use crate::proxy::httpproxy::PolicyClient;
+use crate::serdes::FileInlineOrRemote;
+use crate::store::{BackendPolicies, Stores};
+use crate::types::agent::{Backend, ResourceName, SimpleBackend, Target};
+use crate::types::local::{
+	LocalBackend, LocalMcpBackend, LocalMcpTarget, LocalMcpTargetSpec, McpBackendHost,
+	McpStatefulMode,
+};
+use crate::{BackendConfig, ProxyInputs, client, mcp};
+
+// Helper to create a handler and mock server for tests.
+// Use prefix "" for no path prefix, or e.g. "/v2" for a path prefix.
+async fn setup_with_prefix(prefix: &str) -> (MockServer, Handler) {
+	let server = MockServer::start().await;
+	let host = server.uri();
+	let parsed = reqwest::Url::parse(&host).unwrap();
+	let config = crate::config::parse_config("{}".to_string(), None).unwrap();
+	let encoder = config.session_encoder.clone();
+	let stores = Stores::with_ipv6_enabled(config.ipv6_enabled);
+	let client = Client::new(
+		&client::Config {
+			resolver_cfg: ResolverConfig::default(),
+			resolver_opts: ResolverOpts::default(),
+		},
+		None,
+		BackendConfig::default(),
+		None,
+	);
+	let pi = Arc::new(ProxyInputs {
+		cfg: Arc::new(config),
+		stores: stores.clone(),
+		metrics: Arc::new(crate::metrics::Metrics::new(
+			metrics::sub_registry(&mut Registry::default()),
+			Default::default(),
+		)),
+		model_catalog: crate::llm::cost::ModelCatalog::empty(),
+		admin: None,
+		upstream: client.clone(),
+		ca: None,
+
+		mcp_state: mcp::router::App::new(stores.clone(), encoder),
+		guardrails: None,
+		vehicle_state: Default::default(),
+		circuit_breakers: None,
+	});
+
+	let client = PolicyClient::new(pi.clone());
+	let test_tool_get = Tool::new(
+		Cow::Borrowed("get_user"),
+		Cow::Borrowed("Get user details"),
+		Arc::new(
+			json!({
+				"type": "object",
+				"properties": {
+					"path": {
+						"type": "object",
+						"properties": {
+							"user_id": {"type": "string"}
+						},
+						"required": ["user_id"]
+					},
+					"query": {
+						"type": "object",
+						"properties": {
+							"verbose": {"type": "string"}
+						}
+					},
+					"header": {
+						"type": "object",
+						"properties": {
+							"X-Request-ID": {"type": "string"}
+						}
+					}
+				},
+				"required": ["path"]
+			})
+			.as_object()
+			.unwrap()
+			.clone(),
+		),
+	);
+	let upstream_call_get = UpstreamOpenAPICall {
+		method: "GET".to_string(),
+		path: "/users/{user_id}".to_string(),
+		allowed_headers: HashSet::from(["X-Request-ID".to_string()]),
+		content_type: None,
+	};
+
+	let test_tool_post = Tool::new(
+		Cow::Borrowed("create_user"),
+		Cow::Borrowed("Create a new user"),
+		Arc::new(
+			json!({
+				"type": "object",
+				"properties": {
+					"body": {
+						"type": "object",
+						"properties": {
+							"name": {"type": "string"},
+							"email": {"type": "string"}
+						},
+						"required": ["name", "email"]
+					},
+					"query": {
+						"type": "object",
+						"properties": {
+							"source": {"type": "string"}
+						}
+					},
+					"header": {
+						"type": "object",
+						"properties": {
+							"X-API-Key": {"type": "string"}
+						}
+					}
+				},
+				"required": ["body"]
+			})
+			.as_object()
+			.unwrap()
+			.clone(),
+		),
+	);
+	let upstream_call_post = UpstreamOpenAPICall {
+		method: "POST".to_string(),
+		path: "/users".to_string(),
+		allowed_headers: HashSet::from(["X-API-Key".to_string()]),
+		content_type: None,
+	};
+
+	let backend = SimpleBackend::Opaque(
+		ResourceName::new(strng::literal!("dummy"), "".into()),
+		Target::Hostname(
+			parsed.host().unwrap().to_string().into(),
+			parsed.port().unwrap_or(8080),
+		),
+	);
+	let upstream_client = super::super::McpHttpClient::new(
+		client,
+		backend,
+		BackendPolicies::default(),
+		false,
+		"test-target".to_string(),
+	);
+	let handler = Handler::new(
+		upstream_client,
+		vec![
+			(test_tool_get, upstream_call_get),
+			(test_tool_post, upstream_call_post),
+		],
+		prefix.to_string(),
+	);
+
+	(server, handler)
+}
+
+async fn setup() -> (MockServer, Handler) {
+	setup_with_prefix("").await
+}
+
+#[tokio::test]
+async fn test_call_tool_full_url_server_prefix() {
+	// When OpenAPI spec has servers: [{ url: "https://api.example.com/" }],
+	// get_server_prefix returns "" so the request goes to /users/{id} (no double host).
+	let prefix = super::get_server_prefix(&openapi_with_servers(
+		json!([{ "url": "https://api.example.com/" }]),
+	))
+	.expect("should parse");
+	assert_eq!(
+		prefix, "",
+		"full URL with root path should yield empty prefix"
+	);
+
+	let (server, handler) = setup_with_prefix(&prefix).await;
+	let user_id = "123";
+	let expected_response = json!({ "id": user_id, "name": "Test User" });
+
+	Mock::given(method("GET"))
+		.and(path(format!("/users/{user_id}")))
+		.respond_with(ResponseTemplate::new(200).set_body_json(&expected_response))
+		.mount(&server)
+		.await;
+
+	let args = json!({ "path": { "user_id": user_id } });
+	let result = handler
+		.call_tool(
+			"get_user",
+			Some(args.as_object().unwrap().clone()),
+			&IncomingRequestContext::empty(),
+		)
+		.await;
+
+	assert!(
+		result.is_ok(),
+		"full-URL server prefix should not cause invalid authority"
+	);
+	assert_eq!(result.unwrap(), expected_response);
+}
+
+#[tokio::test]
+async fn test_call_tool_path_prefix_server() {
+	// When OpenAPI spec has servers: [{ url: "https://api.example.com/v2" }],
+	// get_server_prefix returns "/v2" and requests go to /v2/users/{id}.
+	let prefix = super::get_server_prefix(&openapi_with_servers(
+		json!([{ "url": "https://api.example.com/v2" }]),
+	))
+	.expect("should parse");
+	assert_eq!(prefix, "/v2", "full URL with path should yield path prefix");
+
+	let (server, handler) = setup_with_prefix(&prefix).await;
+	let user_id = "456";
+	let expected_response = json!({ "id": user_id, "name": "Versioned User" });
+
+	Mock::given(method("GET"))
+		.and(path(format!("/v2/users/{user_id}")))
+		.respond_with(ResponseTemplate::new(200).set_body_json(&expected_response))
+		.mount(&server)
+		.await;
+
+	let args = json!({ "path": { "user_id": user_id } });
+	let result = handler
+		.call_tool(
+			"get_user",
+			Some(args.as_object().unwrap().clone()),
+			&IncomingRequestContext::empty(),
+		)
+		.await;
+
+	assert!(result.is_ok());
+	assert_eq!(result.unwrap(), expected_response);
+}
+
+#[tokio::test]
+async fn test_call_tool_get_simple_success() {
+	let (server, handler) = setup().await;
+
+	let user_id = "123";
+	let expected_response = json!({ "id": user_id, "name": "Test User" });
+
+	Mock::given(method("GET"))
+		.and(path(format!("/users/{user_id}")))
+		.respond_with(ResponseTemplate::new(200).set_body_json(&expected_response))
+		.mount(&server)
+		.await;
+
+	let args = json!({ "path": { "user_id": user_id } });
+	let result = handler
+		.call_tool(
+			"get_user",
+			Some(args.as_object().unwrap().clone()),
+			&IncomingRequestContext::empty(),
+		)
+		.await;
+
+	assert!(result.is_ok());
+	assert_eq!(result.unwrap(), expected_response);
+}
+
+#[tokio::test]
+async fn test_call_tool_get_with_query() {
+	let (server, handler) = setup().await;
+
+	let user_id = "456";
+	let verbose_flag = "true";
+	let expected_response =
+		json!({ "id": user_id, "name": "Test User", "details": "Verbose details" });
+
+	Mock::given(method("GET"))
+		.and(path(format!("/users/{user_id}")))
+		.and(query_param("verbose", verbose_flag))
+		.respond_with(ResponseTemplate::new(200).set_body_json(&expected_response))
+		.mount(&server)
+		.await;
+
+	let args = json!({ "path": { "user_id": user_id }, "query": { "verbose": verbose_flag } });
+	let result = handler
+		.call_tool(
+			"get_user",
+			Some(args.as_object().unwrap().clone()),
+			&IncomingRequestContext::empty(),
+		)
+		.await;
+
+	assert!(result.is_ok());
+	assert_eq!(result.unwrap(), expected_response);
+}
+
+#[tokio::test]
+async fn test_call_tool_get_with_header() {
+	let (server, handler) = setup().await;
+
+	let user_id = "789";
+	let request_id = "req-abc";
+	let expected_response = json!({ "id": user_id, "name": "Another User" });
+
+	Mock::given(method("GET"))
+		.and(path(format!("/users/{user_id}")))
+		.and(header("X-Request-ID", request_id))
+		.respond_with(ResponseTemplate::new(200).set_body_json(&expected_response))
+		.mount(&server)
+		.await;
+
+	let args = json!({ "path": { "user_id": user_id }, "header": { "X-Request-ID": request_id } });
+	let result = handler
+		.call_tool(
+			"get_user",
+			Some(args.as_object().unwrap().clone()),
+			&IncomingRequestContext::empty(),
+		)
+		.await;
+
+	assert!(result.is_ok());
+	assert_eq!(result.unwrap(), expected_response);
+}
+
+#[tokio::test]
+async fn test_call_tool_post_with_body() {
+	let (server, handler) = setup().await;
+
+	let request_body = json!({ "name": "New User", "email": "new@example.com" });
+	let expected_response = json!({ "id": "xyz", "name": "New User", "email": "new@example.com" });
+
+	Mock::given(method("POST"))
+		.and(path("/users"))
+		.and(body_json(&request_body))
+		.respond_with(ResponseTemplate::new(201).set_body_json(&expected_response))
+		.mount(&server)
+		.await;
+
+	let args = json!({ "body": request_body });
+	let result = handler
+		.call_tool(
+			"create_user",
+			Some(args.as_object().unwrap().clone()),
+			&IncomingRequestContext::empty(),
+		)
+		.await;
+
+	assert!(result.is_ok());
+	assert_eq!(result.unwrap(), expected_response);
+}
+
+#[tokio::test]
+async fn test_call_tool_post_all_params() {
+	let (server, handler) = setup().await;
+
+	let request_body = json!({ "name": "Complete User", "email": "complete@example.com" });
+	let api_key = "secret-key";
+	let source = "test-suite";
+	let expected_response = json!({ "id": "comp-123", "name": "Complete User" });
+
+	Mock::given(method("POST"))
+		.and(path("/users"))
+		.and(query_param("source", source))
+		.and(header("X-API-Key", api_key))
+		.and(body_json(&request_body))
+		.respond_with(ResponseTemplate::new(201).set_body_json(&expected_response))
+		.mount(&server)
+		.await;
+
+	let args = json!({
+			"body": request_body,
+			"query": { "source": source },
+			"header": { "X-API-Key": api_key }
+	});
+	let result = handler
+		.call_tool(
+			"create_user",
+			Some(args.as_object().unwrap().clone()),
+			&IncomingRequestContext::empty(),
+		)
+		.await;
+
+	assert!(result.is_ok());
+	assert_eq!(result.unwrap(), expected_response);
+}
+
+#[tokio::test]
+async fn test_call_tool_tool_not_found() {
+	let (_server, handler) = setup().await; // Mock server not needed
+
+	let args = json!({});
+	let result = handler
+		.call_tool(
+			"nonexistent_tool",
+			Some(args.as_object().unwrap().clone()),
+			&IncomingRequestContext::empty(),
+		)
+		.await;
+
+	assert!(result.is_err());
+	assert!(
+		result
+			.unwrap_err()
+			.to_string()
+			.contains("tool nonexistent_tool not found")
+	);
+}
+
+#[tokio::test]
+async fn test_call_tool_upstream_error() {
+	let (server, handler) = setup().await;
+
+	let user_id = "error-user";
+	let error_response = json!({ "error": "User not found" });
+
+	Mock::given(method("GET"))
+		.and(path(format!("/users/{user_id}")))
+		.respond_with(ResponseTemplate::new(404).set_body_json(&error_response))
+		.mount(&server)
+		.await;
+
+	let args = json!({ "path": { "user_id": user_id } });
+	let result = handler
+		.call_tool(
+			"get_user",
+			Some(args.as_object().unwrap().clone()),
+			&IncomingRequestContext::empty(),
+		)
+		.await;
+
+	assert!(result.is_ok());
+	assert_eq!(result.unwrap(), error_response);
+}
+
+#[tokio::test]
+async fn test_call_tool_upstream_internal_error() {
+	let (server, handler) = setup().await;
+
+	let user_id = "error-user";
+	let error_response = json!({ "error": "Something went wrong accessing Github :unicorn:" });
+
+	Mock::given(method("GET"))
+		.and(path(format!("/users/{user_id}")))
+		.respond_with(ResponseTemplate::new(500).set_body_json(&error_response))
+		.mount(&server)
+		.await;
+
+	let args = json!({ "path": { "user_id": user_id } });
+	let result = handler
+		.call_tool(
+			"get_user",
+			Some(args.as_object().unwrap().clone()),
+			&IncomingRequestContext::empty(),
+		)
+		.await;
+
+	assert!(result.is_err());
+	let err = result.unwrap_err();
+	assert!(
+		err
+			.to_string()
+			.contains("failed with status 500 Internal Server Error"),
+		"error was {}",
+		err
+	);
+	assert!(err.to_string().contains(&error_response.to_string()));
+}
+
+#[tokio::test]
+async fn test_call_tool_invalid_header_value() {
+	let (server, handler) = setup().await;
+
+	let user_id = "header-issue";
+	Mock::given(method("GET"))
+		.and(path(format!("/users/{user_id}")))
+		.respond_with(ResponseTemplate::new(200).set_body_json(json!({ "id": user_id })))
+		.mount(&server)
+		.await;
+
+	// Intentionally provide a non-string header value
+	let args = json!({
+			"path": { "user_id": user_id },
+			"header": { "X-Request-ID": 12345 }
+	});
+
+	let result = handler
+		.call_tool(
+			"get_user",
+			Some(args.as_object().unwrap().clone()),
+			&IncomingRequestContext::empty(),
+		)
+		.await;
+	assert!(result.is_ok());
+	assert_eq!(result.unwrap(), json!({ "id": user_id }));
+}
+
+#[tokio::test]
+async fn test_call_tool_invalid_query_param_value() {
+	let (server, handler) = setup().await;
+
+	let user_id = "query-issue";
+	// Mock is set up but won't be hit with the invalid query param
+	Mock::given(method("GET"))
+		.and(path(format!("/users/{user_id}")))
+		// IMPORTANT: We don't .and(query_param(...)) here because the invalid param is skipped
+		.respond_with(ResponseTemplate::new(200).set_body_json(json!({ "id": user_id })))
+		.mount(&server)
+		.await;
+
+	// Intentionally provide a non-string query value
+	let args = json!({
+			"path": { "user_id": user_id },
+			"query": { "verbose": true } // Invalid query value (not a string)
+	});
+
+	// We expect the call to succeed, but the invalid query param should be skipped (and logged)
+	let result = handler
+		.call_tool(
+			"get_user",
+			Some(args.as_object().unwrap().clone()),
+			&IncomingRequestContext::empty(),
+		)
+		.await;
+	assert!(result.is_ok());
+	assert_eq!(result.unwrap(), json!({ "id": user_id }));
+}
+
+#[tokio::test]
+async fn test_call_tool_invalid_path_param_value() {
+	let (server, handler) = setup().await;
+
+	let invalid_user_id = json!(12345); // Not a string
+	// Mock is set up for the *literal* path, as substitution will fail
+	Mock::given(method("GET"))
+		.and(path("/users/{user_id}")) // Path doesn't get substituted
+		.respond_with(
+			ResponseTemplate::new(404) // Or whatever the server does with a literal {user_id}
+				.set_body_string("Not Found - Literal Path"),
+		)
+		.mount(&server)
+		.await;
+
+	let args = json!({
+			"path": { "user_id": invalid_user_id }
+	});
+
+	// The call might succeed at the HTTP level but might return an error from the server,
+	// or potentially fail if the path is fundamentally invalid after non-substitution.
+	// Here we assume the server returns 404 for the literal path.
+	let result = handler
+		.call_tool(
+			"get_user",
+			Some(args.as_object().unwrap().clone()),
+			&IncomingRequestContext::empty(),
+		)
+		.await;
+
+	// Depending on server behavior for the literal path, this might be Ok or Err.
+	// If server returns 404 for the literal path:
+	assert!(result.is_ok());
+	// assert!(
+	// 	result.unwrap()
+	// 		.contains("failed with status 404 Not Found"),
+	// 	"{}",
+	// 	result.unwrap_err().to_string()
+	// );
+
+	// If the request *itself* failed before sending (e.g., invalid URL formed),
+	// the error might be different.
+}
+
+#[tokio::test]
+async fn test_call_tool_with_compressed_response() {
+	let (server, handler) = setup().await;
+
+	let user_id = "compressed-user";
+	let expected_response = json!({ "id": user_id, "name": "Compressed User", "data": "This is a longer response that benefits from compression" });
+
+	// Encode the response body with gzip
+	let response_json = serde_json::to_vec(&expected_response).unwrap();
+	let compressed_body = crate::http::compression::encode_body(&response_json, "gzip")
+		.await
+		.unwrap();
+
+	Mock::given(method("GET"))
+		.and(path(format!("/users/{user_id}")))
+		.respond_with(
+			ResponseTemplate::new(200)
+				.insert_header("Content-Encoding", "gzip")
+				.set_body_bytes(compressed_body),
+		)
+		.mount(&server)
+		.await;
+
+	let args = json!({ "path": { "user_id": user_id } });
+	let result = handler
+		.call_tool(
+			"get_user",
+			Some(args.as_object().unwrap().clone()),
+			&IncomingRequestContext::empty(),
+		)
+		.await;
+
+	assert!(result.is_ok());
+	assert_eq!(result.unwrap(), expected_response);
+}
+
+#[tokio::test]
+async fn test_call_tool_response_wrapping() {
+	let (server, handler) = setup().await;
+
+	// (wrapped, raw_body_bytes, expected_parsed_value)
+	let test_cases: &[(bool, &[u8], Value)] = &[
+		(false, b"null", Value::Null),
+		(
+			false,
+			br#"{"id":"123","name":"Test User","email":"test@example.com"}"#,
+			json!({ "id": "123", "name": "Test User", "email": "test@example.com" }),
+		),
+		(
+			true,
+			br#"[{"id":1,"name":"1"},{"id":2,"name":"2"},{"id":3,"name":"3"}]"#,
+			json!([ { "id": 1, "name": "1" }, { "id": 2, "name": "2" }, { "id": 3, "name": "3" }]),
+		),
+		(
+			false,
+			b"plain text response",
+			json!({"code": 200, "message": "plain text response"}),
+		),
+		(true, b"42", json!(42)),
+		(true, b"true", json!(true)),
+	];
+
+	for (i, (wrapped, body, response)) in test_cases.iter().enumerate() {
+		let user_id = format!("{}", i);
+		Mock::given(method("GET"))
+			.and(path(format!("/users/{}", user_id)))
+			.respond_with(ResponseTemplate::new(200).set_body_bytes(body.to_vec()))
+			.expect(1)
+			.mount(&server)
+			.await;
+
+		let args = json!({ "path": { "user_id": user_id } });
+		let result = handler
+			.call_tool(
+				"get_user",
+				Some(args.as_object().unwrap().clone()),
+				&IncomingRequestContext::empty(),
+			)
+			.await;
+
+		assert!(result.is_ok(), "result {:?}", result);
+
+		// Spec requires an object https://modelcontextprotocol.io/specification/2025-06-18/schema#calltoolresult
+		let expected = if *wrapped {
+			json!({ "data": response })
+		} else {
+			response.clone()
+		};
+		assert_eq!(result.unwrap(), expected);
+	}
+}
+
+#[tokio::test]
+async fn test_normalize_url_path_empty_prefix() {
+	// Test the fix for double slash issue when prefix is empty (host/port config)
+	let result = super::normalize_url_path("", "/mqtt/healthcheck");
+	assert_eq!(result, "/mqtt/healthcheck");
+}
+
+#[tokio::test]
+async fn test_normalize_url_path_with_prefix() {
+	// Test with a prefix that has trailing slash
+	let result = super::normalize_url_path("/api/v3/", "/pet");
+	assert_eq!(result, "/api/v3/pet");
+}
+
+#[tokio::test]
+async fn test_normalize_url_path_prefix_no_trailing_slash() {
+	// Test with a prefix without trailing slash
+	let result = super::normalize_url_path("/api/v3", "/pet");
+	assert_eq!(result, "/api/v3/pet");
+}
+
+#[tokio::test]
+async fn test_normalize_url_path_path_without_leading_slash() {
+	// Test with path that doesn't start with slash
+	let result = super::normalize_url_path("/api/v3", "pet");
+	assert_eq!(result, "/api/v3/pet");
+}
+
+#[rstest]
+#[case::empty_prefix("", "/mqtt/healthcheck", "/mqtt/healthcheck")]
+#[case::with_prefix("/api/v3/", "/pet", "/api/v3/pet")]
+#[case::prefix_no_trailing_slash("/api/v3", "/pet", "/api/v3/pet")]
+#[case::without_leading_slash("/api/v3", "pet", "/api/v3/pet")]
+#[case::empty_prefix_path_without_slash("", "pet", "/pet")]
+fn test_normalize_url_path(#[case] prefix: &str, #[case] path: &str, #[case] expected: &str) {
+	let result = super::normalize_url_path(prefix, path);
+	assert_eq!(result, expected);
+}
+
+fn openapi_with_servers(servers: serde_json::Value) -> OpenAPI {
+	let spec = json!({
+		"openapi": "3.0.0",
+		"info": { "title": "Test", "version": "1.0.0" },
+		"servers": servers,
+		"paths": { "/x": { "get": { "operationId": "getX", "responses": { "200": { "description": "ok" } } } } }
+	});
+	serde_json::from_value(spec).expect("valid OpenAPI spec")
+}
+
+#[rstest]
+#[case::full_url_root("https://api.example.com/", "")]
+#[case::full_url_no_trailing_slash("https://api.example.com", "")]
+#[case::full_url_with_path("https://api.example.com/v2", "/v2")]
+#[case::full_url_with_path_trailing_slash("https://api.example.com/v2/", "/v2")]
+#[case::full_url_with_host_variable("https://{tenant}.example.com/v1", "/v1")]
+#[case::full_url_with_host_variable_no_path("https://{tenant}.example.com", "")]
+#[case::full_url_with_host_variable_root("https://{tenant}.example.com/", "")]
+#[case::full_url_with_path_variable("https://api.example.com/v1/{version}", "/v1/{version}")]
+#[case::relative_path("/api/v1", "/api/v1")]
+#[case::empty_string("", "")]
+fn test_get_server_prefix(#[case] server_url: &str, #[case] expected: &str) {
+	let spec = openapi_with_servers(json!([{ "url": server_url }]));
+	let result = super::get_server_prefix(&spec).expect("should succeed");
+	assert_eq!(result, expected, "server_url={server_url}");
+}
+
+#[tokio::test]
+async fn test_get_server_prefix_empty_servers() {
+	let spec = openapi_with_servers(json!([]));
+	let result = super::get_server_prefix(&spec).expect("should succeed");
+	assert_eq!(result, "");
+}
+
+#[tokio::test]
+async fn test_get_server_prefix_multiple_servers_err() {
+	let spec = openapi_with_servers(json!([
+		{ "url": "https://api.example.com/" },
+		{ "url": "https://api2.example.com/" }
+	]));
+	let result = super::get_server_prefix(&spec);
+	assert!(result.is_err(), "multiple servers should yield error");
+}
+
+fn tool_schema_for<'a>(
+	tools: &'a [(Tool, UpstreamOpenAPICall)],
+	tool_name: &str,
+) -> &'a serde_json::Map<String, serde_json::Value> {
+	tools
+		.iter()
+		.find(|(tool, _)| tool.name == tool_name)
+		.map(|(tool, _)| &*tool.input_schema)
+		.expect("tool should exist")
+}
+
+fn nested_schema<'a>(
+	schema: &'a serde_json::Map<String, serde_json::Value>,
+	name: &str,
+) -> &'a serde_json::Map<String, serde_json::Value> {
+	schema
+		.get("properties")
+		.and_then(serde_json::Value::as_object)
+		.and_then(|props| props.get(name))
+		.and_then(serde_json::Value::as_object)
+		.expect("nested schema should exist")
+}
+
+#[test]
+fn test_parse_openapi_schema_includes_path_level_parameters_in_tool_schema() {
+	let raw = r#"{
+		"openapi": "3.0.0",
+		"info": {"title": "Path Params", "version": "1.0.0"},
+		"paths": {
+			"/workspaces/{workspace_gid}/tags": {
+				"parameters": [
+					{
+						"name": "workspace_gid",
+						"in": "path",
+						"required": true,
+						"schema": {"type": "string"}
+					}
+				],
+				"get": {
+					"operationId": "getTagsForWorkspace",
+					"summary": "Get tags in a workspace",
+					"responses": {
+						"200": {"description": "ok"}
+					}
+				}
+			}
+		}
+	}"#;
+	let open_api: OpenAPI = serde_json::from_str(raw).expect("valid OpenAPI schema");
+	let tools = super::parse_openapi_schema(&open_api).expect("schema should parse");
+	let (_tool, upstream) = tools
+		.iter()
+		.find(|(tool, _)| tool.name == "getTagsForWorkspace")
+		.expect("tool should exist");
+
+	assert_eq!(upstream.path, "/workspaces/{workspace_gid}/tags");
+
+	let schema = tool_schema_for(&tools, "getTagsForWorkspace");
+	let path_schema = nested_schema(schema, "path");
+	let properties = path_schema
+		.get("properties")
+		.and_then(serde_json::Value::as_object)
+		.expect("path object should include properties");
+	assert!(
+		properties.contains_key("workspace_gid"),
+		"path-level workspace_gid should be exposed in tool schema"
+	);
+	let required = path_schema
+		.get("required")
+		.and_then(serde_json::Value::as_array)
+		.expect("path object should include required array");
+	assert!(
+		required.iter().any(|value| value == "workspace_gid"),
+		"workspace_gid should be required in the path schema"
+	);
+}
+
+#[test]
+fn test_parse_openapi_schema_operation_level_parameter_overrides_path_level_parameter() {
+	let raw = r#"{
+		"openapi": "3.0.0",
+		"info": {"title": "Path Params", "version": "1.0.0"},
+		"paths": {
+			"/workspaces/{workspace_gid}/tags/{tag_gid}": {
+				"parameters": [
+					{
+						"name": "workspace_gid",
+						"in": "path",
+						"required": true,
+						"description": "path-level parameter",
+						"schema": {"type": "string"}
+					},
+					{
+						"name": "tag_gid",
+						"in": "path",
+						"required": true,
+						"schema": {"type": "string"}
+					}
+				],
+				"get": {
+					"operationId": "getWorkspaceTag",
+					"parameters": [
+						{
+							"name": "workspace_gid",
+							"in": "path",
+							"required": true,
+							"description": "operation-level parameter",
+							"schema": {"type": "string", "pattern": "^ws_"}
+						}
+					],
+					"responses": {
+						"200": {"description": "ok"}
+					}
+				}
+			}
+		}
+	}"#;
+	let open_api: OpenAPI = serde_json::from_str(raw).expect("valid OpenAPI schema");
+	let tools = super::parse_openapi_schema(&open_api).expect("schema should parse");
+
+	let schema = tool_schema_for(&tools, "getWorkspaceTag");
+	let path_schema = nested_schema(schema, "path");
+	let path_properties = path_schema
+		.get("properties")
+		.and_then(serde_json::Value::as_object)
+		.expect("path object should include properties");
+	let workspace_gid = path_properties
+		.get("workspace_gid")
+		.and_then(serde_json::Value::as_object)
+		.expect("workspace_gid property should exist");
+	assert_eq!(
+		workspace_gid.get("description"),
+		Some(&json!("operation-level parameter"))
+	);
+	assert_eq!(workspace_gid.get("pattern"), Some(&json!("^ws_")));
+
+	let required = path_schema
+		.get("required")
+		.and_then(serde_json::Value::as_array)
+		.expect("path object should include required array");
+	assert_eq!(required, &vec![json!("workspace_gid"), json!("tag_gid")]);
+
+	assert!(
+		path_properties.contains_key("tag_gid"),
+		"the unmodified sibling path parameter should keep its slot"
+	);
+}
+
+#[test]
+fn test_parse_openapi_schema_operation_level_header_override_is_case_insensitive() {
+	let raw = r#"{
+		"openapi": "3.0.0",
+		"info": {"title": "Header Params", "version": "1.0.0"},
+		"paths": {
+			"/workspaces": {
+				"parameters": [
+					{
+						"name": "X-Request-Id",
+						"in": "header",
+						"required": true,
+						"description": "path-level header",
+						"schema": {"type": "string"}
+					}
+				],
+				"get": {
+					"operationId": "listWorkspaces",
+					"parameters": [
+						{
+							"name": "x-request-id",
+							"in": "header",
+							"required": true,
+							"description": "operation-level header",
+							"schema": {"type": "string", "pattern": "^req_"}
+						}
+					],
+					"responses": {
+						"200": {"description": "ok"}
+					}
+				}
+			}
+		}
+	}"#;
+	let open_api: OpenAPI = serde_json::from_str(raw).expect("valid OpenAPI schema");
+	let tools = super::parse_openapi_schema(&open_api).expect("schema should parse");
+	let (tool, upstream) = tools
+		.iter()
+		.find(|(tool, _)| tool.name == "listWorkspaces")
+		.expect("tool should exist");
+
+	assert_eq!(
+		upstream.allowed_headers,
+		HashSet::from(["x-request-id".to_string()])
+	);
+
+	let schema = &*tool.input_schema;
+	let header_schema = nested_schema(schema, "header");
+	let header_properties = header_schema
+		.get("properties")
+		.and_then(serde_json::Value::as_object)
+		.expect("header object should include properties");
+	assert_eq!(header_properties.len(), 1);
+	let request_id = header_properties
+		.get("x-request-id")
+		.and_then(serde_json::Value::as_object)
+		.expect("operation-level header should win");
+	assert_eq!(
+		request_id.get("description"),
+		Some(&json!("operation-level header"))
+	);
+	assert_eq!(request_id.get("pattern"), Some(&json!("^req_")));
+
+	let required = header_schema
+		.get("required")
+		.and_then(serde_json::Value::as_array)
+		.expect("header object should include required array");
+	assert_eq!(required, &vec![json!("x-request-id")]);
+}
+
+#[test]
+fn test_parse_openapi_schema_ignores_path_level_cookie_parameters() {
+	let raw = r#"{
+		"openapi": "3.0.0",
+		"info": {"title": "Cookie Params", "version": "1.0.0"},
+		"paths": {
+			"/workspaces/{workspace_gid}/tags": {
+				"parameters": [
+					{
+						"name": "session",
+						"in": "cookie",
+						"required": false,
+						"schema": {"type": "string"}
+					},
+					{
+						"name": "workspace_gid",
+						"in": "path",
+						"required": true,
+						"schema": {"type": "string"}
+					}
+				],
+				"get": {
+					"operationId": "getTagsForWorkspace",
+					"responses": {
+						"200": {"description": "ok"}
+					}
+				}
+			}
+		}
+	}"#;
+	let open_api: OpenAPI = serde_json::from_str(raw).expect("valid OpenAPI schema");
+	let tools = super::parse_openapi_schema(&open_api).expect("schema should parse");
+
+	let schema = tool_schema_for(&tools, "getTagsForWorkspace");
+	let properties = schema
+		.get("properties")
+		.and_then(serde_json::Value::as_object)
+		.expect("root schema should include properties");
+	assert!(
+		!properties.contains_key("cookie"),
+		"path-level cookie parameters should not create a cookie schema"
+	);
+
+	let path_schema = nested_schema(schema, "path");
+	let path_properties = path_schema
+		.get("properties")
+		.and_then(serde_json::Value::as_object)
+		.expect("path object should include properties");
+	assert!(path_properties.contains_key("workspace_gid"));
+}
+
+#[rstest]
+#[case::empty_string(json!({"verbose": ""}), vec![("verbose", "")])]
+#[case::string_value(json!({"verbose": "true"}), vec![("verbose", "true")])]
+#[case::boolean_true(json!({"verbose": true}), vec![("verbose", "true")])]
+#[case::boolean_false(json!({"verbose": false}), vec![("verbose", "false")])]
+#[case::integer_value(json!({"verbose": "123"}), vec![("verbose", "123")])]
+#[case::special_chars(json!({"verbose": "hello world"}), vec![("verbose", "hello world")])]
+#[case::array_values(json!({"verbose": ["a", "b", "c"]}), vec![("verbose", "a"), ("verbose", "b"), ("verbose", "c")])]
+#[case::ampersand_in_value(json!({"verbose": "foo&admin=true"}), vec![("verbose", "foo&admin=true")])]
+#[case::equals_in_value(json!({"verbose": "foo=bar"}), vec![("verbose", "foo=bar")])]
+#[case::question_mark_in_value(json!({"verbose": "foo?bar"}), vec![("verbose", "foo?bar")])]
+#[case::combined_injection(json!({"verbose": "x&evil=1&admin=true"}), vec![("verbose", "x&evil=1&admin=true")])]
+#[tokio::test]
+async fn test_query_param_types(
+	#[case] query_args: serde_json::Value,
+	#[case] expected_params: Vec<(&str, &str)>,
+) {
+	let (server, handler) = setup().await;
+
+	let user_id = "test-user";
+
+	let mut mock = Mock::given(method("GET")).and(path(format!("/users/{user_id}")));
+	for (key, value) in &expected_params {
+		mock = mock.and(query_param(*key, *value));
+	}
+	mock
+		.respond_with(ResponseTemplate::new(200).set_body_json(json!({ "id": user_id })))
+		.expect(1)
+		.mount(&server)
+		.await;
+
+	let args = json!({
+		"path": { "user_id": user_id },
+		"query": query_args
+	});
+
+	let result = handler
+		.call_tool(
+			"get_user",
+			Some(args.as_object().unwrap().clone()),
+			&IncomingRequestContext::empty(),
+		)
+		.await;
+
+	assert!(result.is_ok(), "Expected success, got: {:?}", result.err());
+	assert_eq!(result.unwrap(), json!({ "id": user_id }));
+}
+
+#[rstest]
+#[case::simple_id("123", "/users/123")]
+#[case::numeric_id("456", "/users/456")]
+#[case::spaces("user name", "/users/user%20name")]
+#[case::unicode("user\u{00e9}", "/users/user%C3%A9")]
+#[case::path_traversal("../admin", "/users/..%2Fadmin")]
+#[case::embedded_slashes("user-1/o/er-1001", "/users/user-1%2Fo%2Fer-1001")]
+#[case::query_injection("123?admin=true", "/users/123%3Fadmin%3Dtrue")]
+#[case::query_with_ampersand("123?a=1&b=2", "/users/123%3Fa%3D1%26b%3D2")]
+#[case::hash_fragment("user#section", "/users/user%23section")]
+#[case::ampersand_in_path("user&admin=true", "/users/user%26admin%3Dtrue")]
+#[tokio::test]
+async fn test_path_param_encoding(#[case] user_id: &str, #[case] expected_path: &str) {
+	let (server, handler) = setup().await;
+
+	Mock::given(method("GET"))
+		.and(path(expected_path))
+		.respond_with(ResponseTemplate::new(200).set_body_json(json!({ "id": user_id })))
+		.expect(1)
+		.mount(&server)
+		.await;
+
+	let args = json!({ "path": { "user_id": user_id } });
+
+	let result = handler
+		.call_tool(
+			"get_user",
+			Some(args.as_object().unwrap().clone()),
+			&IncomingRequestContext::empty(),
+		)
+		.await;
+
+	assert!(result.is_ok(), "Expected success, got: {:?}", result.err());
+	assert_eq!(result.unwrap(), json!({ "id": user_id }));
+}
+
+#[tokio::test]
+async fn test_schema_defined_headers_work() {
+	let (server, handler) = setup().await;
+
+	let user_id = "custom-header-test";
+	let expected_response = json!({ "id": user_id });
+
+	// Only X-Request-ID is defined in the schema for get_user tool
+	Mock::given(method("GET"))
+		.and(path(format!("/users/{user_id}")))
+		.and(header("X-Request-ID", "my-request-123"))
+		.respond_with(ResponseTemplate::new(200).set_body_json(&expected_response))
+		.expect(1)
+		.mount(&server)
+		.await;
+
+	let args = json!({
+		"path": { "user_id": user_id },
+		"header": {
+			"X-Request-ID": "my-request-123"
+		}
+	});
+
+	let result = handler
+		.call_tool(
+			"get_user",
+			Some(args.as_object().unwrap().clone()),
+			&IncomingRequestContext::empty(),
+		)
+		.await;
+
+	assert!(
+		result.is_ok(),
+		"Schema-defined headers should work: {:?}",
+		result.err()
+	);
+	assert_eq!(result.unwrap(), expected_response);
+}
+
+// Custom matcher to verify a header is NOT present
+struct HeaderNotPresent {
+	header_name: String,
+}
+
+impl HeaderNotPresent {
+	fn new(header_name: impl Into<String>) -> Self {
+		Self {
+			header_name: header_name.into(),
+		}
+	}
+}
+
+impl Match for HeaderNotPresent {
+	fn matches(&self, request: &Request) -> bool {
+		!request.headers.contains_key(self.header_name.as_str())
+	}
+}
+
+#[tokio::test]
+async fn test_blocked_headers_are_ignored() {
+	let (server, handler) = setup().await;
+
+	let request_body = json!({ "name": "Test User", "email": "test@example.com" });
+	let expected_response = json!({ "id": "new-user", "name": "Test User" });
+
+	Mock::given(method("POST"))
+		.and(path("/users"))
+		.and(header("content-length", "47")) // length of request_body
+		.and(header("content-type", "application/json"))
+		.and(HeaderNotPresent::new("transfer-encoding"))
+		.and(body_json(&request_body))
+		.respond_with(ResponseTemplate::new(201).set_body_json(&expected_response))
+		.expect(1)
+		.mount(&server)
+		.await;
+
+	let args = json!({
+		"body": request_body,
+		"header": {
+			"content-length": "999999999",
+			"content-type": "text/plain",
+			"transfer-encoding": "chunked",
+			"host": "evil.com"
+		}
+	});
+
+	let result = handler
+		.call_tool(
+			"create_user",
+			Some(args.as_object().unwrap().clone()),
+			&IncomingRequestContext::empty(),
+		)
+		.await;
+
+	// The request should succeed with the correct headers (blocked headers ignored)
+	assert!(result.is_ok(), "Request should succeed: {:?}", result.err());
+	assert_eq!(result.unwrap(), expected_response);
+}
+
+#[tokio::test]
+async fn test_headers_not_in_schema_are_ignored() {
+	let (server, handler) = setup().await;
+
+	let user_id = "schema-header-test";
+	let expected_response = json!({ "id": user_id });
+
+	// Only expect X-Request-ID (defined in schema), NOT X-Malicious-Header
+	Mock::given(method("GET"))
+		.and(path(format!("/users/{user_id}")))
+		.and(header("X-Request-ID", "valid-request"))
+		.and(HeaderNotPresent::new("X-Malicious-Header"))
+		.respond_with(ResponseTemplate::new(200).set_body_json(&expected_response))
+		.expect(1)
+		.mount(&server)
+		.await;
+
+	let args = json!({
+		"path": { "user_id": user_id },
+		"header": {
+			"X-Request-ID": "valid-request",
+			"X-Malicious-Header": "should-be-ignored"
+		}
+	});
+
+	let result = handler
+		.call_tool(
+			"get_user",
+			Some(args.as_object().unwrap().clone()),
+			&IncomingRequestContext::empty(),
+		)
+		.await;
+
+	assert!(
+		result.is_ok(),
+		"Request should succeed with schema-defined headers: {:?}",
+		result.err()
+	);
+	assert_eq!(result.unwrap(), expected_response);
+}
+
+#[tokio::test]
+async fn test_call_tool_structured_content_fallback() {
+	// Test that CallToolResult has both content and structured_content populated
+	// This verifies our backwards compatibility fix for langchain-mcp-adapter
+	let (server, handler) = setup().await;
+
+	let user_id = "test123";
+	let expected_response = json!({ "id": user_id, "name": "Test User", "status": "active" });
+
+	Mock::given(method("GET"))
+		.and(path(format!("/users/{user_id}")))
+		.respond_with(ResponseTemplate::new(200).set_body_json(&expected_response))
+		.mount(&server)
+		.await;
+
+	// Test the MCP message handling directly
+	use rmcp::model::*;
+
+	let request = JsonRpcRequest {
+		jsonrpc: JsonRpcVersion2_0,
+		id: RequestId::String("test-123".into()),
+		request: ClientRequest::CallToolRequest(CallToolRequest::new(
+			CallToolRequestParams::new("get_user").with_arguments(
+				json!({ "path": { "user_id": user_id } })
+					.as_object()
+					.unwrap()
+					.clone(),
+			),
+		)),
+	};
+
+	let result = handler
+		.send_message(request, &IncomingRequestContext::empty())
+		.await;
+	assert!(result.is_ok(), "send_message should succeed");
+
+	let messages = result.unwrap();
+
+	// Convert Messages to Vec to inspect CallToolResult
+	use futures_util::StreamExt;
+	let mut message_stream = messages;
+	let message_result = message_stream
+		.next()
+		.await
+		.expect("Should receive at least one message");
+
+	// Handle the Result<JsonRpcMessage, ClientError> wrapper
+	let server_msg = message_result.expect("Message processing should succeed");
+
+	let JsonRpcMessage::Response(response) = server_msg else {
+		panic!("Should receive a Response message, got: {:?}", server_msg);
+	};
+
+	let ServerResult::CallToolResult(call_result) = &response.result else {
+		panic!(
+			"Response should contain CallToolResult, got: {:?}",
+			response.result
+		);
+	};
+
+	// Test 1: content field should NOT be empty (our backwards compatibility fix)
+	assert!(
+		!call_result.content.is_empty(),
+		"content field should not be empty after our fix"
+	);
+	assert_eq!(
+		call_result.content.len(),
+		1,
+		"content should have exactly one item"
+	);
+
+	// Test 2: structured_content should contain the original JSON
+	assert!(
+		call_result.structured_content.is_some(),
+		"structured_content should be populated"
+	);
+	let structured_content = call_result.structured_content.as_ref().unwrap();
+	assert_eq!(
+		*structured_content, expected_response,
+		"structured_content should contain original API response"
+	);
+
+	// Test 3: content[0] should contain serialized JSON as text
+	let content_item = call_result
+		.content
+		.first()
+		.expect("content should have at least one item");
+
+	let rmcp::model::ContentBlock::Text(text_content) = content_item else {
+		panic!(
+			"content[0] should be Text content type, got: {:?}",
+			content_item
+		);
+	};
+
+	let serialized_json = &text_content.text;
+	let parsed_from_content: serde_json::Value =
+		serde_json::from_str(serialized_json).expect("content should contain valid JSON string");
+	assert_eq!(
+		parsed_from_content, expected_response,
+		"content should contain serialized version of API response"
+	);
+
+	// Test 4: Both fields should represent the same data
+	assert_eq!(
+		parsed_from_content, *structured_content,
+		"content and structured_content should represent the same data"
+	);
+}
+
+#[tokio::test]
+async fn test_openapi_from_url() {
+	// Test creating LocalMcpTargetSpec::OpenAPI with URL schema and converting to runtime backend
+	let server = MockServer::start().await;
+
+	// Mock OpenAPI schema response
+	let openapi_json = json!({
+		"openapi": "3.0.0",
+		"info": {
+			"title": "User API",
+			"version": "1.0.0"
+		},
+		"paths": {
+			"/users/{user_id}": {
+				"get": {
+					"summary": "Get user details",
+					"parameters": [
+						{
+							"name": "user_id",
+							"in": "path",
+							"required": true,
+							"schema": {
+								"type": "string"
+							}
+						}
+					],
+					"responses": {
+						"200": {
+							"description": "User details",
+							"content": {
+								"application/json": {
+									"schema": {
+										"type": "object",
+										"properties": {
+											"id": {"type": "string"},
+											"name": {"type": "string"}
+										}
+									}
+								}
+							}
+						}
+					}
+				}
+			},
+			"/users": {
+				"post": {
+					"summary": "Create a new user",
+					"requestBody": {
+						"required": true,
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object",
+									"properties": {
+										"name": {"type": "string"},
+										"email": {"type": "string"}
+									},
+									"required": ["name", "email"]
+								}
+							}
+						}
+					},
+					"responses": {
+						"201": {
+							"description": "User created",
+							"content": {
+								"application/json": {
+									"schema": {
+										"type": "object",
+										"properties": {
+											"id": {"type": "string"},
+											"name": {"type": "string"},
+											"email": {"type": "string"}
+										}
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	});
+
+	Mock::given(method("GET"))
+		.and(path("/openapi.json"))
+		.respond_with(ResponseTemplate::new(200).set_body_json(&openapi_json))
+		.mount(&server)
+		.await;
+
+	// Create client
+	let client = Client::new(
+		&client::Config {
+			resolver_cfg: ResolverConfig::default(),
+			resolver_opts: ResolverOpts::default(),
+		},
+		None,
+		BackendConfig::default(),
+		None,
+	);
+
+	// Create LocalMcpTargetSpec::OpenAPI with remote URL schema
+	let schema_url = format!("{}/openapi.json", server.uri());
+
+	// Use serde_json to create McpBackendHost since fields are private
+	let backend_json = json!({
+		"host": "https://api.users.com"
+	});
+	let backend: McpBackendHost = serde_json::from_value(backend_json).unwrap();
+
+	let local_target_spec = LocalMcpTargetSpec::OpenAPI {
+		backend,
+		schema: FileInlineOrRemote::Remote {
+			url: schema_url.parse().unwrap(),
+		},
+	};
+
+	// Create a LocalBackend::MCP to test the full conversion pipeline
+	let local_backend = LocalBackend::MCP(LocalMcpBackend {
+		targets: vec![Arc::new(LocalMcpTarget {
+			name: "users-api".into(),
+			spec: local_target_spec,
+			policies: None,
+		})],
+		stateful_mode: McpStatefulMode::Stateful,
+		prefix_mode: None,
+		failure_mode: None,
+	});
+
+	// Convert to runtime backends
+	let backend_name = ResourceName::new("test-users".into(), "".into());
+	let resources = crate::resource_manager::ResourceFetcher::direct(client);
+	let result = local_backend
+		.as_backends(
+			backend_name,
+			&resources,
+			crate::mcp::DEFAULT_SESSION_IDLE_TTL,
+		)
+		.await;
+
+	// Verify the conversion succeeded
+	assert!(
+		result.is_ok(),
+		"Should successfully convert LocalBackend::MCP with remote OpenAPI schema"
+	);
+	let backends = result.unwrap();
+
+	// Should have at least one backend
+	assert!(!backends.is_empty(), "Should have at least one backend");
+
+	// Find the MCP backend
+	let mcp_backend = backends
+		.iter()
+		.find(|b| matches!(b.backend, Backend::MCP(_, _)));
+	assert!(mcp_backend.is_some(), "Should contain an MCP backend");
+
+	if let Some(backend_with_policies) = mcp_backend
+		&& let Backend::MCP(_, mcp_backend) = &backend_with_policies.backend
+	{
+		assert_eq!(mcp_backend.targets.len(), 1);
+
+		// Verify the target was converted to OpenAPI
+		let target = &mcp_backend.targets[0];
+		assert_eq!(target.name.as_str(), "users-api");
+
+		// Verify it's an OpenAPI target spec with the fetched schema
+		if let crate::types::agent::McpTargetSpec::OpenAPI(openapi_target) = &target.spec {
+			let schema = &openapi_target.schema;
+			assert_eq!(schema.openapi, "3.0.0");
+			assert_eq!(schema.info.title, "User API");
+			assert_eq!(schema.info.version, "1.0.0");
+
+			// Check if paths contains the expected paths
+			let has_users_path = schema.paths.paths.contains_key("/users");
+			assert!(has_users_path, "Schema should contain /users path");
+
+			let has_users_id_path = schema.paths.paths.contains_key("/users/{user_id}");
+			assert!(
+				has_users_id_path,
+				"Schema should contain /users/{{user_id}} path"
+			);
+
+			// Verify the path details were preserved
+			if let Some(path_item_ref) = schema.paths.paths.get("/users/{user_id}") {
+				match path_item_ref {
+					ReferenceOr::Item(path_item) => {
+						if let Some(get_op) = &path_item.get {
+							assert_eq!(get_op.summary.as_deref(), Some("Get user details"));
+						}
+					},
+					ReferenceOr::Reference { reference: _ } => {
+						panic!("Expected path item, got reference");
+					},
+				}
+			}
+
+			if let Some(path_item_ref) = schema.paths.paths.get("/users") {
+				match path_item_ref {
+					ReferenceOr::Item(path_item) => {
+						if let Some(post_op) = &path_item.post {
+							assert_eq!(post_op.summary.as_deref(), Some("Create a new user"));
+						}
+					},
+					ReferenceOr::Reference { reference: _ } => {
+						panic!("Expected path item, got reference");
+					},
+				}
+			}
+		} else {
+			panic!("Expected OpenAPI target spec, got {:?}", target.spec);
+		}
+	}
+}
+
+#[test]
+fn test_parse_openapi_schema_octet_stream_body() {
+	let raw = r#"{
+		"openapi": "3.0.0",
+		"info": {"title": "Binary Upload", "version": "1.0.0"},
+		"paths": {
+			"/upload": {
+				"post": {
+					"operationId": "uploadFile",
+					"requestBody": {
+						"required": true,
+						"content": {
+							"application/octet-stream": {
+								"schema": {"type": "string", "format": "binary"}
+							}
+						}
+					},
+					"responses": {
+						"200": {"description": "ok"}
+					}
+				}
+			}
+		}
+	}"#;
+	let open_api: OpenAPI = serde_json::from_str(raw).expect("valid OpenAPI schema");
+	let tools = super::parse_openapi_schema(&open_api).expect("schema should parse");
+
+	let (tool, upstream) = tools
+		.iter()
+		.find(|(tool, _)| tool.name == "uploadFile")
+		.expect("tool should exist");
+
+	assert_eq!(
+		upstream.content_type.as_deref(),
+		Some("application/octet-stream")
+	);
+
+	let schema = &*tool.input_schema;
+	let properties = schema
+		.get("properties")
+		.and_then(serde_json::Value::as_object)
+		.expect("root schema should include properties");
+	assert!(
+		properties.contains_key("body"),
+		"body property should exist"
+	);
+
+	let body_schema = properties
+		.get("body")
+		.and_then(serde_json::Value::as_object)
+		.expect("body should be an object");
+	assert_eq!(body_schema.get("type"), Some(&json!("string")));
+	assert_eq!(body_schema.get("format"), Some(&json!("byte")));
+
+	let required = schema
+		.get("required")
+		.and_then(serde_json::Value::as_array)
+		.expect("root schema should include required array");
+	assert!(
+		required.iter().any(|v| v == "body"),
+		"body should be required"
+	);
+}
+
+#[test]
+fn test_parse_openapi_schema_json_preferred_over_octet_stream() {
+	let raw = r#"{
+		"openapi": "3.0.0",
+		"info": {"title": "Multi Content", "version": "1.0.0"},
+		"paths": {
+			"/data": {
+				"post": {
+					"operationId": "postData",
+					"requestBody": {
+						"required": true,
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object",
+									"properties": {
+										"name": {"type": "string"}
+									}
+								}
+							},
+							"application/octet-stream": {
+								"schema": {"type": "string", "format": "binary"}
+							}
+						}
+					},
+					"responses": {
+						"200": {"description": "ok"}
+					}
+				}
+			}
+		}
+	}"#;
+	let open_api: OpenAPI = serde_json::from_str(raw).expect("valid OpenAPI schema");
+	let tools = super::parse_openapi_schema(&open_api).expect("schema should parse");
+
+	let (_tool, upstream) = tools
+		.iter()
+		.find(|(tool, _)| tool.name == "postData")
+		.expect("tool should exist");
+
+	assert_eq!(
+		upstream.content_type, None,
+		"JSON path should be taken, no special content_type"
+	);
+}
+
+#[test]
+fn test_parse_openapi_schema_unsupported_content_type_no_body_param() {
+	let raw = r#"{
+		"openapi": "3.0.0",
+		"info": {"title": "XML Only", "version": "1.0.0"},
+		"paths": {
+			"/xml": {
+				"post": {
+					"operationId": "postXml",
+					"requestBody": {
+						"required": true,
+						"content": {
+							"text/xml": {
+								"schema": {"type": "string"}
+							}
+						}
+					},
+					"responses": {
+						"200": {"description": "ok"}
+					}
+				}
+			}
+		}
+	}"#;
+	let open_api: OpenAPI = serde_json::from_str(raw).expect("valid OpenAPI schema");
+	let tools = super::parse_openapi_schema(&open_api).expect("schema should parse");
+
+	let (tool, _upstream) = tools
+		.iter()
+		.find(|(tool, _)| tool.name == "postXml")
+		.expect("tool should exist");
+
+	let schema = &*tool.input_schema;
+	let properties = schema
+		.get("properties")
+		.and_then(serde_json::Value::as_object);
+	let has_body = properties.is_some_and(|p| p.contains_key("body"));
+	assert!(
+		!has_body,
+		"unsupported content type should not produce a body parameter"
+	);
+}
+
+struct BinaryBodyMatcher {
+	expected_bytes: Vec<u8>,
+}
+
+impl Match for BinaryBodyMatcher {
+	fn matches(&self, request: &Request) -> bool {
+		request.body == self.expected_bytes
+	}
+}
+
+#[tokio::test]
+async fn test_call_tool_with_binary_body() {
+	let server = MockServer::start().await;
+	let host = server.uri();
+	let parsed = reqwest::Url::parse(&host).unwrap();
+	let config = crate::config::parse_config("{}".to_string(), None).unwrap();
+	let encoder = config.session_encoder.clone();
+	let stores = Stores::with_ipv6_enabled(config.ipv6_enabled);
+	let client = Client::new(
+		&client::Config {
+			resolver_cfg: hickory_resolver::config::ResolverConfig::default(),
+			resolver_opts: hickory_resolver::config::ResolverOpts::default(),
+		},
+		None,
+		BackendConfig::default(),
+		None,
+	);
+	let pi = Arc::new(ProxyInputs {
+		cfg: Arc::new(config),
+		stores: stores.clone(),
+		metrics: Arc::new(crate::metrics::Metrics::new(
+			platform_core::metrics::sub_registry(&mut prometheus_client::registry::Registry::default()),
+			Default::default(),
+		)),
+		model_catalog: crate::llm::cost::ModelCatalog::empty(),
+		admin: None,
+		upstream: client.clone(),
+		ca: None,
+		mcp_state: mcp::router::App::new(stores.clone(), encoder),
+		guardrails: None,
+		vehicle_state: Default::default(),
+		circuit_breakers: None,
+	});
+
+	let client = PolicyClient::new(pi.clone());
+
+	let test_tool_upload = Tool::new(
+		Cow::Borrowed("upload_file"),
+		Cow::Borrowed("Upload a binary file"),
+		Arc::new(
+			json!({
+				"type": "object",
+				"properties": {
+					"body": {
+						"type": "string",
+						"format": "byte",
+						"description": "Base64-encoded binary content"
+					}
+				},
+				"required": ["body"]
+			})
+			.as_object()
+			.unwrap()
+			.clone(),
+		),
+	);
+	let upstream_call_upload = UpstreamOpenAPICall {
+		method: "POST".to_string(),
+		path: "/upload".to_string(),
+		allowed_headers: HashSet::new(),
+		content_type: Some("application/octet-stream".to_string()),
+	};
+
+	let backend = SimpleBackend::Opaque(
+		ResourceName::new(strng::literal!("dummy"), "".into()),
+		Target::Hostname(
+			parsed.host().unwrap().to_string().into(),
+			parsed.port().unwrap_or(8080),
+		),
+	);
+	let upstream_client = super::super::McpHttpClient::new(
+		client,
+		backend,
+		BackendPolicies::default(),
+		false,
+		"test-target".to_string(),
+	);
+	let handler = Handler::new(
+		upstream_client,
+		vec![(test_tool_upload, upstream_call_upload)],
+		"".to_string(),
+	);
+
+	let binary_data: Vec<u8> = vec![0x00, 0x01, 0x02, 0xFF, 0xFE, 0xFD];
+	use base64::Engine;
+	let encoded = base64::engine::general_purpose::STANDARD.encode(&binary_data);
+	let expected_response = json!({ "status": "uploaded" });
+
+	Mock::given(method("POST"))
+		.and(path("/upload"))
+		.and(header("content-type", "application/octet-stream"))
+		.and(BinaryBodyMatcher {
+			expected_bytes: binary_data,
+		})
+		.respond_with(ResponseTemplate::new(200).set_body_json(&expected_response))
+		.mount(&server)
+		.await;
+
+	let args = json!({ "body": encoded });
+	let result = handler
+		.call_tool(
+			"upload_file",
+			Some(args.as_object().unwrap().clone()),
+			&IncomingRequestContext::empty(),
+		)
+		.await;
+
+	assert!(result.is_ok(), "Expected success, got: {:?}", result.err());
+	assert_eq!(result.unwrap(), expected_response);
+}

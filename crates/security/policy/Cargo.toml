@@ -1,0 +1,10 @@
+[package]
+name = "security-policy"
+version = { workspace = true }
+edition = { workspace = true }
+license = { workspace = true }
+publish = { workspace = true }
+
+[dependencies]
+security-types = { path = "../types" }
+serde.workspace = true

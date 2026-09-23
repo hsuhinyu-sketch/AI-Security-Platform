@@ -7,11 +7,11 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
-audit-core = { path = "../../audit-core" }
+security-audit = { path = "../../security/audit" }
 async-trait.workspace = true
 axum.workspace = true
 chrono.workspace = true
-gateway-adapter = { path = "../../gateway-adapter" }
+security-pipeline = { path = "../../security/pipeline" }
 reqwest.workspace = true
 serde.workspace = true
 serde_json.workspace = true
@@ -19,7 +19,7 @@ security-rag = { path = "../../security/rag" }
 uuid.workspace = true
 
 [dev-dependencies]
-security-contracts = { path = "../../contracts" }
-security-policy = { path = "../../policy" }
+security-types = { path = "../../security/types" }
+security-policy = { path = "../../security/policy" }
 tokio.workspace = true
 tower.workspace = true

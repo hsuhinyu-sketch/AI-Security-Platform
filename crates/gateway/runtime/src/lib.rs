@@ -1,6 +1,881 @@
-//! First-party runtime namespace for the AI Gateway Platform.
-//!
-//! The implementation is re-exported from the AgentGateway-derived compatibility runtime during
-//! migration. New platform crates must depend on this package instead of `agentgateway` directly.
+use std::collections::HashMap;
+use std::fmt::{Debug, Display};
+use std::fs::File;
+use std::io::Read;
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
+use std::path::PathBuf;
+use std::sync::{Arc, RwLock};
+use std::{fmt, io, str};
 
-pub use agentgateway::*;
+use platform_core::prelude::*;
+use control::caclient::CaClient;
+use hickory_resolver::config::{LookupIpStrategy, ResolverConfig, ResolverOpts};
+use indexmap::IndexMap;
+#[cfg(feature = "schema")]
+pub use schemars::JsonSchema;
+use serde::de::Visitor;
+use serde::{Deserialize, Deserializer, Serialize, Serializer, de};
+pub use serdes::*;
+
+use crate::store::Stores;
+use crate::types::discovery::Identity;
+
+pub mod a2a;
+pub mod agentcore;
+pub mod app;
+pub mod capabilities;
+#[cfg(feature = "providers-aws")]
+pub mod aws;
+pub mod cel;
+pub mod circuit;
+pub mod client;
+pub mod config;
+pub mod control;
+pub mod guardrails;
+pub mod http;
+pub mod json;
+pub mod llm;
+pub mod management;
+pub mod mcp;
+pub mod parse;
+pub mod proxy;
+pub mod resource_manager;
+pub(crate) mod rag;
+pub(crate) mod security_events;
+pub mod runtime;
+pub(crate) mod security;
+pub mod serdes;
+pub mod state_manager;
+pub mod store;
+pub mod telemetry;
+#[cfg(any(test, feature = "internal_benches"))]
+pub mod test_helpers;
+pub mod transport;
+pub mod types;
+#[cfg(feature = "ui")]
+mod ui;
+pub mod util;
+
+use control::caclient;
+use telemetry::{metrics, trc};
+
+use crate::telemetry::trc::Protocol;
+use crate::types::agent::{ListenerTarget, PolicyTargetRef};
+use crate::types::local;
+
+#[derive(serde::Deserialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+/// NestedRawConfig represents a subset of the config that can be passed in. This is split out from static
+/// and dynamic config
+pub struct NestedRawConfig {
+	config: Option<RawConfig>,
+}
+
+#[apply(schema_de!)]
+#[derive(Default)]
+pub struct RawStandardAttributes {
+	/// CEL expression used to populate the `agentgateway.user` request log attribute.
+	#[cfg_attr(feature = "schema", schemars(with = "Option<String>"))]
+	pub user: Option<String>,
+	/// CEL expression used to populate the `agentgateway.group` request log attribute.
+	#[cfg_attr(feature = "schema", schemars(with = "Option<String>"))]
+	pub group: Option<String>,
+}
+
+/// Controls which IP address families the DNS resolver will query for
+/// upstream (backend) connections.
+///
+///  Maps to hickory_resolver's `LookupIpStrategy` under the hood.
+///
+/// Can be set via the `DNS_LOOKUP_FAMILY` environment variable or the
+/// `dns.lookupFamily` field in the config file.
+///
+/// See: <https://www.envoyproxy.io/docs/envoy/latest/api-v3/config/cluster/v3/cluster.proto#enum-config-cluster-v3-cluster-dnslookupfamily>
+#[derive(serde::Deserialize, serde::Serialize, Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub enum DnsLookupFamily {
+	/// Query for both A and AAAA records in parallel and use all results.
+	All,
+	/// Automatically choose based on the `enable_ipv6` setting. When IPv6 is
+	/// enabled this behaves like `V4Preferred`; otherwise `V4Only`.
+	#[default]
+	Auto,
+	/// Query for both A and AAAA, but prefer IPv4 addresses when both are
+	/// available.
+	V4Preferred,
+	/// Only query for A (IPv4) records.
+	V4Only,
+	/// Only query for AAAA (IPv6) records.
+	V6Only,
+}
+
+impl DnsLookupFamily {
+	pub fn from_env_str(s: &str) -> anyhow::Result<Self> {
+		serde_json::from_value(serde_json::Value::String(s.to_owned()))
+			.map_err(|e| anyhow::anyhow!("invalid DNS lookup family '{s}': {e}"))
+	}
+
+	/// Convert to hickory_resolver's `LookupIpStrategy`, using the
+	/// `ipv6_enabled` flag to resolve the `Auto` case.
+	pub fn to_lookup_strategy(self, ipv6_enabled: bool) -> LookupIpStrategy {
+		match self {
+			Self::All => LookupIpStrategy::Ipv4AndIpv6,
+			Self::V4Preferred => LookupIpStrategy::Ipv4thenIpv6,
+			Self::V4Only => LookupIpStrategy::Ipv4Only,
+			Self::V6Only => LookupIpStrategy::Ipv6Only,
+			Self::Auto => {
+				if ipv6_enabled {
+					LookupIpStrategy::Ipv4thenIpv6
+				} else {
+					LookupIpStrategy::Ipv4Only
+				}
+			},
+		}
+	}
+}
+
+#[apply(schema_de!)]
+#[derive(Default)]
+pub struct RawDnsConfig {
+	/// Controls which IP address families the DNS resolver will query for
+	/// upstream connections.
+	/// Accepted values: All, Auto, V4Preferred, V4Only, V6Only.
+	/// Defaults to Auto (IPv4-only when enableIpv6 is false, both when true).
+	lookup_family: Option<DnsLookupFamily>,
+
+	/// Whether to enable EDNS0 (Extension Mechanisms for DNS) in the resolver.
+	/// When `None`, the system-provided resolver setting is preserved.
+	/// Can also be set via the `DNS_EDNS0` environment variable.
+	edns0: Option<bool>,
+}
+
+#[apply(schema_de!)]
+#[derive(Default)]
+// RawConfig represents the inputs a user can pass in. Config represents the internal representation of this.
+pub struct RawConfig {
+	enable_ipv6: Option<bool>,
+
+	/// DNS resolver settings.
+	dns: Option<RawDnsConfig>,
+
+	/// Model cost catalog sources; entries are merged in order, with later entries taking precedence.
+	model_catalog: Option<Vec<ModelCatalogSource>>,
+	/// Primary database used by local runtime features.
+	database: Option<telemetry::log_store::Config>,
+
+	ca_address: Option<String>,
+	ca_auth_token: Option<String>,
+	trust_domain: Option<String>,
+	/// Comma-separated list of additional SPIFFE trust domains accepted on inbound HBONE
+	/// connections. The local trust_domain is always implicitly included.
+	additional_trust_domains: Option<String>,
+	/// When true, skip SPIFFE trust-domain verification on inbound HBONE connections.
+	skip_validate_trust_domain: Option<bool>,
+	service_account: Option<String>,
+	cluster_id: Option<String>,
+	network: Option<String>,
+
+	/// Admin UI address in the format "ip:port", "localhost:port", "unix:/path/to/socket", or "off"
+	admin_addr: Option<String>,
+	/// Standard request log attributes populated for database-backed local runtime features.
+	standard_attributes: Option<RawStandardAttributes>,
+	/// Stats/metrics server address in the format "ip:port", "localhost:port", "unix:/path/to/socket", or "off"
+	stats_addr: Option<String>,
+	/// Readiness probe server address in the format "ip:port", "localhost:port", "unix:/path/to/socket", or "off"
+	readiness_addr: Option<String>,
+
+	/// Configuration for stateful session management
+	session: Option<RawSession>,
+
+	/// MCP gateway settings.
+	mcp: Option<RawMcpConfig>,
+
+	/// Custom CEL functions available to all CEL expressions. These can define re-usable snippets that
+	/// can be used in any expressions.
+	/// Configure as a block string containing one or more definitions, for example:
+	/// `customFunctions: |`
+	/// `  isInternal() { request.headers["x-env"] == "internal" }`
+	/// `  this.joined(prefix, parts...) { prefix + this + parts.join("") }`
+	#[serde(default)]
+	custom_functions: String,
+
+	#[serde(default, with = "serde_dur_option")]
+	#[cfg_attr(feature = "schema", schemars(with = "Option<String>"))]
+	connection_termination_deadline: Option<Duration>,
+	#[serde(default, with = "serde_dur_option")]
+	#[cfg_attr(feature = "schema", schemars(with = "Option<String>"))]
+	connection_min_termination_deadline: Option<Duration>,
+
+	worker_threads: Option<StringOrInt>,
+
+	tracing: Option<RawTracing>,
+	logging: Option<RawLogging>,
+	metrics: Option<RawMetrics>,
+
+	#[serde(default)]
+	backend: BackendConfig,
+
+	#[serde(
+		default,
+		rename = "listener",
+		deserialize_with = "removed::rename_listener"
+	)]
+	#[cfg_attr(feature = "schema", schemars(skip))]
+	_listener: serdes::RenamedField,
+
+	hbone: Option<RawHBONE>,
+}
+
+mod removed {
+	use serde::Deserializer;
+
+	use crate::serdes;
+
+	pub fn rename_listener<'de, D: Deserializer<'de>>(
+		d: D,
+	) -> Result<serdes::RenamedField, D::Error> {
+		serdes::renamed_field("listener", "frontendPolicies", d).map(|_| serdes::RenamedField)
+	}
+}
+
+#[apply(schema!)]
+pub struct BackendConfig {
+	#[serde(default)]
+	keepalives: types::agent::KeepaliveConfig,
+	#[serde(with = "serde_dur")]
+	#[cfg_attr(feature = "schema", schemars(with = "String"))]
+	#[serde(default = "defaults::connect_timeout")]
+	connect_timeout: Duration,
+	/// The maximum duration to keep an idle connection alive.
+	#[serde(with = "serde_dur")]
+	#[cfg_attr(feature = "schema", schemars(with = "String"))]
+	#[serde(default = "defaults::pool_idle_timeout")]
+	pool_idle_timeout: Duration,
+	/// The maximum number of connections allowed in the pool, per hostname. If set, this will limit
+	/// the total number of connections kept alive to any given host.
+	/// Note: excess connections will still be created, they will just not remain idle.
+	/// If unset, there is no limit
+	#[serde(default)]
+	pool_max_size: Option<usize>,
+}
+
+#[derive(serde::Serialize, Clone, Debug, Eq, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct DynamicCaCertCacheConfig {
+	#[serde(with = "serde_dur")]
+	pub ttl: Duration,
+	pub capacity: usize,
+}
+
+impl Default for DynamicCaCertCacheConfig {
+	fn default() -> Self {
+		Self {
+			ttl: Duration::from_secs(300),
+			capacity: 256,
+		}
+	}
+}
+
+impl Default for BackendConfig {
+	fn default() -> Self {
+		crate::BackendConfig {
+			keepalives: Default::default(),
+			connect_timeout: defaults::connect_timeout(),
+			pool_idle_timeout: defaults::pool_idle_timeout(),
+			pool_max_size: None,
+		}
+	}
+}
+
+mod defaults {
+	use std::time::Duration;
+
+	pub fn connect_timeout() -> Duration {
+		Duration::from_secs(10)
+	}
+	pub fn pool_idle_timeout() -> Duration {
+		Duration::from_secs(90)
+	}
+
+	pub fn max_buffer_size() -> usize {
+		2_097_152
+	}
+
+	pub fn tls_handshake_timeout() -> Duration {
+		Duration::from_secs(15)
+	}
+	pub fn http1_idle_timeout() -> Duration {
+		// Default to 10 minutes
+		Duration::from_secs(60 * 10)
+	}
+}
+
+#[apply(schema_de!)]
+pub struct RawHBONE {
+	window_size: Option<u32>,
+	connection_window_size: Option<u32>,
+	frame_size: Option<u32>,
+	pool_max_streams_per_conn: Option<u16>,
+	#[serde(with = "serde_dur_option")]
+	#[cfg_attr(feature = "schema", schemars(with = "Option<String>"))]
+	pool_unused_release_timeout: Option<Duration>,
+}
+
+#[apply(schema_de!)]
+pub struct RawSession {
+	/// The AES-256-GCM session protection key to be used for session tokens.
+	/// If not set, sessions will not be encrypted.
+	/// For example, generated via `openssl rand -hex 32`.
+	#[cfg_attr(feature = "schema", schemars(with = "String"))]
+	#[serde(serialize_with = "ser_redact", deserialize_with = "deser_key")]
+	key: secrecy::SecretString,
+}
+
+#[apply(schema_de!)]
+pub struct RawMcpConfig {
+	#[serde(default, with = "serde_dur_option")]
+	#[cfg_attr(feature = "schema", schemars(with = "Option<String>"))]
+	session_ttl: Option<Duration>,
+}
+
+#[apply(schema_de!)]
+pub struct RawTracing {
+	otlp_endpoint: Option<String>,
+	#[serde(default)]
+	headers: HashMap<String, String>,
+	#[serde(default)]
+	otlp_protocol: Protocol,
+	fields: Option<RawLoggingFields>,
+	/// Expression to determine the amount of *random sampling*.
+	/// Random sampling will initiate a new trace span if the incoming request does not have a trace already.
+	/// This should evaluate to either a float between 0.0-1.0 (0-100%) or true/false.
+	/// This defaults to 'false'.
+	random_sampling: Option<StringBoolFloat>,
+	/// Expression to determine the amount of *client sampling*.
+	/// Client sampling determines whether to initiate a new trace span if the incoming request does have a trace already.
+	/// This should evaluate to either a float between 0.0-1.0 (0-100%) or true/false.
+	/// This defaults to 'true'.
+	client_sampling: Option<StringBoolFloat>,
+	/// OTLP path. Default is /v1/traces
+	path: Option<String>,
+}
+
+#[apply(schema_de!)]
+pub struct RawLogging {
+	filter: Option<String>,
+	fields: Option<RawLoggingFields>,
+	level: Option<RawLoggingLevel>,
+	format: Option<LoggingFormat>,
+	database: Option<telemetry::log_store::Config>,
+}
+
+#[apply(schema_de!)]
+#[serde(untagged)]
+pub enum RawLoggingLevel {
+	Single(String),
+	List(Vec<String>),
+}
+
+#[apply(schema!)]
+#[derive(Default, Eq, PartialEq)]
+pub enum LoggingFormat {
+	#[default]
+	Text,
+	Json,
+}
+
+#[apply(schema_de!)]
+pub struct RawMetrics {
+	#[serde(default)]
+	remove: Vec<String>,
+	fields: Option<RawMetricFields>,
+}
+
+#[apply(schema_de!)]
+pub struct RawMetricFields {
+	#[serde(default)]
+	#[cfg_attr(
+		feature = "schema",
+		schemars(with = "std::collections::HashMap<String, String>")
+	)]
+	add: IndexMap<String, String>,
+}
+
+#[apply(schema_de!)]
+pub struct RawLoggingFields {
+	#[serde(default)]
+	remove: Vec<String>,
+	#[serde(default)]
+	#[cfg_attr(
+		feature = "schema",
+		schemars(with = "std::collections::HashMap<String, String>")
+	)]
+	add: IndexMap<String, String>,
+}
+
+#[derive(Clone, Debug)]
+pub struct StringOrInt(String);
+
+impl<'de> Deserialize<'de> for StringOrInt {
+	fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+	where
+		D: Deserializer<'de>,
+	{
+		struct StringOrIntVisitor();
+
+		impl Visitor<'_> for StringOrIntVisitor {
+			type Value = StringOrInt;
+
+			fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+				formatter.write_str("string or int")
+			}
+
+			fn visit_str<E>(self, value: &str) -> Result<StringOrInt, E>
+			where
+				E: de::Error,
+			{
+				Ok(StringOrInt(value.to_owned()))
+			}
+
+			fn visit_i64<E>(self, value: i64) -> Result<StringOrInt, E> {
+				Ok(StringOrInt(value.to_string()))
+			}
+
+			fn visit_u64<E>(self, value: u64) -> Result<StringOrInt, E> {
+				Ok(StringOrInt(value.to_string()))
+			}
+		}
+
+		deserializer.deserialize_any(StringOrIntVisitor())
+	}
+}
+
+#[cfg(feature = "schema")]
+impl schemars::JsonSchema for StringOrInt {
+	fn schema_name() -> std::borrow::Cow<'static, str> {
+		"StringOrInt".into()
+	}
+
+	fn schema_id() -> std::borrow::Cow<'static, str> {
+		"StringOrInt".into()
+	}
+
+	fn json_schema(_gen: &mut schemars::SchemaGenerator) -> schemars::Schema {
+		schemars::json_schema!({
+			"type": ["string", "integer"]
+		})
+	}
+}
+
+#[derive(Clone, Debug)]
+pub struct StringBoolFloat(String);
+
+impl<'de> Deserialize<'de> for StringBoolFloat {
+	fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+	where
+		D: Deserializer<'de>,
+	{
+		struct StringBoolFloatVisitor();
+
+		impl Visitor<'_> for StringBoolFloatVisitor {
+			type Value = StringBoolFloat;
+
+			fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+				formatter.write_str("string, bool, float, or int")
+			}
+
+			fn visit_str<E>(self, value: &str) -> Result<StringBoolFloat, E> {
+				Ok(StringBoolFloat(value.to_owned()))
+			}
+
+			fn visit_f64<E>(self, value: f64) -> Result<StringBoolFloat, E> {
+				Ok(StringBoolFloat(value.to_string()))
+			}
+
+			fn visit_bool<E>(self, v: bool) -> Result<Self::Value, E> {
+				Ok(StringBoolFloat(v.to_string()))
+			}
+
+			fn visit_i64<E>(self, value: i64) -> Result<StringBoolFloat, E> {
+				Ok(StringBoolFloat(value.to_string()))
+			}
+
+			fn visit_u64<E>(self, value: u64) -> Result<StringBoolFloat, E> {
+				Ok(StringBoolFloat(value.to_string()))
+			}
+		}
+
+		deserializer.deserialize_any(StringBoolFloatVisitor())
+	}
+}
+
+#[cfg(feature = "schema")]
+impl schemars::JsonSchema for StringBoolFloat {
+	fn schema_name() -> std::borrow::Cow<'static, str> {
+		"StringBoolFloat".into()
+	}
+
+	fn schema_id() -> std::borrow::Cow<'static, str> {
+		"StringBoolFloat".into()
+	}
+
+	fn json_schema(_gen: &mut schemars::SchemaGenerator) -> schemars::Schema {
+		schemars::json_schema!({
+			"type": ["string", "number", "boolean"]
+		})
+	}
+}
+
+#[derive(serde::Serialize, Clone, Debug)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct Config {
+	pub ipv6_enabled: bool,
+	pub network: Strng,
+	/// How the gateway discovers its own workload for locality-aware load balancing.
+	/// `None` disables locality filtering — any LoadBalancer config on services is ignored.
+	pub self_identity: Option<types::discovery::SelfIdentitySource>,
+	#[serde(with = "serde_dur")]
+	pub termination_max_deadline: Duration,
+	#[serde(with = "serde_dur")]
+	pub termination_min_deadline: Duration,
+	/// Specify the number of worker threads the Tokio Runtime will use.
+	pub num_worker_threads: usize,
+	pub admin_addr: Address,
+	pub stats_addr: Address,
+	pub readiness_addr: Address,
+	// For waypoint identification
+	pub self_addr: Option<types::discovery::WaypointIdentity>,
+	pub hbone: Arc<platform_hbone::Config>,
+	/// Source of the standalone YAML configuration.
+	pub local_config: Option<ConfigSource>,
+	pub ca: Option<caclient::Config>,
+
+	pub tracing: Option<trc::DeprecatedConfig>,
+	pub metrics: crate::telemetry::log::MetricsConfig,
+	pub logging: crate::telemetry::log::Config,
+	pub database: Option<telemetry::log_store::Config>,
+
+	pub dns: client::Config,
+	pub proxy_metadata: ProxyMetadata,
+	pub threading_mode: ThreadingMode,
+	pub session_encoder: http::sessionpersistence::Encoder,
+	/// Runtime cookie/session crypto for browser OIDC flows.
+	pub oidc_cookie_encoder: Option<http::sessionpersistence::Encoder>,
+	/// Handle for tasks/spans emitted on the admin runtime.
+	#[serde(skip)]
+	pub admin_runtime_handle: Option<tokio::runtime::Handle>,
+
+	pub backend: BackendConfig,
+	pub mcp: McpConfig,
+	pub dynamic_ca_cert_cache: DynamicCaCertCacheConfig,
+	pub model_catalog: ModelCatalogConfig,
+}
+
+#[derive(serde::Serialize, Clone, Debug, Default)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ModelCatalogConfig {
+	pub sources: Vec<ModelCatalogSource>,
+}
+
+/// A source of model cost catalog data.
+#[derive(serde::Serialize, serde::Deserialize, Clone, Debug)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(untagged)]
+pub enum ModelCatalogSource {
+	File { file: PathBuf },
+	Inline { inline: String },
+	InlineCatalog { inline: llm::cost::Catalog },
+}
+
+#[apply(schema!)]
+pub struct McpConfig {
+	#[serde(with = "serde_dur")]
+	#[cfg_attr(feature = "schema", schemars(with = "String"))]
+	pub session_ttl: Duration,
+}
+
+impl Config {
+	pub fn gateway(&self) -> ListenerTarget {
+		ListenerTarget {
+			gateway_name: strng::literal!("default"),
+			gateway_namespace: strng::literal!("default"),
+			listener_name: None,
+			port: None,
+		}
+	}
+	pub fn gateway_ref(&self) -> PolicyTargetRef {
+		PolicyTargetRef::Gateway {
+			gateway_name: "default",
+			gateway_namespace: "default",
+			listener_name: None,
+			port: None,
+		}
+	}
+	pub fn gateway_port_ref(&self, port: u16) -> PolicyTargetRef {
+		PolicyTargetRef::Gateway {
+			gateway_name: "default",
+			gateway_namespace: "default",
+			listener_name: None,
+			port: Some(port),
+		}
+	}
+	pub fn as_policy_context(
+		&self,
+		policy_key: impl std::fmt::Display,
+	) -> Option<local::AttachedPolicyContext> {
+		Some(local::AttachedPolicyContext {
+			oidc_policy_id: crate::http::oidc::PolicyId::policy(&policy_key),
+			oidc_cookie_encoder: self.oidc_cookie_encoder.as_ref(),
+		})
+	}
+}
+
+#[derive(serde::Serialize, Copy, PartialOrd, PartialEq, Eq, Clone, Debug, Default)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub enum ThreadingMode {
+	#[default]
+	Multithreaded,
+	// Experimental; do not use beyond testing
+	ThreadPerCore,
+}
+
+#[derive(Clone, Debug)]
+pub enum ConfigSource {
+	File(PathBuf),
+	Static(Bytes),
+}
+
+impl Serialize for ConfigSource {
+	fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+	where
+		S: Serializer,
+	{
+		match self {
+			ConfigSource::File(name) => serializer.serialize_str(&name.to_string_lossy()),
+			ConfigSource::Static(_) => serializer.serialize_str("static"),
+		}
+	}
+}
+
+impl ConfigSource {
+	pub async fn read_to_string(&self) -> anyhow::Result<String> {
+		Ok(match self {
+			ConfigSource::File(path) => fs_err::tokio::read_to_string(path).await?,
+			ConfigSource::Static(data) => std::str::from_utf8(data).map(|s| s.to_string())?,
+		})
+	}
+	pub fn read_to_string_sync(&self) -> anyhow::Result<String> {
+		Ok(match self {
+			ConfigSource::File(path) => fs_err::read_to_string(path)?,
+			ConfigSource::Static(data) => std::str::from_utf8(data).map(|s| s.to_string())?,
+		})
+	}
+}
+
+pub struct ProxyInputs {
+	pub cfg: Arc<Config>,
+	pub stores: Stores,
+
+	pub upstream: client::Client,
+
+	pub metrics: Arc<metrics::Metrics>,
+	pub model_catalog: Arc<llm::cost::ModelCatalog>,
+
+	pub admin: Option<management::admin::AdminService>,
+	pub mcp_state: mcp::App,
+	pub ca: Option<Arc<CaClient>>,
+
+	/// Optional vehicle guardrails. When set, request-level guardrails are
+	/// enforced in the core HTTP proxy pipeline.
+	pub guardrails: Option<Arc<dyn crate::guardrails::VehicleGuardrails>>,
+	/// Current vehicle state used by vehicle guardrails.
+	pub vehicle_state: crate::guardrails::VehicleState,
+	/// Optional circuit breaker registry. Used by guardrails to open breakers.
+	pub circuit_breakers: Option<Arc<crate::circuit::CircuitBreakerRegistry>>,
+}
+
+impl Clone for ProxyInputs {
+	fn clone(&self) -> Self {
+		Self {
+			cfg: self.cfg.clone(),
+			stores: self.stores.clone(),
+			upstream: self.upstream.clone(),
+			metrics: self.metrics.clone(),
+			model_catalog: self.model_catalog.clone(),
+			admin: self.admin.clone(),
+			mcp_state: self.mcp_state.clone(),
+			ca: self.ca.clone(),
+			guardrails: self.guardrails.clone(),
+			vehicle_state: self.vehicle_state.clone(),
+			circuit_breakers: self.circuit_breakers.clone(),
+		}
+	}
+}
+
+impl std::fmt::Debug for ProxyInputs {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		f.debug_struct("ProxyInputs")
+			.field("cfg", &self.cfg)
+			.field("stores", &self.stores)
+			.field("upstream", &self.upstream)
+			.field("metrics", &self.metrics)
+			.field("model_catalog", &self.model_catalog)
+			.field("admin", &self.admin)
+			.field("mcp_state", &self.mcp_state)
+			.field("ca", &self.ca)
+			.field(
+				"guardrails",
+				&self.guardrails.as_ref().map(|_| "dyn VehicleGuardrails"),
+			)
+			.field("vehicle_state", &self.vehicle_state)
+			.field("circuit_breakers", &self.circuit_breakers)
+			.finish()
+	}
+}
+
+impl ProxyInputs {
+	/// Create a new `ProxyInputs` for embedding agentgateway as a library.
+	///
+	/// This constructor is intended for use cases where the gateway is embedded
+	/// directly into another application, bypassing [`app::run`] which creates
+	/// its own admin servers and signal handlers.
+	pub fn new(
+		cfg: Arc<Config>,
+		stores: Stores,
+		upstream: client::Client,
+		metrics: Arc<metrics::Metrics>,
+		mcp_state: mcp::App,
+		model_catalog: Option<llm::cost::ModelCatalog>,
+		ca: Option<Arc<CaClient>>,
+	) -> Self {
+		Self {
+			cfg,
+			stores,
+			upstream,
+			metrics,
+			model_catalog: Arc::new(model_catalog.unwrap_or_default()),
+			admin: None,
+			mcp_state,
+			ca,
+			guardrails: None,
+			vehicle_state: Default::default(),
+			circuit_breakers: None,
+		}
+	}
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+// Address is a management listener address. It may bind TCP, bind localhost on
+// both IPv4 and IPv6, bind a Unix domain socket, or disable the listener.
+pub enum Address {
+	// Do not bind this listener.
+	Off,
+	// Bind to localhost (dual stack) on a specific port
+	// (ipv6_enabled, port)
+	Localhost(bool, u16),
+	// Bind to an explicit IP/port
+	SocketAddr(SocketAddr),
+	// Bind to a Unix domain socket.
+	UnixSocket(PathBuf),
+}
+
+impl Display for Address {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		match self {
+			Address::Off => write!(f, "off"),
+			Address::Localhost(_, port) => write!(f, "localhost:{port}"),
+			Address::SocketAddr(s) => write!(f, "{s}"),
+			Address::UnixSocket(path) => write!(f, "unix:{}", path.display()),
+		}
+	}
+}
+
+impl IntoIterator for Address {
+	type Item = SocketAddr;
+	type IntoIter = <Vec<std::net::SocketAddr> as IntoIterator>::IntoIter;
+
+	fn into_iter(self) -> Self::IntoIter {
+		match self {
+			Address::Off | Address::UnixSocket(_) => vec![].into_iter(),
+			Address::Localhost(ipv6_enabled, port) => {
+				if ipv6_enabled {
+					vec![
+						SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port),
+						SocketAddr::new(IpAddr::V6(Ipv6Addr::LOCALHOST), port),
+					]
+					.into_iter()
+				} else {
+					vec![SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port)].into_iter()
+				}
+			},
+			Address::SocketAddr(s) => vec![s].into_iter(),
+		}
+	}
+}
+
+impl Address {
+	fn new(ipv6_enabled: bool, s: &str) -> anyhow::Result<Self> {
+		if s == "off" {
+			Ok(Address::Off)
+		} else if let Some(path) = s.strip_prefix("unix:") {
+			if path.trim().is_empty() {
+				anyhow::bail!("unix socket path must not be empty")
+			}
+			Ok(Address::UnixSocket(PathBuf::from(path)))
+		} else if s.starts_with("localhost:") {
+			let (_host, ports) = s.split_once(':').expect("already checked it has a :");
+			let port: u16 = ports.parse()?;
+			Ok(Address::Localhost(ipv6_enabled, port))
+		} else {
+			Ok(Address::SocketAddr(s.parse()?))
+		}
+	}
+
+	pub fn port(&self) -> u16 {
+		match self {
+			Address::Off | Address::UnixSocket(_) => 0,
+			Address::Localhost(_, port) => *port,
+			Address::SocketAddr(s) => s.port(),
+		}
+	}
+
+	// with_ipv6 unconditionally overrides the IPv6 setting for the address
+	pub fn with_ipv6(self, ipv6: bool) -> Self {
+		match self {
+			Address::Localhost(_, port) => Address::Localhost(ipv6, port),
+			x => x,
+		}
+	}
+
+	// maybe_downgrade_ipv6 updates the V6 setting, ONLY if the address was already V6
+	pub fn maybe_downgrade_ipv6(self, updated_v6: bool) -> Self {
+		match self {
+			Address::Localhost(true, port) => Address::Localhost(updated_v6, port),
+			x => x,
+		}
+	}
+}
+
+const IPV6_DISABLED_LO: &str = "/proc/sys/net/ipv6/conf/lo/disable_ipv6";
+
+fn read_sysctl(key: &str) -> io::Result<String> {
+	let mut file = File::open(key)?;
+	let mut data = String::new();
+	file.read_to_string(&mut data)?;
+	Ok(data.trim().to_string())
+}
+
+pub fn ipv6_enabled_on_localhost() -> io::Result<bool> {
+	read_sysctl(IPV6_DISABLED_LO).map(|s| s != "1")
+}
+
+#[derive(serde::Serialize, Clone, Debug)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ProxyMetadata {
+	pub instance_ip: Option<String>,
+	pub pod_name: String,
+	pub pod_namespace: String,
+	pub node_name: String,
+	pub role: String,
+	pub node_id: String,
+}

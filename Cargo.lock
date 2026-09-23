@@ -18,117 +18,49 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "320119579fcad9c21884f5c4861d16174d0e06250625266f50fe6898340abefa"
 
 [[package]]
-name = "agent-celx"
-version = "0.0.0"
+name = "ahash"
+version = "0.8.12"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5a15f179cd60c4584b8a8c596927aadc462e27f2ca70c04e0071964a73ba7a75"
 dependencies = [
- "anyhow",
- "assert_matches",
- "base64",
- "cel",
- "divan",
- "hashbrown 0.17.1",
- "hex",
- "ipnet",
- "md-5 0.11.0",
- "percent-encoding",
- "rand 0.10.1",
- "regex",
- "serde",
- "serde_json",
- "serde_regex",
- "sha1 0.11.0",
- "sha2 0.11.0",
- "url",
- "uuid",
- "vector-map",
-]
-
-[[package]]
-name = "agent-core"
-version = "0.0.0"
-dependencies = [
- "anyhow",
- "arc-swap",
- "arcstr",
- "bytes",
- "chrono",
- "crossbeam-channel",
- "durationfmt",
- "go-parse-duration",
- "http 1.4.2",
- "hyper-util",
- "itertools 0.15.0",
- "itoa",
+ "cfg-if",
+ "const-random",
+ "getrandom 0.3.4",
  "once_cell",
- "opentelemetry-otlp",
- "opentelemetry_sdk",
- "pin-project-lite",
- "prometheus-client",
- "rustc_version",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
- "time",
- "tokio",
- "tracing",
- "tracing-core",
- "tracing-log",
- "tracing-subscriber",
- "value-bag",
+ "version_check",
+ "zerocopy",
 ]
 
 [[package]]
-name = "agent-hbone"
+name = "aho-corasick"
+version = "1.1.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ddd31a130427c27518df266943a5308ed92d4b226cc639f5a8f1002816174301"
+dependencies = [
+ "memchr",
+]
+
+[[package]]
+name = "ai-security-platform-app"
 version = "0.0.0"
 dependencies = [
- "agent-core",
+ "ai-security-platform-runtime",
  "anyhow",
- "bytes",
- "flurry",
- "futures",
- "futures-util",
- "h2",
- "http 1.4.2",
- "hyper-util",
- "pingora-pool",
- "rustls",
- "serde",
+ "clap",
+ "fs-err",
+ "libc",
+ "mimalloc",
+ "platform-core",
+ "pprof-alloc",
+ "tikv-jemallocator",
  "tokio",
- "tokio-rustls",
- "tonic",
  "tracing",
 ]
 
 [[package]]
-name = "agent-pool"
+name = "ai-security-platform-runtime"
 version = "0.0.0"
 dependencies = [
- "assert_matches",
- "axum-core",
- "bytes",
- "futures-channel",
- "futures-core",
- "futures-util",
- "hashbrown 0.17.1",
- "http 1.4.2",
- "http-body-util",
- "hyper",
- "parking_lot",
- "pin-project-lite",
- "tokio",
- "tower-service",
- "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
-name = "agentgateway"
-version = "0.0.0"
-dependencies = [
- "agent-celx",
- "agent-core",
- "agent-hbone",
- "agent-pool",
  "anyhow",
  "arc-swap",
  "assert_matches",
@@ -136,7 +68,6 @@ dependencies = [
  "async-openai",
  "async-trait",
  "atomic_float",
- "audit-core",
  "aws-config",
  "aws-credential-types",
  "aws-lc-rs",
@@ -164,7 +95,6 @@ dependencies = [
  "futures",
  "futures-core",
  "futures-util",
- "gateway-adapter",
  "gateway-composition",
  "gateway-rag",
  "google-cloud-auth",
@@ -209,6 +139,11 @@ dependencies = [
  "percent-encoding",
  "phonenumber",
  "pin-project-lite",
+ "platform-celx",
+ "platform-core",
+ "platform-hbone",
+ "platform-pool",
+ "platform-protos",
  "ppp",
  "pprof",
  "pprof-alloc",
@@ -216,7 +151,6 @@ dependencies = [
  "prost 0.14.4",
  "prost-types",
  "prost-wkt-types",
- "protos",
  "quick_cache",
  "rand 0.10.1",
  "rcgen 0.14.8",
@@ -233,10 +167,12 @@ dependencies = [
  "rustls-pki-types",
  "schemars 1.2.1",
  "secrecy",
+ "security-audit",
  "security-capability-broker",
- "security-contracts",
- "security-integration-agentgateway",
+ "security-integration-runtime",
+ "security-pipeline",
  "security-rag",
+ "security-types",
  "serde",
  "serde-transcode",
  "serde-untagged",
@@ -276,61 +212,6 @@ dependencies = [
  "which 8.0.4",
  "wiremock",
  "x509-parser",
-]
-
-[[package]]
-name = "agentgateway-app"
-version = "0.0.0"
-dependencies = [
- "agent-core",
- "agentgateway",
- "anyhow",
- "clap",
- "fs-err",
- "libc",
- "mimalloc",
- "pprof-alloc",
- "tikv-jemallocator",
- "tokio",
- "tracing",
-]
-
-[[package]]
-name = "ahash"
-version = "0.8.12"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5a15f179cd60c4584b8a8c596927aadc462e27f2ca70c04e0071964a73ba7a75"
-dependencies = [
- "cfg-if",
- "const-random",
- "getrandom 0.3.4",
- "once_cell",
- "version_check",
- "zerocopy",
-]
-
-[[package]]
-name = "aho-corasick"
-version = "1.1.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ddd31a130427c27518df266943a5308ed92d4b226cc639f5a8f1002816174301"
-dependencies = [
- "memchr",
-]
-
-[[package]]
-name = "ai-gateway-app"
-version = "0.0.0"
-dependencies = [
- "agentgateway-app",
- "anyhow",
-]
-
-[[package]]
-name = "ai-gateway-runtime"
-version = "0.0.0"
-dependencies = [
- "agentgateway",
 ]
 
 [[package]]
@@ -617,14 +498,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "628d228f918ac3b82fe590352cc719d30664a0c13ca3a60266fe02c7132d480a"
 dependencies = [
  "serde",
-]
-
-[[package]]
-name = "audit-core"
-version = "0.0.0"
-dependencies = [
- "chrono",
- "security-contracts",
 ]
 
 [[package]]
@@ -2819,21 +2692,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "gateway-adapter"
-version = "0.0.0"
-dependencies = [
- "audit-core",
- "chrono",
- "security-contracts",
- "security-engine",
- "security-policy",
- "serde",
- "serde_json",
- "sha2 0.11.0",
- "uuid",
-]
-
-[[package]]
 name = "gateway-composition"
 version = "0.0.0"
 
@@ -2842,14 +2700,14 @@ name = "gateway-rag"
 version = "0.0.0"
 dependencies = [
  "async-trait",
- "audit-core",
  "axum",
  "chrono",
- "gateway-adapter",
  "reqwest 0.13.3",
- "security-contracts",
+ "security-audit",
+ "security-pipeline",
  "security-policy",
  "security-rag",
+ "security-types",
  "serde",
  "serde_json",
  "tokio",
@@ -4915,6 +4773,126 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "19f132c84eca552bf34cab8ec81f1c1dcc229b811638f9d283dceabe58c5569e"
 
 [[package]]
+name = "platform-celx"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "assert_matches",
+ "base64",
+ "cel",
+ "divan",
+ "hashbrown 0.17.1",
+ "hex",
+ "ipnet",
+ "md-5 0.11.0",
+ "percent-encoding",
+ "rand 0.10.1",
+ "regex",
+ "serde",
+ "serde_json",
+ "serde_regex",
+ "sha1 0.11.0",
+ "sha2 0.11.0",
+ "url",
+ "uuid",
+ "vector-map",
+]
+
+[[package]]
+name = "platform-core"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "arc-swap",
+ "arcstr",
+ "bytes",
+ "chrono",
+ "crossbeam-channel",
+ "durationfmt",
+ "go-parse-duration",
+ "http 1.4.2",
+ "hyper-util",
+ "itertools 0.15.0",
+ "itoa",
+ "once_cell",
+ "opentelemetry-otlp",
+ "opentelemetry_sdk",
+ "pin-project-lite",
+ "prometheus-client",
+ "rustc_version",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "time",
+ "tokio",
+ "tracing",
+ "tracing-core",
+ "tracing-log",
+ "tracing-subscriber",
+ "value-bag",
+]
+
+[[package]]
+name = "platform-hbone"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "bytes",
+ "flurry",
+ "futures",
+ "futures-util",
+ "h2",
+ "http 1.4.2",
+ "hyper-util",
+ "pingora-pool",
+ "platform-core",
+ "rustls",
+ "serde",
+ "tokio",
+ "tokio-rustls",
+ "tonic",
+ "tracing",
+]
+
+[[package]]
+name = "platform-pool"
+version = "0.0.0"
+dependencies = [
+ "assert_matches",
+ "axum-core",
+ "bytes",
+ "futures-channel",
+ "futures-core",
+ "futures-util",
+ "hashbrown 0.17.1",
+ "http 1.4.2",
+ "http-body-util",
+ "hyper",
+ "parking_lot",
+ "pin-project-lite",
+ "tokio",
+ "tower-service",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "platform-protos"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "prost 0.14.4",
+ "prost-build",
+ "prost-types",
+ "prost-wkt-build",
+ "prost-wkt-types",
+ "protox",
+ "tonic",
+ "tonic-prost",
+ "tonic-prost-build",
+]
+
+[[package]]
 name = "plotters"
 version = "0.3.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5369,22 +5347,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3e36c2f31e0a47f9280fb347ef5e461ffcd2c52dd520d8e216b52f93b0b0d7d6"
 dependencies = [
  "thiserror 1.0.69",
-]
-
-[[package]]
-name = "protos"
-version = "0.0.0"
-dependencies = [
- "anyhow",
- "prost 0.14.4",
- "prost-build",
- "prost-types",
- "prost-wkt-build",
- "prost-wkt-types",
- "protox",
- "tonic",
- "tonic-prost",
- "tonic-prost-build",
 ]
 
 [[package]]
@@ -6319,6 +6281,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "security-audit"
+version = "0.0.0"
+dependencies = [
+ "chrono",
+ "security-types",
+]
+
+[[package]]
 name = "security-capability-broker"
 version = "0.0.0"
 dependencies = [
@@ -6326,7 +6296,7 @@ dependencies = [
  "base64",
  "chrono",
  "reqwest 0.13.3",
- "security-contracts",
+ "security-types",
  "serde",
  "serde_json",
  "sha2 0.11.0",
@@ -6338,20 +6308,11 @@ dependencies = [
 ]
 
 [[package]]
-name = "security-contracts"
-version = "0.0.0"
-dependencies = [
- "chrono",
- "serde",
- "serde_json",
-]
-
-[[package]]
 name = "security-engine"
 version = "0.0.0"
 dependencies = [
- "security-contracts",
  "security-policy",
+ "security-types",
 ]
 
 [[package]]
@@ -6378,25 +6339,40 @@ dependencies = [
 ]
 
 [[package]]
-name = "security-integration-agentgateway"
+name = "security-integration-runtime"
 version = "0.0.0"
 dependencies = [
- "audit-core",
  "chrono",
- "gateway-adapter",
  "reqwest 0.13.3",
- "security-contracts",
+ "security-audit",
+ "security-pipeline",
  "security-policy",
+ "security-types",
  "serde",
  "serde_json",
  "tracing",
 ]
 
 [[package]]
+name = "security-pipeline"
+version = "0.0.0"
+dependencies = [
+ "chrono",
+ "security-audit",
+ "security-engine",
+ "security-policy",
+ "security-types",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "uuid",
+]
+
+[[package]]
 name = "security-policy"
 version = "0.0.0"
 dependencies = [
- "security-contracts",
+ "security-types",
  "serde",
 ]
 
@@ -6405,16 +6381,25 @@ name = "security-rag"
 version = "0.0.0"
 dependencies = [
  "async-trait",
- "audit-core",
  "chrono",
- "gateway-adapter",
  "hex",
- "security-contracts",
+ "security-audit",
+ "security-pipeline",
  "security-policy",
+ "security-types",
  "serde",
  "serde_json",
  "sha2 0.11.0",
  "tokio",
+]
+
+[[package]]
+name = "security-types"
+version = "0.0.0"
+dependencies = [
+ "chrono",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -8829,7 +8814,7 @@ checksum = "66fee0b777b0f5ac1c69bb06d361268faafa61cd4682ae064a171c16c433e9e4"
 name = "xtask"
 version = "0.0.0"
 dependencies = [
- "agentgateway",
+ "ai-security-platform-runtime",
  "anyhow",
  "cel",
  "fs-err",

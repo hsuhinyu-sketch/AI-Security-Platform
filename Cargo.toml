@@ -7,13 +7,13 @@ rmcp = { git = "https://github.com/howardjohn/rust-sdk", rev = "7366ffc42beb89f2
 [workspace]
 resolver = "2"
 members = [
-    # Security core (target: crates/security/*)
-    "crates/contracts",
-    "crates/policy",
-    "crates/security-engine",
-    "crates/audit-core",
-    "crates/gateway-adapter",
-    "crates/security/integration-agentgateway",
+    # Security core
+    "crates/security/types",
+    "crates/security/policy",
+    "crates/security/engine",
+    "crates/security/audit",
+    "crates/security/pipeline",
+    "crates/security/integration-runtime",
     "crates/security/capability-broker",
     "crates/security/rag",
     # First-party AI Gateway Platform
@@ -21,32 +21,27 @@ members = [
     "crates/gateway/rag",
     "crates/gateway/runtime",
     "crates/gateway/app",
-    # Compatibility / reference runtime (AgentGateway-derived)
-    "crates/agentgateway",
-    "crates/agentgateway-app",
     # Platform and developer tooling
-    "crates/cel-fork/cel",
-    "crates/cel-fork/cel-derive",
-    "crates/celx",
-    "crates/pool",
-    "crates/core",
-    "crates/hbone",
-    "crates/protos",
+    "crates/third-party/cel-fork/cel",
+    "crates/third-party/cel-fork/cel-derive",
+    "crates/platform/celx",
+    "crates/platform/pool",
+    "crates/platform/core",
+    "crates/platform/hbone",
+    "crates/platform/protos",
     "crates/xtask",
 ]
 default-members = [
     "crates/gateway/composition",
     "crates/gateway/runtime",
     "crates/gateway/app",
-    "crates/agentgateway",
-    "crates/agentgateway-app",
-    "crates/cel-fork/cel",
-    "crates/cel-fork/cel-derive",
-    "crates/celx",
-    "crates/pool",
-    "crates/core",
-    "crates/hbone",
-    "crates/protos",
+    "crates/third-party/cel-fork/cel",
+    "crates/third-party/cel-fork/cel-derive",
+    "crates/platform/celx",
+    "crates/platform/pool",
+    "crates/platform/core",
+    "crates/platform/hbone",
+    "crates/platform/protos",
 ]
 
 [workspace.package]
@@ -57,14 +52,15 @@ license = "Apache-2.0"
 publish = false
 
 [workspace.dependencies]
-agent-core = { path = "crates/core" }
-agent-celx = { path = "crates/celx" }
-agent-hbone = { path = "crates/hbone" }
-agent-pool = { path = "crates/pool" }
-agentgateway = { path = "crates/agentgateway" }
-cel = { path = "crates/cel-fork/cel" }
-cel-derive = { path = "crates/cel-fork/cel-derive" }
-protos = { path = "crates/protos" }
+platform-core = { path = "crates/platform/core" }
+platform-celx = { path = "crates/platform/celx" }
+platform-hbone = { path = "crates/platform/hbone" }
+platform-pool = { path = "crates/platform/pool" }
+platform-protos = { path = "crates/platform/protos" }
+ai-security-platform-runtime = { path = "crates/gateway/runtime" }
+cel = { path = "crates/third-party/cel-fork/cel" }
+cel-derive = { path = "crates/third-party/cel-fork/cel-derive" }
+protos = { path = "crates/platform/protos" }
 atomic_float = { version = "1.1.0", features = ["serde"] }
 anyhow = "1.0"
 arc-swap = "1.9"
@@ -121,7 +117,7 @@ h2 = "0.4"
 headers = "0.4"
 hex = "0.4"
 hickory-resolver = { version = "0.26", features = ["serde"] }
-htpasswd-verify-fork = { path = "crates/htpasswd-verify-fork" }
+htpasswd-verify-fork = { path = "crates/third-party/htpasswd-verify-fork" }
 httpdate = "1.0"
 http = "1.4"
 http-body = "1"

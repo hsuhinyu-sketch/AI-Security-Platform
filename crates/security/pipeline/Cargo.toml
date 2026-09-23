@@ -1,0 +1,17 @@
+[package]
+name = "security-pipeline"
+version = { workspace = true }
+edition = { workspace = true }
+license = { workspace = true }
+publish = { workspace = true }
+
+[dependencies]
+security-types = { path = "../types" }
+security-policy = { path = "../policy" }
+security-engine = { path = "../engine" }
+security-audit = { path = "../audit" }
+chrono.workspace = true
+serde_json.workspace = true
+serde.workspace = true
+sha2.workspace = true
+uuid.workspace = true

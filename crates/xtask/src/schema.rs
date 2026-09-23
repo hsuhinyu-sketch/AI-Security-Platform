@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 use std::io::Write;
 
-use agentgateway::cel;
+use ai_security_platform_runtime::cel;
 use anyhow::{Result, bail};
 use schemars::JsonSchema;
 
@@ -20,8 +20,8 @@ pub fn generate_schema() -> Result<()> {
 			name: "Configuration File",
 			mdfile: Some("config.md"),
 			file: "config.json",
-			schema_json: make::<agentgateway::types::local::LocalConfig>(false)?,
-			schema_inline_json: Some(make::<agentgateway::types::local::LocalConfig>(true)?),
+			schema_json: make::<ai_security_platform_runtime::types::local::LocalConfig>(false)?,
+			schema_inline_json: Some(make::<ai_security_platform_runtime::types::local::LocalConfig>(true)?),
 		},
 		SchemaDoc {
 			name: "CEL context",
@@ -35,7 +35,7 @@ pub fn generate_schema() -> Result<()> {
 			name: "Admin Configuration Dump",
 			mdfile: None,
 			file: "admin.json",
-			schema_json: make_with_contract::<agentgateway::store::StoresDump>(
+			schema_json: make_with_contract::<ai_security_platform_runtime::store::StoresDump>(
 				false,
 				schemars::generate::Contract::Serialize,
 			)?,
