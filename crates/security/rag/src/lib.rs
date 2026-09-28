@@ -9,17 +9,19 @@
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
 
-use security_audit::AuditSink;
 use chrono::{DateTime, Utc};
+use security_audit::AuditSink;
 use security_pipeline::{
 	Authorizer, GatewayError, GatewayIdentity, SecurityPipeline, knowledge_retrieve_for_identity,
 };
+pub use security_types::DataClassification;
 use security_types::Subject;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 pub mod context;
 pub mod ingestion;
+pub mod sources;
 
 pub use context::{
 	ContextAssemblyError, ContextAuditEvent, ContextAuditOutcome, ContextAuditSink, ContextFinding,
@@ -27,11 +29,12 @@ pub use context::{
 	InMemoryContextAuditSink,
 };
 pub use ingestion::{
-	ContentLabelRule, DocumentIngestBackend, DocumentIngestRequest, InMemoryIngestionAuditSink,
-	IndexedDocument, IngestionAuditEvent, IngestionAuditOutcome, IngestionAuditSink, IngestionError,
-	IngestionFinding, IngestionFindingKind, IngestionGuardConfig, IngestionResult,
-	QuarantinedDocument, SecureIngestor, TrustedChunkAccess,
+	ContentClassificationRule, ContentLabelRule, DocumentIngestBackend, DocumentIngestRequest,
+	InMemoryIngestionAuditSink, IndexedDocument, IngestionAuditEvent, IngestionAuditOutcome,
+	IngestionAuditSink, IngestionError, IngestionFinding, IngestionFindingKind, IngestionGuardConfig,
+	IngestionResult, QuarantinedDocument, SecureIngestor, SourceOrigin, TrustedChunkAccess,
 };
+pub use sources::{TrustedHttpsSourceConfig, TrustedHttpsSourceRegistry};
 
 /// System-level controls for one RAG corpus integration.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -114,6 +117,11 @@ pub struct KnowledgeChunk {
 	/// Labels inherited from the source document, such as `pii` or `confidential`.
 	#[serde(default, skip_serializing_if = "Vec::is_empty")]
 	pub labels: Vec<String>,
+	/// Assigned at ingestion; missing legacy values are conservatively restricted.
+	#[serde(default)]
+	pub classification: DataClassification,
+	#[serde(default = "default_legacy_classification_source")]
+	pub classification_source: String,
 	/// Explicit user ACL. An empty list grants no user access by itself.
 	#[serde(default, skip_serializing_if = "Vec::is_empty")]
 	pub allowed_users: Vec<String>,
@@ -129,8 +137,14 @@ pub struct KnowledgeChunk {
 	/// Content hash recorded at ingestion. A missing hash means provenance is incomplete and fails
 	/// closed, preventing untracked index content from reaching the model.
 	pub source_hash: String,
+	#[serde(default)]
+	pub source_origin: SourceOrigin,
 	/// Token count calculated during ingestion or trusted tokenization.
 	pub token_count: u64,
+}
+
+fn default_legacy_classification_source() -> String {
+	"legacy-unverified".into()
 }
 
 /// Retrieval adapter contract. Implementations receive the trusted filter before similarity search.
@@ -184,6 +198,7 @@ pub struct RetrievalAuditEvent {
 	pub query_hash: String,
 	pub outcome: RetrievalAuditOutcome,
 	pub accepted_chunk_ids: Vec<String>,
+	pub classification: Option<DataClassification>,
 	pub rejected: Vec<RetrievalRejection>,
 	pub reason: Option<String>,
 	pub timestamp: DateTime<Utc>,
@@ -340,6 +355,11 @@ where
 				.iter()
 				.map(|chunk| chunk.id.clone())
 				.collect(),
+			classification: context
+				.chunks
+				.iter()
+				.map(|chunk| chunk.classification)
+				.max(),
 			rejected: context.rejected.clone(),
 			reason: None,
 			timestamp: Utc::now(),
@@ -461,6 +481,7 @@ where
 			query_hash: query_hash.to_string(),
 			outcome: RetrievalAuditOutcome::Denied,
 			accepted_chunk_ids: Vec::new(),
+			classification: None,
 			rejected: Vec::new(),
 			reason: Some(format!("{error:?}")),
 			timestamp: Utc::now(),
@@ -475,8 +496,8 @@ mod tests {
 
 	use security_audit::InMemoryAuditSink;
 	use security_pipeline::{GatewayIdentity, PolicyAuthorizer, SecurityPipeline};
-	use security_types::{ActionType, DecisionEffect, ResourceType};
 	use security_policy::Policy;
+	use security_types::{ActionType, DecisionEffect, ResourceType};
 
 	use super::*;
 
@@ -544,11 +565,14 @@ mod tests {
 			tenant_id: "tenant-a".into(),
 			content: format!("trusted context for {id}"),
 			labels: Vec::new(),
+			classification: DataClassification::Internal,
+			classification_source: "default-classification".into(),
 			allowed_users: vec!["alice".into()],
 			allowed_agents: Vec::new(),
 			allow_tenant_authenticated: false,
 			expires_at: None,
 			source_hash: "a22d9a9b".into(),
+			source_origin: SourceOrigin::Submitted,
 			token_count: 100,
 		}
 	}

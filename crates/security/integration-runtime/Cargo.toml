@@ -15,6 +15,7 @@ serde_json.workspace = true
 tracing.workspace = true
 reqwest = { workspace = true, features = ["blocking", "json"] }
 chrono.workspace = true
+tokio.workspace = true
 
 [dev-dependencies]
 security-policy = { path = "../policy" }

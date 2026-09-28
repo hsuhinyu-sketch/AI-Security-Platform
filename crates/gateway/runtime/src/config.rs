@@ -84,8 +84,8 @@ pub fn parse_config(
 		let td = parse("TRUST_DOMAIN")?
 			.or(raw.trust_domain)
 			.unwrap_or("cluster.local".to_string());
-		let ns: String = parse("NAMESPACE")?
-			.ctx("NAMESPACE/config.namespace is required when CA is configured")?;
+		let ns: String =
+			parse("NAMESPACE")?.ctx("NAMESPACE/config.namespace is required when CA is configured")?;
 		let sa = parse("SERVICE_ACCOUNT")?
 			.or(raw.service_account)
 			.ctx("SERVICE_ACCOUNT/config.serviceAccount is required when CA is configured")?;

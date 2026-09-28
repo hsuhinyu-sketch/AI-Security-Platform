@@ -7,6 +7,7 @@ use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
 use reqwest::Client;
+use security_integrity::{IntegrityKey, IntegrityProof};
 use security_rag::{
 	DocumentIngestBackend, IndexedDocument, KnowledgeChunk, QuarantinedDocument, RetrievalBackend,
 	RetrievalFilter, RetrievalQuery, TrustedChunkAccess,
@@ -108,6 +109,17 @@ pub struct QdrantBackendConfig {
 	/// ACL assigned by the trusted ingestion controller to chunks from this backend.
 	#[serde(default)]
 	pub default_chunk_access: TrustedChunkAccess,
+	/// When set, every stored Chunk must carry a valid MAC over the complete payload.
+	#[serde(default, skip_serializing_if = "Option::is_none")]
+	pub integrity: Option<MetadataIntegrityConfig>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct MetadataIntegrityConfig {
+	pub key_id: String,
+	/// Name of an environment variable containing at least 32 random secret bytes as hex.
+	pub key_env_var: String,
 }
 
 /// Async REST backend using Qdrant's points upsert and query endpoints.
@@ -116,6 +128,7 @@ pub struct QdrantBackend<E, C> {
 	config: QdrantBackendConfig,
 	embeddings: E,
 	chunker: C,
+	integrity: Option<IntegrityKey>,
 }
 
 impl<E, C> QdrantBackend<E, C> {
@@ -135,11 +148,32 @@ impl<E, C> QdrantBackend<E, C> {
 				"Qdrant collection names may contain only letters, digits, '_', '-', and '.'".into(),
 			);
 		}
+		let integrity = match &config.integrity {
+			Some(integrity) => {
+				if integrity.key_env_var.is_empty()
+					|| !integrity
+						.key_env_var
+						.chars()
+						.all(|character| character.is_ascii_alphanumeric() || character == '_')
+				{
+					return Err("Qdrant integrity keyEnvVar must be an environment variable name".into());
+				}
+				let secret = std::env::var(&integrity.key_env_var).map_err(|_| {
+					format!(
+						"Qdrant integrity key environment variable '{}' is unavailable",
+						integrity.key_env_var
+					)
+				})?;
+				Some(IntegrityKey::from_hex(integrity.key_id.clone(), &secret)?)
+			},
+			None => None,
+		};
 		Ok(Self {
 			client,
 			config,
 			embeddings,
 			chunker,
+			integrity,
 		})
 	}
 
@@ -174,10 +208,16 @@ impl<E, C> QdrantBackend<E, C> {
 				return Err("embedding provider returned an empty vector".into());
 			}
 			let vector = qdrant_vector(vector, self.config.vector_name.as_deref());
+			let mut payload = qdrant_payload(&chunk, &quarantine_rule_ids);
+			if let Some(key) = &self.integrity {
+				let proof = key.sign_json("rag-qdrant-chunk", &payload)?;
+				payload["integrity"] = serde_json::to_value(proof)
+					.map_err(|error| format!("cannot encode integrity proof: {error}"))?;
+			}
 			points.push(json!({
 				"id": chunk.id,
 				"vector": vector,
-				"payload": qdrant_payload(&chunk, &quarantine_rule_ids),
+				"payload": payload,
 			}));
 		}
 		let body = serde_json::to_vec(&json!({ "points": points }))
@@ -286,9 +326,36 @@ where
 			.result
 			.points
 			.into_iter()
-			.map(|point| chunk_from_payload(point.id, point.payload))
+			.map(|point| verified_chunk_from_payload(point.id, point.payload, self.integrity.as_ref()))
 			.collect()
 	}
+}
+
+fn verified_chunk_from_payload(
+	point_id: Value,
+	mut payload: Value,
+	key: Option<&IntegrityKey>,
+) -> Result<KnowledgeChunk, String> {
+	if let Some(key) = key {
+		let proof = payload
+			.as_object_mut()
+			.and_then(|fields| fields.remove("integrity"))
+			.ok_or_else(|| "Qdrant chunk has no integrity proof".to_string())?;
+		let proof: IntegrityProof =
+			serde_json::from_value(proof).map_err(|_| "invalid Qdrant integrity proof".to_string())?;
+		key.verify_json("rag-qdrant-chunk", &payload, &proof)?;
+	}
+	let payload_chunk_id = payload
+		.get("chunkId")
+		.and_then(Value::as_str)
+		.ok_or_else(|| "Qdrant point payload is missing string 'chunkId'".to_string())?;
+	let point_id = point_id
+		.as_str()
+		.ok_or_else(|| "Qdrant point id must be a string".to_string())?;
+	if payload_chunk_id != point_id {
+		return Err("Qdrant point id does not match signed chunkId".into());
+	}
+	chunk_from_payload(Value::String(point_id.to_string()), payload)
 }
 
 fn qdrant_payload(chunk: &KnowledgeChunk, quarantine_rule_ids: &[String]) -> Value {
@@ -299,11 +366,14 @@ fn qdrant_payload(chunk: &KnowledgeChunk, quarantine_rule_ids: &[String]) -> Val
 		"tenantId": chunk.tenant_id,
 		"content": chunk.content,
 		"labels": chunk.labels,
+		"classification": chunk.classification,
+		"classificationSource": chunk.classification_source,
 		"allowedUsers": chunk.allowed_users,
 		"allowedAgents": chunk.allowed_agents,
 		"allowTenantAuthenticated": chunk.allow_tenant_authenticated,
 		"expiresAt": chunk.expires_at.as_ref().map(DateTime::to_rfc3339),
 		"sourceHash": chunk.source_hash,
+		"sourceOrigin": chunk.source_origin,
 		"tokenCount": chunk.token_count,
 		"quarantineRuleIds": quarantine_rule_ids,
 	})
@@ -401,6 +471,24 @@ fn chunk_from_payload(point_id: Value, payload: Value) -> Result<KnowledgeChunk,
 		Some(Value::Null) | None => None,
 		Some(_) => return Err("Qdrant point payload expiresAt must be string or null".into()),
 	};
+	let classification_source = object
+		.get("classificationSource")
+		.and_then(Value::as_str)
+		.filter(|source| !source.is_empty())
+		.unwrap_or("legacy-unverified")
+		.to_string();
+	let classification = if classification_source == "legacy-unverified" {
+		security_rag::DataClassification::Restricted
+	} else {
+		object
+			.get("classification")
+			.map(|value| {
+				serde_json::from_value(value.clone())
+					.map_err(|_| "invalid Qdrant classification".to_string())
+			})
+			.transpose()?
+			.unwrap_or_default()
+	};
 	Ok(KnowledgeChunk {
 		id: chunk_id,
 		document_id: string("documentId")?,
@@ -408,6 +496,8 @@ fn chunk_from_payload(point_id: Value, payload: Value) -> Result<KnowledgeChunk,
 		tenant_id: string("tenantId")?,
 		content: string("content")?,
 		labels: strings("labels")?,
+		classification,
+		classification_source,
 		allowed_users: strings("allowedUsers")?,
 		allowed_agents: strings("allowedAgents")?,
 		allow_tenant_authenticated: object
@@ -418,6 +508,14 @@ fn chunk_from_payload(point_id: Value, payload: Value) -> Result<KnowledgeChunk,
 			})?,
 		expires_at,
 		source_hash: string("sourceHash")?,
+		source_origin: object
+			.get("sourceOrigin")
+			.map(|value| {
+				serde_json::from_value(value.clone())
+					.map_err(|_| "invalid Qdrant source origin".to_string())
+			})
+			.transpose()?
+			.unwrap_or_default(),
 		token_count: object
 			.get("tokenCount")
 			.and_then(Value::as_u64)
@@ -446,8 +544,11 @@ mod tests {
 			tenant_id: "tenant-a".into(),
 			source_uri: "https://kb.example.com/password-guide".into(),
 			source_hash: "hash".into(),
+			source_origin: security_rag::SourceOrigin::Submitted,
 			content: "one two three four five six".into(),
 			labels: vec!["internal".into()],
+			classification: security_rag::DataClassification::Internal,
+			classification_source: "default-classification".into(),
 		};
 		let chunks = FixedWindowChunker::new(8)
 			.unwrap()
@@ -464,6 +565,8 @@ mod tests {
 			chunk.corpus_id == "support"
 				&& chunk.tenant_id == "tenant-a"
 				&& chunk.labels == ["internal"]
+				&& chunk.classification == security_rag::DataClassification::Internal
+				&& chunk.classification_source == "default-classification"
 				&& chunk.source_hash == "hash"
 				&& chunk.allowed_users == ["alice"]
 		}));
@@ -495,16 +598,200 @@ mod tests {
 			tenant_id: "tenant-a".into(),
 			content: "safe text".into(),
 			labels: vec!["internal".into()],
+			classification: security_rag::DataClassification::Internal,
+			classification_source: "default-classification".into(),
 			allowed_users: vec!["alice".into()],
 			allowed_agents: vec!["support-agent".into()],
 			allow_tenant_authenticated: false,
 			expires_at: None,
 			source_hash: "source-hash".into(),
+			source_origin: security_rag::SourceOrigin::Submitted,
 			token_count: 12,
 		};
 		let restored =
 			chunk_from_payload(Value::String("point-1".into()), qdrant_payload(&chunk, &[])).unwrap();
 		assert_eq!(restored, chunk);
+		let mut legacy = qdrant_payload(&chunk, &[]);
+		legacy.as_object_mut().unwrap().remove("classification");
+		let restored = chunk_from_payload(Value::String("point-1".into()), legacy).unwrap();
+		assert_eq!(
+			restored.classification,
+			security_rag::DataClassification::Restricted
+		);
+		let mut incomplete = qdrant_payload(&chunk, &[]);
+		incomplete
+			.as_object_mut()
+			.unwrap()
+			.remove("classificationSource");
+		let restored = chunk_from_payload(Value::String("point-1".into()), incomplete).unwrap();
+		assert_eq!(
+			restored.classification,
+			security_rag::DataClassification::Restricted
+		);
+		assert_eq!(restored.classification_source, "legacy-unverified");
+	}
+
+	#[test]
+	fn integrity_verification_rejects_tampering_missing_proofs_and_point_id_mismatch() {
+		let key = IntegrityKey::from_hex("test-key", &"ab".repeat(32)).unwrap();
+		let chunk = KnowledgeChunk {
+			id: "chunk-1".into(),
+			document_id: "doc-1".into(),
+			corpus_id: "support".into(),
+			tenant_id: "tenant-a".into(),
+			content: "trusted content".into(),
+			labels: vec![],
+			classification: security_rag::DataClassification::Internal,
+			classification_source: "default-classification".into(),
+			allowed_users: vec!["alice".into()],
+			allowed_agents: vec![],
+			allow_tenant_authenticated: false,
+			expires_at: None,
+			source_hash: "source-hash".into(),
+			source_origin: security_rag::SourceOrigin::Submitted,
+			token_count: 2,
+		};
+		let mut payload = qdrant_payload(&chunk, &[]);
+		let proof = key.sign_json("rag-qdrant-chunk", &payload).unwrap();
+		payload["integrity"] = serde_json::to_value(proof).unwrap();
+		assert_eq!(
+			verified_chunk_from_payload(Value::String("chunk-1".into()), payload.clone(), Some(&key))
+				.unwrap(),
+			chunk
+		);
+		assert!(
+			verified_chunk_from_payload(
+				Value::String("other-id".into()),
+				payload.clone(),
+				Some(&key)
+			)
+			.is_err()
+		);
+		assert!(
+			verified_chunk_from_payload(
+				Value::String("chunk-1".into()),
+				qdrant_payload(&chunk, &[]),
+				Some(&key)
+			)
+			.is_err()
+		);
+		let mut tampered = payload;
+		tampered["tenantId"] = Value::String("tenant-b".into());
+		assert!(
+			verified_chunk_from_payload(Value::String("chunk-1".into()), tampered, Some(&key)).is_err()
+		);
+	}
+
+	#[tokio::test]
+	async fn qdrant_round_trip_preserves_signed_trusted_source() {
+		use wiremock::{
+			Mock, MockServer, ResponseTemplate,
+			matchers::{method, path},
+		};
+
+		struct StaticEmbedding;
+		#[async_trait::async_trait]
+		impl EmbeddingProvider for StaticEmbedding {
+			async fn embed(&self, _text: &str) -> Result<Vec<f32>, String> {
+				Ok(vec![0.1, 0.2])
+			}
+		}
+
+		let server = MockServer::start().await;
+		Mock::given(method("PUT"))
+			.and(path("/collections/knowledge/points"))
+			.respond_with(
+				ResponseTemplate::new(200).set_body_json(json!({"result": {"status":"completed"}})),
+			)
+			.mount(&server)
+			.await;
+		let key = IntegrityKey::from_hex("rag-test-key", &"ab".repeat(32)).unwrap();
+		let backend = QdrantBackend {
+			client: Client::new(),
+			config: QdrantBackendConfig {
+				endpoint: server.uri(),
+				collection: "knowledge".into(),
+				quarantine_collection: "quarantine".into(),
+				api_key: None,
+				vector_name: None,
+				default_chunk_access: TrustedChunkAccess {
+					allowed_users: vec!["alice".into()],
+					..Default::default()
+				},
+				integrity: None,
+			},
+			embeddings: StaticEmbedding,
+			chunker: FixedWindowChunker::new(2000).unwrap(),
+			integrity: Some(key),
+		};
+		let version = security_integrity::sha256_hex(b"trusted bytes");
+		backend
+			.index(IndexedDocument {
+				corpus_id: "support".into(),
+				document_id: "guide".into(),
+				tenant_id: "tenant-a".into(),
+				source_uri: "https://kb.example/docs/guide.md".into(),
+				source_hash: version.clone(),
+				source_origin: security_rag::SourceOrigin::TrustedHttps {
+					source_id: "kb".into(),
+					version: version.clone(),
+				},
+				content: "trusted bytes".into(),
+				labels: vec![],
+				classification: security_rag::DataClassification::Internal,
+				classification_source: "default-classification".into(),
+			})
+			.await
+			.unwrap();
+		let requests = server.received_requests().await.unwrap();
+		assert_eq!(requests.len(), 1);
+		let body: Value = serde_json::from_slice(&requests[0].body).unwrap();
+		let point = &body["points"][0];
+		let mut payload = point["payload"].clone();
+		assert_eq!(payload["sourceOrigin"]["sourceId"], "kb");
+		assert_eq!(payload["sourceOrigin"]["version"], version);
+		assert_eq!(payload["sourceHash"], version);
+		let proof: IntegrityProof = serde_json::from_value(
+			payload
+				.as_object_mut()
+				.unwrap()
+				.remove("integrity")
+				.unwrap(),
+		)
+		.unwrap();
+		let verifier = IntegrityKey::from_hex("rag-test-key", &"ab".repeat(32)).unwrap();
+		verifier
+			.verify_json("rag-qdrant-chunk", &payload, &proof)
+			.unwrap();
+
+		Mock::given(method("POST"))
+			.and(path("/collections/knowledge/points/query"))
+			.respond_with(ResponseTemplate::new(200).set_body_json(json!({
+				"result": {"points": [{"id": point["id"], "payload": point["payload"]}]}
+			})))
+			.mount(&server)
+			.await;
+		let chunks = backend
+			.retrieve(
+				&RetrievalQuery::new("help", 1),
+				&RetrievalFilter {
+					corpus_id: "support".into(),
+					tenant_id: "tenant-a".into(),
+					user_id: Some("alice".into()),
+					agent_id: None,
+					max_candidates: 1,
+				},
+			)
+			.await
+			.unwrap();
+		assert_eq!(chunks.len(), 1);
+		assert_eq!(
+			chunks[0].source_origin,
+			security_rag::SourceOrigin::TrustedHttps {
+				source_id: "kb".into(),
+				version,
+			}
+		);
 	}
 
 	#[test]

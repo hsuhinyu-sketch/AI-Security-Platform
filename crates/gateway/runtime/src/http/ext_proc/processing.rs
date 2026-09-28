@@ -1,9 +1,9 @@
 use std::collections::HashMap;
 
-use prost_wkt_types::Struct;
 use platform_protos::envoy::service::ext_proc::v3::{
 	BodySendMode as EnvoyBodySendMode, ProtocolConfiguration,
 };
+use prost_wkt_types::Struct;
 
 use super::proto;
 use super::proto::processing_request::Request;

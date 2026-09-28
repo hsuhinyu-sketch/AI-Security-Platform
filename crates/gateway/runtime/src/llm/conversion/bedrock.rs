@@ -1165,8 +1165,8 @@ pub mod from_messages {
 	use std::collections::HashSet;
 	use std::time::Instant;
 
-	use platform_core::strng;
 	use bytes::Bytes;
+	use platform_core::strng;
 	use types::bedrock;
 	use types::messages::typed as messages;
 

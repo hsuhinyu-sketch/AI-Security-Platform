@@ -11,11 +11,11 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
-use platform_core::drain::DrainWatcher;
 use futures_util::{StreamExt, TryFutureExt};
 use hyper::Request;
 use hyper::server::conn::http1;
 use hyper_util::rt::TokioTimer;
+use platform_core::drain::DrainWatcher;
 use tokio::net::TcpListener;
 #[cfg(unix)]
 use tokio::net::UnixListener;

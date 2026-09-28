@@ -1,6 +1,6 @@
+use itertools::Itertools;
 use platform_core::prelude::Strng;
 use platform_core::strng;
-use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 
 use crate::llm::policy::webhook::{Message, ResponseChoice};

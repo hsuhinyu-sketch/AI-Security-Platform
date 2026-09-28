@@ -4,8 +4,8 @@ use std::fmt::{Debug, Formatter};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
-use platform_core::prelude::*;
 use futures_util::TryFutureExt;
+use platform_core::prelude::*;
 use rmcp::model::{
 	ClientJsonRpcMessage, ClientNotification, ClientRequest, JsonRpcMessage, JsonRpcRequest,
 	RequestId, ServerJsonRpcMessage,

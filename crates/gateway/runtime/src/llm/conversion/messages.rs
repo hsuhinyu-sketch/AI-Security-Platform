@@ -1,7 +1,7 @@
 use std::time::Instant;
 
-use platform_core::strng;
 use bytes::Bytes;
+use platform_core::strng;
 
 use crate::http::Body;
 use crate::llm::types::completions::typed as completions;
@@ -57,8 +57,8 @@ pub mod from_completions {
 	use std::collections::HashMap;
 	use std::time::Instant;
 
-	use platform_core::strng;
 	use bytes::Bytes;
+	use platform_core::strng;
 
 	use crate::http::Body;
 	use crate::llm::conversion::completions::{extract_system_text, parse_data_url};

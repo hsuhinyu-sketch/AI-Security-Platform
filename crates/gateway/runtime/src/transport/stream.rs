@@ -7,10 +7,10 @@ use std::sync::Arc;
 use std::task::{Context, Poll};
 use std::time::Instant;
 
-use platform_hbone::RWStream;
 use hyper::upgrade::Upgraded;
 use hyper_util::client::legacy::connect::{Connected, Connection};
 use hyper_util::rt::TokioIo;
+use platform_hbone::RWStream;
 use tokio::io::{AsyncRead, AsyncWrite, DuplexStream, ReadBuf};
 use tokio::net::TcpStream;
 #[cfg(unix)]

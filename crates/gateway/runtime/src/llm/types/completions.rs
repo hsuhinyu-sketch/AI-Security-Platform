@@ -1,6 +1,6 @@
+use itertools::Itertools;
 use platform_core::strng;
 use platform_core::strng::Strng;
-use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 
 use crate::llm::bedrock::Provider;

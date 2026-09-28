@@ -1,9 +1,9 @@
 use base64::Engine;
+use rmcp::model::{ClientRequest, JsonRpcRequest};
+use security_capability_broker::CAPABILITY_CONTEXT_HEADER;
 use security_pipeline::{
 	GatewayError, GatewayIdentity, SecurityPipelineConfig, tool_invoke_for_identity, tool_list,
 };
-use rmcp::model::{ClientRequest, JsonRpcRequest};
-use security_capability_broker::CAPABILITY_CONTEXT_HEADER;
 
 use crate::mcp::upstream::{IncomingRequestContext, IssuedCapability, UpstreamError};
 
@@ -58,14 +58,23 @@ pub fn audit_request(
 	};
 	match arguments {
 		Some(arguments) => {
-			let capability =
-				security_integration_runtime::authorize_tool_with_capability_with_audit(
-					config,
+			if let Some(egress) = &config.data_egress {
+				let destination = format!("{mcp_server_id}/{}", action.resource.id);
+				security_integration_runtime::check_data_egress(
+					egress,
 					&action,
-					&arguments,
+					&destination,
 					&crate::security_events::UiSecurityAuditSink,
 				)
 				.map_err(|error| UpstreamError::InvalidRequest(error_message(error)))?;
+			}
+			let capability = security_integration_runtime::authorize_tool_with_capability_with_audit(
+				config,
+				&action,
+				&arguments,
+				&crate::security_events::UiSecurityAuditSink,
+			)
+			.map_err(|error| UpstreamError::InvalidRequest(error_message(error)))?;
 			if let Some(capability) = capability {
 				let capability = ::http::HeaderValue::from_str(&capability.token).map_err(|_| {
 					UpstreamError::InvalidRequest("capability broker returned an invalid token".into())

@@ -7,9 +7,9 @@ pub mod tcpproxy;
 
 use std::sync::Arc;
 
-use platform_pool::Error as HyperError;
 pub use gateway::Gateway;
 use percent_encoding::{AsciiSet, CONTROLS, utf8_percent_encode};
+use platform_pool::Error as HyperError;
 use tonic::Code;
 
 use crate::http::{HeaderValue, Response, StatusCode, ext_proc};

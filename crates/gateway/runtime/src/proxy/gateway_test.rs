@@ -4,7 +4,6 @@ use std::sync::{Arc, Mutex as StdMutex};
 use std::time::Duration;
 
 use ::http::{HeaderMap, Method, StatusCode, Version, header};
-use platform_core::strng;
 use assert_matches::assert_matches;
 use http_body::Frame;
 use http_body_util::{BodyExt, StreamBody};
@@ -14,6 +13,7 @@ use hyper_util::client::legacy::Client;
 use hyper_util::rt::{TokioExecutor, TokioIo};
 use jsonwebtoken::jwk::JwkSet;
 use jsonwebtoken::{Algorithm, EncodingKey, Header};
+use platform_core::strng;
 use ppp::v2::{
 	Builder as ProxyV2Builder, Command as ProxyV2Command, Protocol as ProxyV2Protocol,
 	Version as ProxyV2Version,
@@ -94,8 +94,8 @@ fn test_jwks() -> JwkSet {
 
 fn test_server_tls_config() -> crate::types::agent::ServerTLSConfig {
 	crate::types::agent::ServerTLSConfig::from_pem_with_profile(
-		include_bytes!("../../../../examples/tls/certs/cert.pem").to_vec(),
-		include_bytes!("../../../../examples/tls/certs/key.pem").to_vec(),
+		gateway_test_tls().server_cert_pem.clone(),
+		gateway_test_tls().server_key_pem.clone(),
 		None,
 		vec![b"h2".to_vec(), b"http/1.1".to_vec()],
 		None,
@@ -178,7 +178,7 @@ async fn serve_https_http1_connection(
 	let tls: crate::http::backendtls::BackendTLS = crate::http::backendtls::ResolvedBackendTLS {
 		cert: None,
 		key: None,
-		root: Some(include_bytes!("../../../../examples/tls/certs/ca-cert.pem").to_vec()),
+		root: Some(gateway_test_tls().root_cert_pem.clone()),
 		hostname: Some(sni.to_string()),
 		insecure: false,
 		insecure_host: true,
@@ -666,10 +666,12 @@ async fn grpc_status_trailer_is_available_to_access_log_cel() {
 	assert_eq!(res.status(), 200);
 	read_body_raw(res.into_body()).await;
 
-	let log =
-		platform_core::telemetry::testing::eventually_find(&[("scope", "request"), ("http.path", &path)])
-			.await
-			.unwrap();
+	let log = platform_core::telemetry::testing::eventually_find(&[
+		("scope", "request"),
+		("http.path", &path),
+	])
+	.await
+	.unwrap();
 	assert_eq!(log["grpc.status"].as_u64(), Some(13));
 	assert_eq!(log["cel_grpc_status"].as_u64(), Some(13));
 }
@@ -3645,7 +3647,7 @@ async fn incoming_connect_tunnel_exposes_connect_headers_to_cel() {
 /// (`source.connectHeaders`).
 #[tokio::test]
 async fn connect_tunnel_terminates_outer_tls() {
-	// SNI must match the `*.example.com` static cert at examples/tls/certs.
+	// SNI must match the generated `*.example.com` test certificate.
 	const SNI: &str = "gw.example.com";
 
 	async fn tls_connect_inner(custom_header: Option<&str>) -> String {
@@ -3691,7 +3693,7 @@ async fn connect_tunnel_terminates_outer_tls() {
 		let raw = t.serve_tunnel(strng::literal!("outer"));
 		let client_tls: crate::http::backendtls::BackendTLS =
 			crate::http::backendtls::ResolvedBackendTLS {
-				root: Some(include_bytes!("../../../../examples/tls/certs/ca-cert.pem").to_vec()),
+				root: Some(gateway_test_tls().root_cert_pem.clone()),
 				hostname: Some(SNI.to_string()),
 				insecure_host: true,
 				..Default::default()
@@ -5010,10 +5012,12 @@ async fn dfp_uses_host_port() {
 	assert_eq!(body.uri.path(), path);
 
 	// Also verify telemetry recorded the expected upstream endpoint with the explicit authority port.
-	let log =
-		platform_core::telemetry::testing::eventually_find(&[("scope", "request"), ("http.path", &path)])
-			.await
-			.unwrap();
+	let log = platform_core::telemetry::testing::eventually_find(&[
+		("scope", "request"),
+		("http.path", &path),
+	])
+	.await
+	.unwrap();
 	let expected_endpoint = mock_addr.to_string();
 	assert_eq!(log["endpoint"].as_str(), Some(expected_endpoint.as_str()));
 }
@@ -5028,10 +5032,12 @@ async fn dfp_defaults_to_port_80_for_http() {
 	// No port in URI — should default to 80 per HTTP scheme
 	let _res = send_request(io, Method::GET, &format!("http://127.0.0.1{path}")).await;
 
-	let log =
-		platform_core::telemetry::testing::eventually_find(&[("scope", "request"), ("http.path", &path)])
-			.await
-			.unwrap();
+	let log = platform_core::telemetry::testing::eventually_find(&[
+		("scope", "request"),
+		("http.path", &path),
+	])
+	.await
+	.unwrap();
 	assert_eq!(log["endpoint"].as_str(), Some("127.0.0.1:80"));
 }
 
@@ -5045,10 +5051,12 @@ async fn dfp_defaults_to_port_443_for_https() {
 	// No port in URI over HTTPS listener — should default to 443 per HTTPS scheme
 	let _res = send_request(io, Method::GET, &format!("http://127.0.0.1{path}")).await;
 
-	let log =
-		platform_core::telemetry::testing::eventually_find(&[("scope", "request"), ("http.path", &path)])
-			.await
-			.unwrap();
+	let log = platform_core::telemetry::testing::eventually_find(&[
+		("scope", "request"),
+		("http.path", &path),
+	])
+	.await
+	.unwrap();
 	assert_eq!(log["endpoint"].as_str(), Some("127.0.0.1:443"));
 }
 

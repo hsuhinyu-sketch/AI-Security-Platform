@@ -904,8 +904,8 @@ mod tests {
 	}
 
 	fn make_proxy_inputs() -> Arc<crate::ProxyInputs> {
-		use platform_core::metrics;
 		use hickory_resolver::config::{ResolverConfig, ResolverOpts};
+		use platform_core::metrics;
 		use prometheus_client::registry::Registry;
 
 		use crate::client::Client;

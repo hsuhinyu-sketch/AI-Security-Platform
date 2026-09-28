@@ -5,7 +5,6 @@ use thiserror::Error;
 
 #[allow(warnings)]
 #[warn(clippy::derive_partial_eq_without_eq)]
-
 #[allow(clippy::enum_variant_names)]
 #[derive(Error, Debug)]
 pub enum ProtoError {

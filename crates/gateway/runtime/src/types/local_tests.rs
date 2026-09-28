@@ -138,6 +138,31 @@ aiSystems:
 	);
 }
 
+#[test]
+fn ai_system_rejects_tool_approval_without_mcp_gateway() {
+	let config: super::LocalConfig = serde_yaml::from_str(
+		r#"
+aiSystems:
+- id: llm-only
+  llm:
+    models:
+    - name: chat
+      provider: openAI
+  security:
+    mode: enforce
+    requiredToolApprovals:
+    - toolName: records.delete
+"#,
+	)
+	.expect("composition should deserialize");
+	let error = super::validate_gateway_capabilities(&config).unwrap_err();
+	assert!(
+		error
+			.to_string()
+			.contains("requiredToolApprovals requires the MCP gateway")
+	);
+}
+
 fn test_config() -> crate::Config {
 	let mut config = crate::config::parse_config("{}".to_string(), None).unwrap();
 	config.oidc_cookie_encoder = Some(

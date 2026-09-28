@@ -4,8 +4,8 @@
 //! content filtering similar to OpenAI's moderation endpoint. It uses GCP authentication
 //! via the backend policies.
 
-use platform_core::strng;
 use itertools::Itertools;
+use platform_core::strng;
 use serde::{Deserialize, Serialize};
 use tracing::{debug, warn};
 

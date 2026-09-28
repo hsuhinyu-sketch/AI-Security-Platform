@@ -7,10 +7,10 @@ use std::time::Duration;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use ::http::Uri;
-use platform_core::prelude::Strng;
 use anyhow::{Context, Error, anyhow, bail};
 use itertools::Itertools;
 use macro_rules_attribute::apply;
+use platform_core::prelude::Strng;
 use secrecy::SecretString;
 
 use crate::http::auth::BackendAuth;
@@ -2892,6 +2892,20 @@ fn validate_gateway_capabilities_for_profile(
 	}
 	for system in &config.ai_systems {
 		let prefix = format!("aiSystems['{}']", system.name);
+		if system.inference.is_some() && system.llm.is_none() {
+			bail!("{prefix}.inference requires the LLM gateway");
+		}
+		if let Some(security) = &system.security {
+			security
+				.validate_composition()
+				.map_err(|reason| anyhow!("{prefix}.security: {reason}"))?;
+			if security.capability_broker.is_some() && system.mcp.is_none() {
+				bail!("{prefix}.security.capabilityBroker requires the MCP gateway");
+			}
+			if !security.pipeline.required_tool_approvals.is_empty() && system.mcp.is_none() {
+				bail!("{prefix}.security.requiredToolApprovals requires the MCP gateway");
+			}
+		}
 		if let Some(llm) = system.llm.as_ref() {
 			require_gateway_capability(
 				profile,

@@ -1,6 +1,7 @@
 use std::path::PathBuf;
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
 
+use crate::blocking_client_cache::BlockingClientCache;
 use chrono::{DateTime, Duration, Utc};
 use security_pipeline::arguments_hash;
 use security_types::ActionRequest;
@@ -23,7 +24,7 @@ pub struct RemoteCapabilityBrokerConfig {
 	#[serde(default, skip_serializing_if = "Option::is_none")]
 	pub root_ca_pem_file: Option<PathBuf>,
 	#[serde(skip, default = "default_issuer_slot")]
-	issuer: Arc<OnceLock<Result<HttpCapabilityIssuer, String>>>,
+	issuer: Arc<BlockingClientCache<HttpCapabilityIssuer>>,
 }
 
 const fn default_timeout_millis() -> u64 {
@@ -34,8 +35,8 @@ const fn default_ttl_seconds() -> u64 {
 	30
 }
 
-fn default_issuer_slot() -> Arc<OnceLock<Result<HttpCapabilityIssuer, String>>> {
-	Arc::new(OnceLock::new())
+fn default_issuer_slot() -> Arc<BlockingClientCache<HttpCapabilityIssuer>> {
+	Arc::new(BlockingClientCache::default())
 }
 
 impl RemoteCapabilityBrokerConfig {

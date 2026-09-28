@@ -1,11 +1,11 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 
-use security_audit::{AuditSink, event_from_decision};
 use chrono::{DateTime, Duration, Utc};
-use security_types::{ActionRequest, ActionType, Decision, DecisionEffect};
+use security_audit::{AuditSink, event_from_decision};
 use security_engine::decide;
 use security_policy::Policy;
+use security_types::{ActionRequest, ActionType, Decision, DecisionEffect};
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
@@ -1472,8 +1472,8 @@ mod tests {
 	use std::sync::Arc;
 	use std::sync::atomic::{AtomicUsize, Ordering};
 
-	use security_audit::InMemoryAuditSink;
 	use chrono::Duration;
+	use security_audit::InMemoryAuditSink;
 	use security_types::{
 		Action, ActionRequest, ActionType, DecisionEffect, Resource, ResourceType, Subject,
 	};

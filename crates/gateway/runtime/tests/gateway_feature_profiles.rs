@@ -6,7 +6,8 @@ mod disabled_a2a {
 
 	#[tokio::test]
 	async fn rejects_a2a_configuration_not_selected_at_build_time() {
-		let config = ai_security_platform_runtime::config::parse_config("{}".to_string(), None).unwrap();
+		let config =
+			ai_security_platform_runtime::config::parse_config("{}".to_string(), None).unwrap();
 		let error = NormalizedLocalConfig::from(
 			&config,
 			&ResourceFetcher::files_only(),

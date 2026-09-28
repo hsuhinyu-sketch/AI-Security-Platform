@@ -16,6 +16,7 @@ members = [
     "crates/security/integration-runtime",
     "crates/security/capability-broker",
     "crates/security/rag",
+    "crates/security/integrity",
     # First-party AI Gateway Platform
     "crates/gateway/composition",
     "crates/gateway/rag",
@@ -116,6 +117,7 @@ hashbrown = "0.17"
 h2 = "0.4"
 headers = "0.4"
 hex = "0.4"
+hmac = "0.13"
 hickory-resolver = { version = "0.26", features = ["serde"] }
 htpasswd-verify-fork = { path = "crates/third-party/htpasswd-verify-fork" }
 httpdate = "1.0"

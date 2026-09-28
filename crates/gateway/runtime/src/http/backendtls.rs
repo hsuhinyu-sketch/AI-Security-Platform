@@ -1,9 +1,9 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use once_cell::sync::Lazy;
 use platform_core::strng;
 use platform_core::strng::Strng;
-use once_cell::sync::Lazy;
 use rustls::ClientConfig;
 use rustls_pki_types::pem::PemObject;
 use rustls_pki_types::{CertificateDer, ServerName};

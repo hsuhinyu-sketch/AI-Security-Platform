@@ -2,14 +2,14 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use platform_core::prelude::AssertSize;
-use platform_core::version::BuildInfo;
 use anyhow::anyhow;
 use futures_core::Stream;
 use futures_util::StreamExt;
 use http::StatusCode;
 use http::request::Parts;
 use itertools::Itertools;
+use platform_core::prelude::AssertSize;
+use platform_core::version::BuildInfo;
 use rmcp::ErrorData;
 use rmcp::model::{
 	CacheScope, ClientNotification, ClientRequest, DiscoverResult, Implementation,

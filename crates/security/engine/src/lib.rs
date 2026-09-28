@@ -1,5 +1,5 @@
-use security_types::{ActionRequest, Decision, DecisionEffect};
 use security_policy::{Policy, evaluate};
+use security_types::{ActionRequest, Decision, DecisionEffect};
 
 pub fn decide(policies: &[Policy], request: &ActionRequest) -> Decision {
 	match evaluate(policies, request) {

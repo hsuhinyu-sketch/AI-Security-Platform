@@ -6,13 +6,13 @@ use std::sync::{Arc, Mutex};
 
 use ::http::uri::PathAndQuery;
 use ::http::{HeaderMap, header};
-use platform_core::prelude::AssertSize;
 use anyhow::anyhow;
 use frozen_collections::Len;
 use futures_util::FutureExt;
 use headers::HeaderMapExt;
 use hyper::upgrade::OnUpgrade;
 use hyper_util::rt::TokioIo;
+use platform_core::prelude::AssertSize;
 use rand::RngExt;
 use rand::seq::{IndexedRandom, IteratorRandom};
 use tracing::{debug, trace};
@@ -981,6 +981,17 @@ impl HTTPProxy {
 		}
 
 		let route_request_mirrors = route_policies.request_mirror.select("request mirror", &req);
+		if backend_policies
+			.security_audit
+			.as_ref()
+			.is_some_and(|security| security.data_egress.is_some())
+			&& (route_request_mirrors.is_some() || !backend_policies.request_mirror.is_empty())
+		{
+			return Err(ProxyResponse::from(ProxyError::ProcessingString(
+				"data egress policy does not permit request mirroring".into(),
+			)))
+			.snapshot_on_err(log, &mut req);
+		}
 		let route_llm = route_policies.llm.select("llm", &req);
 		let (head, body) = req.into_parts();
 		for mirror in route_request_mirrors
@@ -1156,6 +1167,19 @@ impl HTTPProxy {
 				response_policies,
 			)
 			.await?;
+		}
+		// A raw tunnel bypasses protocol-level egress inspection; do not let an enabled
+		// data policy silently grant arbitrary destinations through CONNECT.
+		if backend_call
+			.backend_policies
+			.security_audit
+			.as_ref()
+			.is_some_and(|security| security.data_egress.is_some())
+		{
+			return Err(
+				ProxyError::ProcessingString("data egress policy does not permit CONNECT tunnels".into())
+					.into(),
+			);
 		}
 		log.endpoint = Some(backend_call.target.clone());
 		set_backend_cel_context(req, Some(&log));
@@ -2276,6 +2300,13 @@ async fn make_backend_call(
 		response_policies,
 	)
 	.await?;
+	// Capture verified claims before body snapshotting can clear request extensions.
+	let egress_identity = crate::security::identity_from_extensions(req.extensions());
+	let egress_request_id = log
+		.as_ref()
+		.and_then(|log| log.request_id)
+		.map(|id| format!("gateway:{id}"))
+		.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
 
 	// For Dynamic backends, re-resolve the target from the (now potentially transformed)
 	// request URI. This allows policies like `:authority` overrides (e.g., VPC endpoint
@@ -2528,6 +2559,56 @@ async fn make_backend_call(
 			l.response_processing_start = Some(outbound_end);
 		});
 		return Ok(resp);
+	}
+	// This runs per outbound attempt, after dynamic target rewriting and provider setup.
+	// A retry or fallback must therefore pass the same exact-destination policy again.
+	if let Some(egress) = backend_call
+		.backend_policies
+		.security_audit
+		.as_ref()
+		.and_then(|security| security.data_egress.as_ref())
+	{
+		let destination = backend_call.target.to_string();
+		let audit = &crate::security_events::UiSecurityAuditSink;
+		let check = |action: security_types::ActionRequest| {
+			security_integration_runtime::check_data_egress(egress, &action, &destination, audit).map_err(
+				|error| {
+					ProxyResponse::from(ProxyError::ProcessingString(format!(
+						"data egress denied outbound request: {error:?}"
+					)))
+				},
+			)
+		};
+		let mut recognized_channel = false;
+		if let Some(llm) = &backend_call.backend_policies.llm_provider {
+			recognized_channel = true;
+			check(security_pipeline::model_invoke_for_identity(
+				egress_request_id.clone(),
+				egress_identity.clone(),
+				llm.name.to_string(),
+			))?;
+		}
+		if backend_call.backend_policies.inference_routing.is_some() {
+			recognized_channel = true;
+			check(security_pipeline::inference_route_for_identity(
+				egress_request_id.clone(),
+				egress_identity.clone(),
+				destination.clone(),
+			))?;
+		}
+		if backend_call.backend_policies.a2a.is_some() {
+			recognized_channel = true;
+			check(security_pipeline::agent_invoke_for_identity(
+				egress_request_id,
+				egress_identity,
+				destination.clone(),
+			))?;
+		}
+		if !recognized_channel {
+			return Err(ProxyResponse::from(ProxyError::ProcessingString(
+				"data egress policy has no adapter for this outbound protocol".into(),
+			)));
+		}
 	}
 	let transport = build_backend_transport(&inputs, &backend_call, hbone_source).await?;
 	dtrace::snapshot!(Request, "final request", &req);

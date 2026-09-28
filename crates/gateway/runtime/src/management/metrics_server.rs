@@ -3,9 +3,9 @@
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 
-use platform_core::drain::DrainWatcher;
 use hyper::Request;
 use hyper::body::Incoming;
+use platform_core::drain::DrainWatcher;
 use prometheus_client::encoding::text::encode;
 use prometheus_client::registry::Registry;
 

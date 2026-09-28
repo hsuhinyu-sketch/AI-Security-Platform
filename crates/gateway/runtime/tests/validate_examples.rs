@@ -51,8 +51,8 @@ fn test_config() -> ai_security_platform_runtime::Config {
 	// Supply a deterministic OIDC cookie secret so configs that enable browser
 	// auth (e.g. oidc/) can be compiled without errors, matching the behaviour of
 	// validate-configs.sh which exports OIDC_COOKIE_SECRET.
-	let mut config =
-		ai_security_platform_runtime::config::parse_config("{}".to_string(), None).expect("parse empty config");
+	let mut config = ai_security_platform_runtime::config::parse_config("{}".to_string(), None)
+		.expect("parse empty config");
 	config.oidc_cookie_encoder = Some(
 		ai_security_platform_runtime::http::sessionpersistence::Encoder::aes(TEST_OIDC_COOKIE_SECRET)
 			.expect("AES encoder"),

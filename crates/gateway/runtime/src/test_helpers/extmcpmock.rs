@@ -1,13 +1,13 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use prost_wkt_types::Struct;
 use platform_protos::ext_mcp::authorization_error::Code as ErrCode;
 use platform_protos::ext_mcp::ext_mcp_server::{ExtMcp, ExtMcpServer};
 use platform_protos::ext_mcp::{
 	AuthorizationError, HeaderMutation, McpHeader, McpRequest, McpRequestResult, McpResponse,
 	McpResponseResult, Pass, mcp_request_result, mcp_response_result,
 };
+use prost_wkt_types::Struct;
 use tonic::{Request, Response as TonicResponse, Status};
 
 pub fn pass_request() -> Result<McpRequestResult, Status> {

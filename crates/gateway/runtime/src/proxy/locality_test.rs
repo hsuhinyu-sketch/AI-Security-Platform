@@ -10,8 +10,8 @@ use std::net::SocketAddr;
 
 use LoadBalancerMode::{Failover, Standard, Strict};
 use LoadBalancerScopes::{Node, Region, Zone};
-use platform_core::strng;
 use http::{Method, StatusCode};
+use platform_core::strng;
 use wiremock::MockServer;
 
 use crate::store::{DiscoveryPreviousState, LocalWorkload};

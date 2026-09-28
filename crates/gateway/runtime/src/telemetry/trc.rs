@@ -2,7 +2,6 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use platform_core::telemetry::ValueBag;
 use http::Version;
 use itertools::Itertools;
 use once_cell::sync::OnceCell;
@@ -14,6 +13,7 @@ use opentelemetry_sdk::trace::{
 	BatchSpanProcessor, SdkTracerProvider, SpanData, SpanEvents, SpanExporter, SpanLinks,
 	SpanProcessor,
 };
+use platform_core::telemetry::ValueBag;
 pub use traceparent::TraceParent;
 
 use crate::cel;
@@ -733,10 +733,10 @@ mod tests {
 	use std::sync::{Arc, Mutex};
 	use std::time::Instant;
 
-	use platform_core::{Timestamp, strng};
 	use opentelemetry::trace::SpanKind;
 	use opentelemetry_sdk::error::OTelSdkResult;
 	use opentelemetry_sdk::trace::{SimpleSpanProcessor, SpanData, SpanExporter};
+	use platform_core::{Timestamp, strng};
 	use prometheus_client::registry::Registry;
 
 	use super::*;

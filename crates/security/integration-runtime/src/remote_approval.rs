@@ -1,6 +1,7 @@
 use std::path::PathBuf;
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
 
+use crate::blocking_client_cache::BlockingClientCache;
 use chrono::{DateTime, Utc};
 use security_pipeline::{ApprovalError, ApprovalProvider, arguments_hash};
 use security_types::ActionRequest;
@@ -20,15 +21,15 @@ pub struct RemoteApprovalConfig {
 	#[serde(default, skip_serializing_if = "Option::is_none")]
 	pub root_ca_pem_file: Option<PathBuf>,
 	#[serde(skip, default = "default_provider_slot")]
-	provider: Arc<OnceLock<Result<HttpApprovalProvider, String>>>,
+	provider: Arc<BlockingClientCache<HttpApprovalProvider>>,
 }
 
 const fn default_timeout_millis() -> u64 {
 	250
 }
 
-fn default_provider_slot() -> Arc<OnceLock<Result<HttpApprovalProvider, String>>> {
-	Arc::new(OnceLock::new())
+fn default_provider_slot() -> Arc<BlockingClientCache<HttpApprovalProvider>> {
+	Arc::new(BlockingClientCache::default())
 }
 
 impl RemoteApprovalConfig {

@@ -22,5 +22,7 @@ jobs:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32
       - run: cargo fmt --all -- --check
-      - run: cargo check -p security-contracts -p security-policy -p security-engine -p audit-core -p gateway-adapter -p ai-gateway-app
-      - run: cargo test -p security-policy -p security-engine -p audit-core -p gateway-adapter
+      - run: cargo check --workspace
+      - run: cargo test -p security-policy -p security-engine -p security-audit -p security-pipeline -p security-integration-runtime -p security-capability-broker -p security-rag -p gateway-rag -p gateway-composition
+      - run: cargo test -p ai-security-platform-runtime --lib ai_system_rejects_tool_approval_without_mcp_gateway
+      - run: cargo test -p ai-security-platform-runtime --lib tls_termination

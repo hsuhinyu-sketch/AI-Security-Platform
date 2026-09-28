@@ -72,13 +72,14 @@ impl AgentGateway {
 		let (port_tx, port_rx) = tokio::sync::oneshot::channel::<u16>();
 
 		let task = tokio::task::spawn(async move {
-			let config =
-				ai_security_platform_runtime::config::parse_config(
-					js,
-					Some(ai_security_platform_runtime::ConfigSource::File(config)),
-				)
-					.unwrap();
-			let app = ai_security_platform_runtime::app::run(Arc::new(config)).await.unwrap();
+			let config = ai_security_platform_runtime::config::parse_config(
+				js,
+				Some(ai_security_platform_runtime::ConfigSource::File(config)),
+			)
+			.unwrap();
+			let app = ai_security_platform_runtime::app::run(Arc::new(config))
+				.await
+				.unwrap();
 
 			// Report the actual bound port back to the test.
 			let addrs = app.bind_addresses();

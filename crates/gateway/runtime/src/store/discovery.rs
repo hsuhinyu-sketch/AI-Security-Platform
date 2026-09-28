@@ -121,7 +121,6 @@ impl Store {
 			self.services.remove_endpoint(&previous);
 		}
 	}
-
 }
 
 /// A WorkloadStore encapsulates all information about workloads in the mesh

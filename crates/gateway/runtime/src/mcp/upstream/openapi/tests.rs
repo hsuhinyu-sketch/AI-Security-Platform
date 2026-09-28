@@ -1,9 +1,9 @@
 use std::borrow::Cow;
 use std::sync::Arc;
 
-use platform_core::{metrics, strng};
 use hickory_resolver::config::{ResolverConfig, ResolverOpts};
 use openapiv3::{OpenAPI, ReferenceOr};
+use platform_core::{metrics, strng};
 use prometheus_client::registry::Registry;
 use rmcp::model::Tool;
 use rstest::rstest;

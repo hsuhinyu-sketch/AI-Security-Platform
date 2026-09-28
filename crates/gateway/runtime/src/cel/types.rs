@@ -4,8 +4,6 @@ use std::net::{IpAddr, Ipv4Addr};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use platform_core::env::ENV;
-use platform_core::strng::Strng;
 use bytes::Bytes;
 use cel::common::ast::OptimizedExpr;
 use cel::context::VariableResolver;
@@ -15,6 +13,8 @@ use cel::{ExecutionError, FunctionContext, Value};
 use chrono::{DateTime, FixedOffset};
 use http::{Extensions, HeaderMap, Method, Uri, Version};
 use once_cell::sync::Lazy;
+use platform_core::env::ENV;
+use platform_core::strng::Strng;
 use prometheus_client::encoding::EncodeLabelValue;
 #[cfg(feature = "schema")]
 pub use schemars::JsonSchema;

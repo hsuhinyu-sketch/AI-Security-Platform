@@ -1,6 +1,7 @@
 use std::path::PathBuf;
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
 
+use crate::blocking_client_cache::BlockingClientCache;
 use chrono::{DateTime, Utc};
 use security_pipeline::{AgentIdentityError, AgentIdentityProvider};
 use security_types::ActionRequest;
@@ -23,15 +24,15 @@ pub struct RemoteAgentIdentityConfig {
 	#[serde(default, skip_serializing_if = "Option::is_none")]
 	pub root_ca_pem_file: Option<PathBuf>,
 	#[serde(skip, default = "default_provider_slot")]
-	provider: Arc<OnceLock<Result<HttpAgentIdentityProvider, String>>>,
+	provider: Arc<BlockingClientCache<HttpAgentIdentityProvider>>,
 }
 
 const fn default_timeout_millis() -> u64 {
 	100
 }
 
-fn default_provider_slot() -> Arc<OnceLock<Result<HttpAgentIdentityProvider, String>>> {
-	Arc::new(OnceLock::new())
+fn default_provider_slot() -> Arc<BlockingClientCache<HttpAgentIdentityProvider>> {
+	Arc::new(BlockingClientCache::default())
 }
 
 impl RemoteAgentIdentityConfig {

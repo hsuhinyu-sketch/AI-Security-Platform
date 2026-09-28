@@ -1,9 +1,9 @@
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::{Arc, RwLock};
 
-use platform_core::strng;
 use divan::Bencher;
 use itertools::Itertools;
+use platform_core::strng;
 use regex::Regex;
 
 use crate::http::Request;

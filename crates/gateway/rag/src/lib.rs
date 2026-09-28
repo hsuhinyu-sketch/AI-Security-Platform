@@ -17,11 +17,17 @@ pub mod config;
 pub mod http;
 pub mod qdrant;
 
+/// Compatibility path for the configured HTTPS source types.
+pub mod sources {
+	pub use security_rag::sources::{TrustedHttpsSourceConfig, TrustedHttpsSourceRegistry};
+}
+
 pub use config::{HttpEmbeddingProvider, OpenAiCompatibleEmbeddingConfig, RagGatewayConfig};
-pub use http::{RagHttpService, VerifiedGatewayIdentity, router};
+pub use http::{RagHttpService, VerifiedGatewayIdentity, router, router_with_sources};
 pub use qdrant::{
 	DocumentChunker, EmbeddingProvider, FixedWindowChunker, QdrantBackend, QdrantBackendConfig,
 };
+pub use sources::{TrustedHttpsSourceConfig, TrustedHttpsSourceRegistry};
 
 /// Transport payload for a corpus query. Identity is intentionally not included: a transport must
 /// derive it from verified authentication and provide it separately to [`RagGatewayAdapter::query`].
@@ -87,6 +93,37 @@ where
 	RAudit: RetrievalAuditSink,
 	CA: ContextAuditSink,
 {
+	pub fn authorize_import(
+		&self,
+		request_id: impl Into<String>,
+		identity: GatewayIdentity,
+		corpus_id: &str,
+		document_id: &str,
+		source_id: &str,
+	) -> Result<(), RagGatewayError> {
+		self
+			.ingestor
+			.authorize_import(request_id, identity, corpus_id, document_id, source_id)
+			.map_err(RagGatewayError::Ingestion)
+	}
+
+	pub fn record_source_fetch_failure(
+		&self,
+		request_id: impl Into<String>,
+		identity: GatewayIdentity,
+		corpus_id: &str,
+		document_id: &str,
+		source_id: &str,
+	) {
+		self.ingestor.record_source_fetch_failure(
+			request_id,
+			identity,
+			corpus_id,
+			document_id,
+			source_id,
+		);
+	}
+
 	/// Runs the write path through `KnowledgeIngest` before any index backend sees document content.
 	pub async fn ingest(
 		&self,
@@ -148,13 +185,14 @@ mod tests {
 
 	use security_audit::InMemoryAuditSink;
 	use security_pipeline::{PolicyAuthorizer, SecurityPipeline};
-	use security_types::{ActionType, DecisionEffect, ResourceType};
 	use security_policy::Policy;
 	use security_rag::{
-		ContentLabelRule, ContextGuardConfig, DocumentIngestBackend, InMemoryContextAuditSink,
-		InMemoryIngestionAuditSink, InMemoryRetrievalAuditSink, IndexedDocument, IngestionGuardConfig,
-		KnowledgeChunk, QuarantinedDocument, RetrievalBackend, RetrievalFilter, TrustedChunkAccess,
+		ContentClassificationRule, ContentLabelRule, ContextGuardConfig, DataClassification,
+		DocumentIngestBackend, InMemoryContextAuditSink, InMemoryIngestionAuditSink,
+		InMemoryRetrievalAuditSink, IndexedDocument, IngestionGuardConfig, KnowledgeChunk,
+		QuarantinedDocument, RetrievalBackend, RetrievalFilter, TrustedChunkAccess,
 	};
+	use security_types::{ActionType, DecisionEffect, ResourceType};
 
 	use super::*;
 
@@ -283,6 +321,12 @@ mod tests {
 			backend.clone(),
 			ingestion_pipeline,
 			IngestionGuardConfig {
+				default_classification: DataClassification::Public,
+				classification_rules: vec![ContentClassificationRule {
+					id: "customer-data".into(),
+					classification: DataClassification::Restricted,
+					pattern: "customer email".into(),
+				}],
 				label_rules: vec![ContentLabelRule {
 					label: "pii".into(),
 					pattern: "customer email".into(),
@@ -332,6 +376,19 @@ mod tests {
 			.await
 			.unwrap();
 		assert_eq!(context.chunks.len(), 1);
+		assert_eq!(context.classification, Some(DataClassification::Restricted));
+		assert_eq!(
+			context.chunks[0].classification,
+			DataClassification::Restricted
+		);
+		assert_eq!(
+			context.chunks[0].classification_source,
+			"rule:customer-data"
+		);
+		assert_eq!(
+			ingestion_events.events()[0].classification_source,
+			"rule:customer-data"
+		);
 		assert_eq!(
 			context.chunks[0].content,
 			"[REDACTED BY RAG CONTEXT POLICY]"

@@ -1,6 +1,7 @@
 use std::path::PathBuf;
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
 
+use crate::blocking_client_cache::BlockingClientCache;
 use crate::trusted_https;
 use security_pipeline::{DynamicPdpError, RemotePdpRequest, RemotePdpResponse, RemotePdpTransport};
 
@@ -19,15 +20,15 @@ pub struct RemotePdpConfig {
 	pub root_ca_pem_file: Option<PathBuf>,
 	/// A loaded AI-system configuration shares one HTTP client across requests.
 	#[serde(skip, default = "default_transport_slot")]
-	transport: Arc<OnceLock<Result<HttpRemotePdpTransport, String>>>,
+	transport: Arc<BlockingClientCache<HttpRemotePdpTransport>>,
 }
 
 const fn default_timeout_millis() -> u64 {
 	250
 }
 
-fn default_transport_slot() -> Arc<OnceLock<Result<HttpRemotePdpTransport, String>>> {
-	Arc::new(OnceLock::new())
+fn default_transport_slot() -> Arc<BlockingClientCache<HttpRemotePdpTransport>> {
+	Arc::new(BlockingClientCache::default())
 }
 
 impl RemotePdpConfig {
@@ -44,7 +45,7 @@ impl RemotePdpConfig {
 
 /// Blocking transport used by the current synchronous gateway security hook. It has a strict
 /// timeout and is held in the loaded configuration; a future async security hook can replace
-/// this adapter without changing the remote PDP contract in `gateway-adapter`.
+/// this adapter without changing the protocol-neutral remote PDP contract.
 #[derive(Debug, Clone)]
 pub struct HttpRemotePdpTransport {
 	endpoint: String,

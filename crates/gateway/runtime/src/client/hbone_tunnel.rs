@@ -226,9 +226,10 @@ pub async fn handshake_double(
 	// Spawn inner CONNECT tunnel
 	let (drain_tx, drain_rx) = tokio::sync::watch::channel(false);
 	let hbone_cfg = pool.config();
-	let mut sender = platform_hbone::client::spawn_connection(hbone_cfg, tls_stream, drain_rx, wl_key)
-		.await
-		.map_err(crate::http::Error::new)?;
+	let mut sender =
+		platform_hbone::client::spawn_connection(hbone_cfg, tls_stream, drain_rx, wl_key)
+			.await
+			.map_err(crate::http::Error::new)?;
 
 	// For inner HBONE, use the target (hostname or IP), not ep (which may be a placeholder)
 	let inner_authority = match &target {

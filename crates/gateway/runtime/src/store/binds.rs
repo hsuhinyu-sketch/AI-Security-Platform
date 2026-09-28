@@ -1580,7 +1580,6 @@ impl Store {
 	pub fn get_service_tcp_routes(&self, key: &NamespacedHostname) -> Option<Arc<TCPRouteSet>> {
 		self.tcp_routes.get(&Self::service_target_ref(key)).cloned()
 	}
-
 }
 
 #[derive(Clone, Debug)]
@@ -1976,7 +1975,6 @@ mod tests {
 				.is_some_and(|routes| routes.contains(&strng::literal!("route")))
 		);
 	}
-
 
 	fn insert_policy_at_level(
 		store: &mut Store,

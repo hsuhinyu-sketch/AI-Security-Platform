@@ -2,14 +2,14 @@
 
 use std::sync::Mutex;
 
-use security_audit::AuditSink;
 use chrono::{DateTime, Utc};
+use security_audit::AuditSink;
 use security_pipeline::{
 	Authorizer, GatewayError, GatewayIdentity, SecurityPipeline, context_assemble_for_identity,
 };
 use serde::{Deserialize, Serialize};
 
-use crate::{AuthorizedContext, KnowledgeChunk};
+use crate::{AuthorizedContext, DataClassification, KnowledgeChunk};
 
 fn default_indirect_instruction_patterns() -> Vec<String> {
 	vec![
@@ -81,6 +81,9 @@ pub struct GuardedContext {
 	pub query_hash: String,
 	pub chunks: Vec<KnowledgeChunk>,
 	pub context_tokens: u64,
+	/// Highest class among chunks that remain after enforcement/redaction. Redaction does not
+	/// downgrade a chunk; a future downgrade requires a separately audited declassification step.
+	pub classification: Option<DataClassification>,
 	pub removed_chunk_ids: Vec<String>,
 	pub redacted_chunk_ids: Vec<String>,
 	pub findings: Vec<ContextFinding>,
@@ -101,6 +104,7 @@ pub struct ContextAuditEvent {
 	pub query_hash: String,
 	pub outcome: ContextAuditOutcome,
 	pub accepted_chunk_ids: Vec<String>,
+	pub classification: Option<DataClassification>,
 	pub removed_chunk_ids: Vec<String>,
 	pub redacted_chunk_ids: Vec<String>,
 	pub findings: Vec<ContextFinding>,
@@ -195,6 +199,7 @@ impl ContextGuard {
 				query_hash: context.query_hash,
 				outcome: ContextAuditOutcome::Denied,
 				accepted_chunk_ids: Vec::new(),
+				classification: None,
 				removed_chunk_ids: Vec::new(),
 				redacted_chunk_ids: Vec::new(),
 				findings: Vec::new(),
@@ -220,6 +225,7 @@ impl ContextGuard {
 				.iter()
 				.map(|chunk| chunk.id.clone())
 				.collect(),
+			classification: guarded.classification,
 			removed_chunk_ids: guarded.removed_chunk_ids.clone(),
 			redacted_chunk_ids: guarded.redacted_chunk_ids.clone(),
 			findings: guarded.findings.clone(),
@@ -261,11 +267,13 @@ impl ContextGuard {
 			chunks.push(chunk);
 		}
 
+		let classification = chunks.iter().map(|chunk| chunk.classification).max();
 		GuardedContext {
 			corpus_id: context.corpus_id,
 			query_hash: context.query_hash,
 			chunks,
 			context_tokens,
+			classification,
 			removed_chunk_ids,
 			redacted_chunk_ids,
 			findings,
@@ -297,8 +305,8 @@ impl ContextGuard {
 mod tests {
 	use security_audit::InMemoryAuditSink;
 	use security_pipeline::PolicyAuthorizer;
-	use security_types::{ActionType, DecisionEffect, ResourceType};
 	use security_policy::Policy;
+	use security_types::{ActionType, DecisionEffect, ResourceType};
 
 	use super::*;
 
@@ -337,11 +345,14 @@ mod tests {
 			tenant_id: "tenant-a".into(),
 			content: content.into(),
 			labels: labels.into_iter().map(Into::into).collect(),
+			classification: DataClassification::Internal,
+			classification_source: "default-classification".into(),
 			allowed_users: vec!["alice".into()],
 			allowed_agents: Vec::new(),
 			allow_tenant_authenticated: false,
 			expires_at: None,
 			source_hash: "source-hash".into(),
+			source_origin: crate::SourceOrigin::Submitted,
 			token_count: 100,
 		}
 	}

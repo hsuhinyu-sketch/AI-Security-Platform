@@ -1,7 +1,6 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use platform_core::version::BuildInfo;
 use axum::extract::{Path, Query, State};
 use axum::http::{StatusCode, Uri};
 use axum::response::sse::Event;
@@ -10,6 +9,7 @@ use axum::routing::{get, post};
 use axum::{Json, Router};
 use chrono::Utc;
 use include_dir::{Dir, include_dir};
+use platform_core::version::BuildInfo;
 use serde::{Serialize, Serializer};
 use serde_json::Value;
 use tokio::sync::mpsc;

@@ -4,8 +4,8 @@ use std::collections::{HashMap, HashSet};
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-use platform_core::strng;
 use itertools::Itertools;
+use platform_core::strng;
 
 use crate::http::Request;
 use crate::proxy::dtrace;

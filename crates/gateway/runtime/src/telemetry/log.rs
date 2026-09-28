@@ -6,12 +6,6 @@ use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll, ready};
 use std::time::{Duration, Instant, SystemTime};
 
-use platform_core::metrics::CustomField;
-use platform_core::strng::{RichStrng, Strng};
-use platform_core::telemetry::{
-	OptionExt, OtelLogSink, ValueBag, current_connection_id, current_request_id, debug, display,
-};
-use platform_core::{Timestamp, strng};
 use bytes::Buf;
 use crossbeam::atomic::AtomicCell;
 use frozen_collections::FzHashSet;
@@ -24,6 +18,12 @@ use opentelemetry::{Key, KeyValue};
 use opentelemetry_otlp::{WithExportConfig, WithHttpConfig};
 use opentelemetry_sdk::Resource;
 use opentelemetry_sdk::logs::SdkLoggerProvider;
+use platform_core::metrics::CustomField;
+use platform_core::strng::{RichStrng, Strng};
+use platform_core::telemetry::{
+	OptionExt, OtelLogSink, ValueBag, current_connection_id, current_request_id, debug, display,
+};
+use platform_core::{Timestamp, strng};
 use rust_decimal::prelude::ToPrimitive;
 use serde::de::DeserializeOwned;
 use serde::ser::SerializeMap;

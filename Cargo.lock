@@ -2704,6 +2704,7 @@ dependencies = [
  "chrono",
  "reqwest 0.13.3",
  "security-audit",
+ "security-integrity",
  "security-pipeline",
  "security-policy",
  "security-rag",
@@ -2713,6 +2714,7 @@ dependencies = [
  "tokio",
  "tower",
  "uuid",
+ "wiremock",
 ]
 
 [[package]]
@@ -6350,7 +6352,19 @@ dependencies = [
  "security-types",
  "serde",
  "serde_json",
+ "tokio",
  "tracing",
+]
+
+[[package]]
+name = "security-integrity"
+version = "0.0.0"
+dependencies = [
+ "hex",
+ "hmac 0.13.0",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
 ]
 
 [[package]]
@@ -6383,6 +6397,7 @@ dependencies = [
  "async-trait",
  "chrono",
  "hex",
+ "reqwest 0.13.3",
  "security-audit",
  "security-pipeline",
  "security-policy",
@@ -6391,6 +6406,7 @@ dependencies = [
  "serde_json",
  "sha2 0.11.0",
  "tokio",
+ "wiremock",
 ]
 
 [[package]]

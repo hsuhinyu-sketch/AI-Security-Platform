@@ -2,6 +2,9 @@
 
 The workspace is organized by ownership rather than by the source history of a module.
 
+For the product-level gateway and security coverage assessment, see
+[`capability-coverage-and-design-review.md`](capability-coverage-and-design-review.md).
+
 ```text
 crates/
   gateway/                         # AI interaction ingress and gateway composition

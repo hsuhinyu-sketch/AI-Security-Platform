@@ -3,11 +3,11 @@
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use platform_core::drain::DrainWatcher;
-use platform_core::readiness;
 use hyper::Request;
 use hyper::body::Incoming;
 use itertools::Itertools;
+use platform_core::drain::DrainWatcher;
+use platform_core::readiness;
 
 use super::hyper_helpers;
 use crate::Address;

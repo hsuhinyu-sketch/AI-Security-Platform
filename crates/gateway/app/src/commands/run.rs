@@ -1,10 +1,10 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use platform_core::{strng, telemetry, version};
 use ai_security_platform_runtime::app::Bound;
 use ai_security_platform_runtime::types::agent::ListenerTarget;
 use ai_security_platform_runtime::{BackendConfig, Config, LoggingFormat, client, serdes};
+use platform_core::{strng, telemetry, version};
 use tracing::info;
 
 use crate::{RunArgs, read_config_contents};
@@ -38,7 +38,8 @@ pub(crate) fn execute(args: RunArgs) -> anyhow::Result<()> {
 			if validate_only {
 				return validate(contents, local_config_source).await;
 			}
-			let mut config = ai_security_platform_runtime::runtime::config::parse_config(contents, local_config_source)?;
+			let mut config =
+				ai_security_platform_runtime::runtime::config::parse_config(contents, local_config_source)?;
 			// Capture the admin/runtime handle to ensure some background tasks (e.g., OTLP exporters created from dataplane
 			// policy initialization) run on the admin runtime rather than the dataplane runtime.
 			config.admin_runtime_handle = Some(tokio::runtime::Handle::current());
@@ -82,12 +83,13 @@ async fn validate(
 	contents: String,
 	local_config_source: Option<ai_security_platform_runtime::ConfigSource>,
 ) -> anyhow::Result<()> {
-	let config = ai_security_platform_runtime::runtime::config::parse_config(contents, local_config_source)?;
+	let config =
+		ai_security_platform_runtime::runtime::config::parse_config(contents, local_config_source)?;
 	let client = client::Client::new(&config.dns, None, BackendConfig::default(), None);
 	if let Some(cfg) = config.local_config.as_ref() {
 		let cs = cfg.read_to_string().await?;
-	let resources = ai_security_platform_runtime::resource_manager::ResourceFetcher::direct(client);
-	ai_security_platform_runtime::types::local::NormalizedLocalConfig::from(
+		let resources = ai_security_platform_runtime::resource_manager::ResourceFetcher::direct(client);
+		ai_security_platform_runtime::types::local::NormalizedLocalConfig::from(
 			&config,
 			&resources,
 			ListenerTarget {

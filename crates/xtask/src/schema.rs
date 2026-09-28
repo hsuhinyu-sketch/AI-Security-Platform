@@ -21,7 +21,9 @@ pub fn generate_schema() -> Result<()> {
 			mdfile: Some("config.md"),
 			file: "config.json",
 			schema_json: make::<ai_security_platform_runtime::types::local::LocalConfig>(false)?,
-			schema_inline_json: Some(make::<ai_security_platform_runtime::types::local::LocalConfig>(true)?),
+			schema_inline_json: Some(make::<
+				ai_security_platform_runtime::types::local::LocalConfig,
+			>(true)?),
 		},
 		SchemaDoc {
 			name: "CEL context",

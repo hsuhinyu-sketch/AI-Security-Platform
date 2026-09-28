@@ -1,6 +1,6 @@
+use bytes::Bytes;
 use platform_core::prelude::Strng;
 use platform_core::strng;
-use bytes::Bytes;
 use serde::{Deserialize, Serialize};
 
 use crate::llm::types::{RequestType, messages};

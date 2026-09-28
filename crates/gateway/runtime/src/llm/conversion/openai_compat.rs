@@ -365,8 +365,8 @@ pub mod to_responses {
 	use std::collections::HashMap;
 	use std::time::Instant;
 
-	use platform_core::strng;
 	use bytes::Bytes;
+	use platform_core::strng;
 	use rand::RngExt;
 	use types::completions::typed as completions;
 	use types::responses::typed as responses;

@@ -1,9 +1,11 @@
 use std::fmt::Debug;
 
-use platform_core::metrics::{CustomField, DefaultedUnknown, EncodeArc, EncodeDebug, EncodeDisplay};
+use frozen_collections::FzHashSet;
+use platform_core::metrics::{
+	CustomField, DefaultedUnknown, EncodeArc, EncodeDebug, EncodeDisplay,
+};
 use platform_core::strng::RichStrng;
 use platform_core::version;
-use frozen_collections::FzHashSet;
 use prometheus_client::encoding::EncodeLabelSet;
 use prometheus_client::metrics::counter;
 use prometheus_client::metrics::family::Family;
@@ -255,7 +257,12 @@ impl<'a> FilteredRegistry<'a> {
 					name,
 					unit.as_str()
 				),
-				format!("{}_{}_{}", platform_core::metrics::PREFIX, name, unit.as_str()),
+				format!(
+					"{}_{}_{}",
+					platform_core::metrics::PREFIX,
+					name,
+					unit.as_str()
+				),
 			])
 		}
 

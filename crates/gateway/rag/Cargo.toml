@@ -16,9 +16,11 @@ reqwest.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 security-rag = { path = "../../security/rag" }
+security-integrity = { path = "../../security/integrity" }
 uuid.workspace = true
 
 [dev-dependencies]
+wiremock.workspace = true
 security-types = { path = "../../security/types" }
 security-policy = { path = "../../security/policy" }
 tokio.workspace = true

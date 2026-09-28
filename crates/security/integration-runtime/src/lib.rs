@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use security_audit::{AuditSink, event_from_decision};
 use security_pipeline::{
@@ -7,6 +8,10 @@ use security_pipeline::{
 };
 use security_types::{ActionRequest, Decision, DecisionEffect, SecurityEvent};
 
+mod blocking_client_cache;
+mod data_egress;
+pub use data_egress::{DataEgressConfig, check_data_egress};
+pub use security_types::DataClassification;
 pub mod remote_agent_identity;
 pub mod remote_approval;
 pub mod remote_capability;
@@ -62,8 +67,45 @@ pub struct SecurityConfig {
 	/// static `agentIdentity` registry because two sources could disagree about a principal.
 	#[serde(default, skip_serializing_if = "Option::is_none")]
 	pub remote_agent_identity: Option<RemoteAgentIdentityConfig>,
+	/// Administrator-assigned data classification and exact outbound allowlists.
+	#[serde(default, skip_serializing_if = "Option::is_none")]
+	pub data_egress: Option<DataEgressConfig>,
 	#[serde(flatten)]
 	pub pipeline: SecurityPipelineConfig,
+}
+
+impl SecurityConfig {
+	/// Reject combinations that cannot enforce the declared security controls.
+	/// An approval gate without a provider remains valid: it intentionally denies by default.
+	pub fn validate_composition(&self) -> Result<(), String> {
+		if let Some(egress) = &self.data_egress {
+			if self.mode != SecurityMode::Enforce {
+				return Err("dataEgress requires security.mode: enforce".into());
+			}
+			egress.validate()?;
+		}
+		if self.agent_identity.is_some() && self.remote_agent_identity.is_some() {
+			return Err("configure either agentIdentity or remoteAgentIdentity, not both".into());
+		}
+		if self.remote_pdp.is_some() && self.pipeline.dynamic_authorization.is_none() {
+			return Err("remotePdp requires dynamicAuthorization".into());
+		}
+		if self.approval.is_some() && self.pipeline.required_tool_approvals.is_empty() {
+			return Err("approval requires at least one requiredToolApprovals entry".into());
+		}
+		if self.capability_broker.is_some() {
+			if self.mode != SecurityMode::Enforce {
+				return Err("capabilityBroker requires security.mode: enforce".into());
+			}
+			if self.pipeline.required_tool_approvals.is_empty() {
+				return Err("capabilityBroker requires requiredToolApprovals".into());
+			}
+			if self.approval.is_none() {
+				return Err("capabilityBroker requires a trusted approval provider".into());
+			}
+		}
+		Ok(())
+	}
 }
 
 /// Adapts the full gateway security configuration to a protocol-specific security pipeline.
@@ -163,6 +205,30 @@ pub fn evaluate_with_audit(
 	arguments: Option<&serde_json::Value>,
 	audit: &dyn AuditSink,
 ) -> Result<(), GatewayError> {
+	if config.remote_pdp.is_some()
+		|| config.remote_agent_identity.is_some()
+		|| config.delegation_revocation.is_some()
+		|| config.approval.is_some()
+	{
+		let result = on_blocking_security_thread(action, audit, || {
+			evaluate_with_audit_inner(config, action, arguments, audit)
+		});
+		return if config.mode == SecurityMode::Enforce {
+			result
+		} else {
+			// Worker saturation is still audited, but observe-only modes do not interrupt traffic.
+			Ok(())
+		};
+	}
+	evaluate_with_audit_inner(config, action, arguments, audit)
+}
+
+fn evaluate_with_audit_inner(
+	config: &SecurityConfig,
+	action: &ActionRequest,
+	arguments: Option<&serde_json::Value>,
+	audit: &dyn AuditSink,
+) -> Result<(), GatewayError> {
 	let decision = match runtime_security_controls(config) {
 		Err(reason) => Err(configuration_denial(action, reason, audit)),
 		Ok(controls) => match &config.remote_pdp {
@@ -225,13 +291,58 @@ pub fn authorize_tool_with_capability_with_audit(
 	let Some(broker) = &config.capability_broker else {
 		return Ok(None);
 	};
-	let issuer = broker
-		.issuer()
-		.map_err(|error| capability_denial(action, error.reason, audit))?;
-	issuer
-		.issue(action, arguments)
-		.map(Some)
-		.map_err(|error| capability_denial(action, error.reason, audit))
+	on_blocking_security_thread(action, audit, || {
+		let issuer = broker
+			.issuer()
+			.map_err(|error| capability_denial(action, error.reason, audit))?;
+		issuer
+			.issue(action, arguments)
+			.map(Some)
+			.map_err(|error| capability_denial(action, error.reason, audit))
+	})
+}
+
+const MAX_CONCURRENT_REMOTE_DECISIONS: usize = 32;
+static ACTIVE_REMOTE_DECISIONS: AtomicUsize = AtomicUsize::new(0);
+
+/// Keep synchronous remote-provider traits usable from every protocol adapter, including RAG.
+/// Requests beyond the bounded bridge are denied rather than spawning unbounded OS threads.
+fn on_blocking_security_thread<T: Send>(
+	action: &ActionRequest,
+	audit: &dyn AuditSink,
+	work: impl FnOnce() -> Result<T, GatewayError> + Send,
+) -> Result<T, GatewayError> {
+	if tokio::runtime::Handle::try_current().is_err() {
+		return work();
+	}
+	if ACTIVE_REMOTE_DECISIONS
+		.fetch_update(Ordering::AcqRel, Ordering::Acquire, |active| {
+			(active < MAX_CONCURRENT_REMOTE_DECISIONS).then_some(active + 1)
+		})
+		.is_err()
+	{
+		return Err(configuration_denial(
+			action,
+			"remote security worker limit reached".into(),
+			audit,
+		));
+	}
+	let run = || std::thread::scope(|scope| scope.spawn(work).join());
+	let result = if tokio::runtime::Handle::current().runtime_flavor()
+		== tokio::runtime::RuntimeFlavor::MultiThread
+	{
+		tokio::task::block_in_place(run)
+	} else {
+		run()
+	};
+	ACTIVE_REMOTE_DECISIONS.fetch_sub(1, Ordering::AcqRel);
+	result.unwrap_or_else(|_| {
+		Err(configuration_denial(
+			action,
+			"remote security worker failed".into(),
+			audit,
+		))
+	})
 }
 
 fn runtime_security_controls(config: &SecurityConfig) -> Result<RuntimeSecurityControls, String> {
@@ -328,8 +439,77 @@ mod tests {
 		GatewayIdentity, RegisteredAgentConfig, RequiredIdentity, SecurityPipelineConfig,
 		agent_action_for_identity, model_invoke_for_identity, tool_invoke_for_identity,
 	};
-	use security_types::{ActionType, DecisionEffect, ResourceType};
 	use security_policy::Policy;
+	use security_types::{ActionType, DecisionEffect, ResourceType};
+
+	#[tokio::test(flavor = "current_thread")]
+	async fn remote_client_can_be_created_and_disposed_inside_an_async_request() {
+		let config: SecurityConfig = serde_json::from_value(serde_json::json!({
+			"mode": "enforce",
+			"remotePdp": {"endpoint": "https://127.0.0.1:1/decisions"}
+		}))
+		.expect("remote PDP configuration should deserialize");
+		let action = security_pipeline::model_invoke("request", None, None, "model");
+		assert!(evaluate(&config, &action).is_err());
+		// Dropping the cached blocking client here used to panic inside Tokio.
+		drop(config);
+	}
+
+	#[tokio::test(flavor = "current_thread")]
+	async fn remote_identity_unavailable_denies_without_panicking_on_async_worker() {
+		let config: SecurityConfig = serde_json::from_value(serde_json::json!({
+			"mode": "enforce",
+			"remoteAgentIdentity": {
+				"endpoint": "https://127.0.0.1:1/v1/identities/check",
+				"required": true,
+				"timeoutMillis": 100
+			}
+		}))
+		.expect("remote Agent Directory configuration should deserialize");
+		let action = model_invoke_for_identity(
+			"request",
+			GatewayIdentity {
+				user_id: Some("alice".into()),
+				agent_id: Some("agent".into()),
+				tenant_id: Some("tenant".into()),
+				client_id: Some("agent-client".into()),
+				..Default::default()
+			},
+			"model",
+		);
+		assert!(evaluate(&config, &action).is_err());
+		drop(config);
+	}
+
+	#[test]
+	fn composition_rejects_broker_without_a_trusted_approval_source() {
+		let config: SecurityConfig = serde_json::from_value(serde_json::json!({
+			"mode": "enforce",
+			"requiredToolApprovals": [{"toolName": "records.delete"}],
+			"capabilityBroker": {
+				"issueEndpoint": "https://broker.example.test/v1/capabilities/issue"
+			}
+		}))
+		.expect("composition should deserialize");
+		assert!(
+			config
+				.validate_composition()
+				.unwrap_err()
+				.contains("approval provider")
+		);
+	}
+
+	#[test]
+	fn composition_rejects_remote_pdp_without_dynamic_authorization() {
+		let config: SecurityConfig = serde_json::from_value(serde_json::json!({
+			"remotePdp": {"endpoint": "https://pdp.example.test/v1/decisions"}
+		}))
+		.expect("composition should deserialize");
+		assert_eq!(
+			config.validate_composition().unwrap_err(),
+			"remotePdp requires dynamicAuthorization"
+		);
+	}
 
 	#[test]
 	fn audit_and_shadow_do_not_interrupt_but_enforce_does() {
@@ -384,6 +564,7 @@ mod tests {
 			capability_broker: None,
 			agent_identity: None,
 			remote_agent_identity: None,
+			data_egress: None,
 			pipeline: SecurityPipelineConfig {
 				required_identity: Some(RequiredIdentity::user_agent_tenant()),
 				policies: vec![Policy {
@@ -448,6 +629,7 @@ mod tests {
 				}],
 			}),
 			remote_agent_identity: None,
+			data_egress: None,
 			pipeline: SecurityPipelineConfig {
 				policies: vec![Policy {
 					id: "allow-support-agent".into(),
@@ -506,6 +688,7 @@ mod tests {
 			capability_broker: None,
 			agent_identity: None,
 			remote_agent_identity: None,
+			data_egress: None,
 			pipeline: SecurityPipelineConfig {
 				policies: vec![
 					Policy {
@@ -613,6 +796,7 @@ mod tests {
 					capability_broker: None,
 					agent_identity: None,
 					remote_agent_identity: None,
+					data_egress: None,
 					pipeline: pipeline.clone(),
 				},
 				&tool,
@@ -629,6 +813,7 @@ mod tests {
 					capability_broker: None,
 					agent_identity: None,
 					remote_agent_identity: None,
+					data_egress: None,
 					pipeline,
 				},
 				&tool,
@@ -647,6 +832,7 @@ mod tests {
 			capability_broker: None,
 			agent_identity: None,
 			remote_agent_identity: None,
+			data_egress: None,
 			pipeline: SecurityPipelineConfig {
 				policies: vec![Policy {
 					id: "allow-support-agent".into(),
@@ -731,6 +917,7 @@ mod tests {
 				capability_broker: None,
 				agent_identity: None,
 				remote_agent_identity: None,
+				data_egress: None,
 				pipeline: SecurityPipelineConfig::default(),
 			},
 			&action,
@@ -758,6 +945,7 @@ mod tests {
 				capability_broker: None,
 				agent_identity: None,
 				remote_agent_identity: None,
+				data_egress: None,
 				pipeline: SecurityPipelineConfig::default(),
 			},
 			&action,
@@ -785,6 +973,7 @@ mod tests {
 				capability_broker: None,
 				agent_identity: None,
 				remote_agent_identity: None,
+				data_egress: None,
 				pipeline: SecurityPipelineConfig::default(),
 			},
 			&action,
@@ -813,6 +1002,7 @@ mod tests {
 				capability_broker: None,
 				agent_identity: None,
 				remote_agent_identity: Some(remote_agent_identity),
+				data_egress: None,
 				pipeline: SecurityPipelineConfig::default(),
 			},
 			&action,

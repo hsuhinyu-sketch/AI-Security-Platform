@@ -1,19 +1,19 @@
 use std::fmt::Debug;
 use std::net::SocketAddr;
 use std::pin::Pin;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::task::{Context, Poll};
 use std::time::Instant;
 
-use platform_core::drain::{DrainTrigger, DrainWatcher};
-use platform_core::strng::Strng;
-use platform_core::{drain, metrics, strng};
 use axum::body::to_bytes;
 use bytes::Bytes;
 use http::{HeaderMap, HeaderName, HeaderValue, Method, Uri};
 use hyper_util::client::legacy::Client;
 use hyper_util::rt::{TokioExecutor, TokioIo, TokioTimer};
 use itertools::Itertools;
+use platform_core::drain::{DrainTrigger, DrainWatcher};
+use platform_core::strng::Strng;
+use platform_core::{drain, metrics, strng};
 use prometheus_client::registry::Registry;
 use rustls_pki_types::ServerName;
 use serde::{Deserialize, Serialize};
@@ -44,6 +44,37 @@ use crate::types::loadbalancer::EndpointSet;
 use crate::types::local;
 use crate::types::local::LocalNamedAIProvider;
 use crate::{ProxyInputs, client, mcp};
+
+/// Shared test certificate replaces the TLS files removed during the workspace migration.
+pub struct GatewayTestTls {
+	pub server_cert_pem: Vec<u8>,
+	pub server_key_pem: Vec<u8>,
+	pub root_cert_pem: Vec<u8>,
+}
+
+pub fn gateway_test_tls() -> &'static GatewayTestTls {
+	static CERTS: OnceLock<GatewayTestTls> = OnceLock::new();
+	CERTS.get_or_init(|| {
+		let ca_key = rcgen::KeyPair::generate().expect("generate test CA key");
+		let mut ca_params = rcgen::CertificateParams::default();
+		ca_params.is_ca = rcgen::IsCa::Ca(rcgen::BasicConstraints::Unconstrained);
+		let ca_cert = ca_params
+			.self_signed(&ca_key)
+			.expect("generate test CA certificate");
+		let server_key = rcgen::KeyPair::generate().expect("generate test server key");
+		let server_params =
+			rcgen::CertificateParams::new(vec!["*.example.com".to_owned()]).expect("test server subject");
+		let issuer = rcgen::Issuer::from_params(&ca_params, &ca_key);
+		let server_cert = server_params
+			.signed_by(&server_key, &issuer)
+			.expect("sign test server certificate");
+		GatewayTestTls {
+			server_cert_pem: server_cert.pem().into_bytes(),
+			server_key_pem: server_key.serialize_pem().into_bytes(),
+			root_cert_pem: ca_cert.pem().into_bytes(),
+		}
+	})
+}
 
 pub async fn send_request(
 	io: Client<MemoryConnector, Body>,
@@ -1000,7 +1031,7 @@ impl TestBind {
 		let tls: BackendTLS = crate::http::backendtls::ResolvedBackendTLS {
 			cert: None,
 			key: None,
-			root: Some(include_bytes!("../../../../examples/tls/certs/ca-cert.pem").to_vec()),
+			root: Some(gateway_test_tls().root_cert_pem.clone()),
 			hostname: sni.map(|s| s.to_string()),
 			insecure: false,
 			insecure_host: true,

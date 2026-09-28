@@ -6,22 +6,22 @@
 
 use std::sync::Arc;
 
-use platform_core::drain;
-use security_audit::AuditSink;
 use axum::{
 	extract::{Request, State},
 	http::{StatusCode, header},
 	middleware::{self, Next},
 	response::{IntoResponse, Response},
 };
-use security_pipeline::{GatewayIdentity, SecurityPipeline};
-use security_types::{DecisionEffect, SecurityEvent};
+use platform_core::drain;
+use security_audit::AuditSink;
 use security_integration_runtime::SecurityConfigAuthorizer;
+use security_pipeline::{GatewayIdentity, SecurityPipeline};
 use security_rag::{
 	ContextAuditEvent, ContextAuditOutcome, ContextAuditSink, ContextGuard, IngestionAuditEvent,
 	IngestionAuditOutcome, IngestionAuditSink, RetrievalAuditEvent, RetrievalAuditOutcome,
 	RetrievalAuditSink, SecureIngestor, SecureRetriever,
 };
+use security_types::{DecisionEffect, SecurityEvent};
 use serde_json::json;
 use tracing::{info, warn};
 
@@ -72,6 +72,13 @@ impl IngestionAuditSink for TracingIngestionAudit {
 				("sourceHash".into(), json!(event.source_hash)),
 				("contentBytes".into(), json!(event.content_bytes)),
 				("labels".into(), json!(event.labels)),
+				("classification".into(), json!(event.classification)),
+				("sourceOrigin".into(), json!(event.source_origin)),
+				("reason".into(), json!(event.reason)),
+				(
+					"classificationSource".into(),
+					json!(event.classification_source),
+				),
 				(
 					"findingRuleIds".into(),
 					json!(
@@ -117,6 +124,7 @@ impl RetrievalAuditSink for TracingRetrievalAudit {
 			std::collections::BTreeMap::from([
 				("queryHash".into(), json!(event.query_hash)),
 				("acceptedChunkIds".into(), json!(event.accepted_chunk_ids)),
+				("classification".into(), json!(event.classification)),
 				(
 					"rejectedChunks".into(),
 					json!(
@@ -166,6 +174,7 @@ impl ContextAuditSink for TracingContextAudit {
 			std::collections::BTreeMap::from([
 				("queryHash".into(), json!(event.query_hash)),
 				("acceptedChunkIds".into(), json!(event.accepted_chunk_ids)),
+				("classification".into(), json!(event.classification)),
 				("removedChunkIds".into(), json!(event.removed_chunk_ids)),
 				("redactedChunkIds".into(), json!(event.redacted_chunk_ids)),
 				(
@@ -223,6 +232,11 @@ pub(crate) async fn start_configured_gateways(
 				.build_qdrant_backend(reqwest::Client::new())
 				.map_err(|error| anyhow::anyhow!("RAG backend for '{}': {error}", system.name))?,
 		);
+		let trusted_sources = system
+			.gateway
+			.build_trusted_sources()
+			.map_err(|error| anyhow::anyhow!("RAG trusted sources for '{}': {error}", system.name))?
+			.map(Arc::new);
 		let security = Arc::new(system.security);
 		let ingestor = SecureIngestor::new(
 			backend.clone(),
@@ -249,8 +263,8 @@ pub(crate) async fn start_configured_gateways(
 		let service: Arc<dyn gateway_rag::RagHttpService> = Arc::new(
 			gateway_rag::RagGatewayAdapter::new(ingestor, retriever, context_guard, TracingContextAudit),
 		);
-		let router =
-			gateway_rag::router(service).layer(middleware::from_fn_with_state(jwt, verify_rag_jwt));
+		let router = gateway_rag::router_with_sources(service, trusted_sources)
+			.layer(middleware::from_fn_with_state(jwt, verify_rag_jwt));
 		let system_name = system.name;
 		let task_system_name = system_name.clone();
 		let drain = drain.clone();

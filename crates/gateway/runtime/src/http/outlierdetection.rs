@@ -1,8 +1,8 @@
 use std::str::FromStr;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use platform_core::durfmt;
 use http::{HeaderMap, HeaderName, StatusCode, header};
+use platform_core::durfmt;
 
 use crate::http::x_headers;
 

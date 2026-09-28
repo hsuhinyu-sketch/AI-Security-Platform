@@ -7,10 +7,10 @@ use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
 use std::{fmt, io, str};
 
-use platform_core::prelude::*;
 use control::caclient::CaClient;
 use hickory_resolver::config::{LookupIpStrategy, ResolverConfig, ResolverOpts};
 use indexmap::IndexMap;
+use platform_core::prelude::*;
 #[cfg(feature = "schema")]
 pub use schemars::JsonSchema;
 use serde::de::Visitor;
@@ -23,9 +23,9 @@ use crate::types::discovery::Identity;
 pub mod a2a;
 pub mod agentcore;
 pub mod app;
-pub mod capabilities;
 #[cfg(feature = "providers-aws")]
 pub mod aws;
+pub mod capabilities;
 pub mod cel;
 pub mod circuit;
 pub mod client;
@@ -39,11 +39,11 @@ pub mod management;
 pub mod mcp;
 pub mod parse;
 pub mod proxy;
-pub mod resource_manager;
 pub(crate) mod rag;
-pub(crate) mod security_events;
+pub mod resource_manager;
 pub mod runtime;
 pub(crate) mod security;
+pub(crate) mod security_events;
 pub mod serdes;
 pub mod state_manager;
 pub mod store;

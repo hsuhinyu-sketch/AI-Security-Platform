@@ -8,10 +8,10 @@ use std::sync::atomic::{AtomicBool, AtomicU16, Ordering};
 use std::task::{Context, Poll};
 use std::time::Duration;
 
-use platform_core::copy;
-use platform_core::prelude::*;
 use bytes::{BufMut, Bytes};
 use h2::Reason;
+use platform_core::copy;
+use platform_core::prelude::*;
 use tokio::sync::oneshot;
 use tracing::trace;
 

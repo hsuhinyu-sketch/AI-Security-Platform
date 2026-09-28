@@ -1,6 +1,17 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
+/// Ordered sensitivity used by data-flow controls. Legacy/missing metadata defaults to the
+/// most restrictive class, so an old or incomplete index entry cannot silently downgrade data.
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+#[serde(rename_all = "camelCase")]
+pub enum DataClassification {
+	Public,
+	Internal,
+	#[default]
+	Restricted,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct Subject {

@@ -1,6 +1,7 @@
 use std::path::PathBuf;
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
 
+use crate::blocking_client_cache::BlockingClientCache;
 use security_pipeline::{DelegationRevocationError, DelegationRevocationProvider};
 
 use crate::trusted_https;
@@ -19,15 +20,15 @@ pub struct RemoteDelegationRevocationConfig {
 	#[serde(default, skip_serializing_if = "Option::is_none")]
 	pub root_ca_pem_file: Option<PathBuf>,
 	#[serde(skip, default = "default_provider_slot")]
-	provider: Arc<OnceLock<Result<HttpDelegationRevocationProvider, String>>>,
+	provider: Arc<BlockingClientCache<HttpDelegationRevocationProvider>>,
 }
 
 const fn default_timeout_millis() -> u64 {
 	100
 }
 
-fn default_provider_slot() -> Arc<OnceLock<Result<HttpDelegationRevocationProvider, String>>> {
-	Arc::new(OnceLock::new())
+fn default_provider_slot() -> Arc<BlockingClientCache<HttpDelegationRevocationProvider>> {
+	Arc::new(BlockingClientCache::default())
 }
 
 impl RemoteDelegationRevocationConfig {

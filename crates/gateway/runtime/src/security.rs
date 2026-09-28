@@ -1,6 +1,6 @@
+use security_integration_runtime::SecurityConfig;
 use security_pipeline::{GatewayError, GatewayIdentity};
 use security_types::ActionRequest;
-use security_integration_runtime::SecurityConfig;
 
 pub(crate) fn identity_from_extensions(extensions: &::http::Extensions) -> GatewayIdentity {
 	let Some(claims) = extensions.get::<crate::http::jwt::Claims>() else {

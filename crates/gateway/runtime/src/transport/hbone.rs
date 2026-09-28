@@ -3,8 +3,8 @@ use std::fmt::{Display, Formatter};
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-use platform_hbone::Key;
 use async_trait::async_trait;
+use platform_hbone::Key;
 
 use crate::control::caclient::CaClient;
 use crate::types::discovery::Identity;

@@ -6,9 +6,9 @@ mod streamablehttp;
 
 use std::io;
 
-use platform_core::prelude::AssertSize;
 pub(crate) use client::McpHttpClient;
 pub use openapi::ParseError as OpenAPIParseError;
+use platform_core::prelude::AssertSize;
 use rmcp::model::{ClientNotification, ClientRequest, JsonRpcRequest};
 use rmcp::transport::TokioChildProcess;
 use rmcp::transport::common::http_header::HEADER_SESSION_ID;

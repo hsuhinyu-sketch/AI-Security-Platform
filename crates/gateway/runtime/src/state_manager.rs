@@ -1,6 +1,6 @@
-use std::path::Path;
 use platform_core::prelude::*;
 use platform_core::readiness;
+use std::path::Path;
 
 use crate::client::Client;
 use crate::store::Stores;
@@ -18,10 +18,7 @@ pub struct StateManager {
 }
 
 impl StateManager {
-	pub async fn new(
-		config: Arc<crate::Config>,
-		client: client::Client,
-	) -> anyhow::Result<Self> {
+	pub async fn new(config: Arc<crate::Config>, client: client::Client) -> anyhow::Result<Self> {
 		let stores = Stores::new_with_dynamic_ca_cert_cache(
 			config.ipv6_enabled,
 			config.threading_mode,
@@ -52,7 +49,6 @@ impl StateManager {
 	pub fn resource_manager(&self) -> crate::resource_manager::ResourceManager {
 		self.resource_manager.clone()
 	}
-
 }
 
 /// LocalClient loads and watches the standalone configuration file.

@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 use security_rag::{ContextGuardConfig, IngestionGuardConfig, RagSecurityConfig};
 
 use crate::{EmbeddingProvider, FixedWindowChunker, QdrantBackend, QdrantBackendConfig};
+use security_rag::{TrustedHttpsSourceConfig, TrustedHttpsSourceRegistry};
 
 fn default_bind_address() -> String {
 	"127.0.0.1".into()
@@ -47,6 +48,8 @@ pub struct RagGatewayConfig {
 	pub retrieval: RagSecurityConfig,
 	#[serde(default)]
 	pub context_guard: ContextGuardConfig,
+	#[serde(default, skip_serializing_if = "Vec::is_empty")]
+	pub trusted_sources: Vec<TrustedHttpsSourceConfig>,
 }
 
 impl RagGatewayConfig {
@@ -77,7 +80,32 @@ impl RagGatewayConfig {
 		{
 			return Err("RAG security budgets must be greater than zero".into());
 		}
+		let mut classification_ids = std::collections::HashSet::new();
+		if self.ingestion.classification_rules.iter().any(|rule| {
+			rule.id.trim().is_empty()
+				|| rule.pattern.trim().is_empty()
+				|| !classification_ids.insert(rule.id.as_str())
+		}) {
+			return Err(
+				"RAG classification rules require unique non-empty ids and non-empty patterns".into(),
+			);
+		}
+		TrustedHttpsSourceRegistry::validate_config(&self.trusted_sources)?;
+		if !self.trusted_sources.is_empty() && self.qdrant.integrity.is_none() {
+			return Err("trustedSources requires qdrant.integrity so source evidence cannot be modified in the index".into());
+		}
 		Ok(())
+	}
+
+	pub fn build_trusted_sources(&self) -> Result<Option<TrustedHttpsSourceRegistry>, String> {
+		if self.trusted_sources.is_empty() {
+			return Ok(None);
+		}
+		TrustedHttpsSourceRegistry::new(
+			self.trusted_sources.clone(),
+			self.ingestion.max_document_bytes,
+		)
+		.map(Some)
 	}
 
 	/// Builds the Qdrant adapter using a caller-provided client. The caller owns mTLS, proxy,
@@ -193,5 +221,55 @@ mod tests {
 		assert_eq!(config.bind_address, "127.0.0.1");
 		assert_eq!(config.chunk_max_chars, 2_000);
 		config.validate().unwrap();
+	}
+
+	#[test]
+	fn trusted_sources_require_qdrant_integrity_and_accept_configured_integrity() {
+		let mut value = serde_json::json!({
+			"port": 8181,
+			"qdrant": {
+				"endpoint": "https://qdrant.example.test",
+				"collection": "knowledge",
+				"quarantineCollection": "knowledge-quarantine"
+			},
+			"embedding": {
+				"endpoint": "https://embeddings.example.test/v1/embeddings",
+				"model": "embedding-model"
+			},
+			"trustedSources": [{"id":"internal-kb", "baseUrl":"https://kb.example.test/docs/"}]
+		});
+		let config: RagGatewayConfig = serde_json::from_value(value.clone()).unwrap();
+		assert!(config.validate().unwrap_err().contains("qdrant.integrity"));
+
+		value["qdrant"]["integrity"] = serde_json::json!({
+			"keyId":"rag-index-v1", "keyEnvVar":"RAG_INDEX_HMAC_KEY"
+		});
+		let config: RagGatewayConfig = serde_json::from_value(value).unwrap();
+		config.validate().unwrap();
+	}
+
+	#[test]
+	fn rejects_duplicate_classification_rule_ids_at_config_load() {
+		let config: RagGatewayConfig = serde_json::from_value(serde_json::json!({
+			"port": 8181,
+			"qdrant": {
+				"endpoint": "https://qdrant.example.test",
+				"collection": "knowledge",
+				"quarantineCollection": "knowledge-quarantine"
+			},
+			"embedding": {
+				"endpoint": "https://embeddings.example.test/v1/embeddings",
+				"model": "embedding-model"
+			},
+			"ingestion": {
+				"maxDocumentBytes": 1048576,
+				"classificationRules": [
+					{"id":"customer-data","classification":"restricted","pattern":"customer email"},
+					{"id":"customer-data","classification":"internal","pattern":"address"}
+				]
+			}
+		}))
+		.unwrap();
+		assert!(config.validate().is_err());
 	}
 }

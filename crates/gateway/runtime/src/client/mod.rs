@@ -485,7 +485,8 @@ impl Client {
 		metrics: Option<Arc<crate::metrics::Metrics>>,
 	) -> Client {
 		let resolver = dns::CachedResolver::new(cfg.resolver_cfg.clone(), cfg.resolver_opts.clone());
-		let mut b = platform_pool::Client::<_, PoolKey>::builder(::hyper_util::rt::TokioExecutor::new());
+		let mut b =
+			platform_pool::Client::<_, PoolKey>::builder(::hyper_util::rt::TokioExecutor::new());
 		b.pool_timer(hyper_util::rt::tokio::TokioTimer::new());
 		b.pool_idle_timeout(backend_config.pool_idle_timeout);
 		b.timer(hyper_util::rt::tokio::TokioTimer::new());
@@ -567,9 +568,13 @@ impl Client {
 			.await
 			.map_err(ProxyError::UpstreamTCPCallFailed)?;
 
-		platform_core::copy::copy_bidirectional(source, upstream, &platform_core::copy::ConnectionResult {})
-			.await
-			.map_err(ProxyError::UpstreamTCPProxy)?;
+		platform_core::copy::copy_bidirectional(
+			source,
+			upstream,
+			&platform_core::copy::ConnectionResult {},
+		)
+		.await
+		.map_err(ProxyError::UpstreamTCPProxy)?;
 
 		let dur = format!("{}ms", start.elapsed().as_millis());
 		event!(

@@ -6,15 +6,15 @@
 
 use std::sync::{Arc, Mutex};
 
-use security_audit::AuditSink;
 use chrono::{DateTime, Utc};
+use security_audit::AuditSink;
 use security_pipeline::{
 	Authorizer, GatewayError, GatewayIdentity, SecurityPipeline, knowledge_ingest_for_identity,
 };
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-use crate::KnowledgeChunk;
+use crate::{DataClassification, KnowledgeChunk};
 
 fn default_allowed_source_schemes() -> Vec<String> {
 	vec!["https".into(), "s3".into()]
@@ -22,6 +22,10 @@ fn default_allowed_source_schemes() -> Vec<String> {
 
 fn default_quarantine_patterns() -> Vec<String> {
 	vec!["begin private key".into(), "aws_secret_access_key".into()]
+}
+
+fn default_max_document_bytes() -> usize {
+	10 * 1024 * 1024
 }
 
 /// A deterministic content classifier rule. Matching labels are copied to every Chunk created
@@ -33,38 +37,74 @@ pub struct ContentLabelRule {
 	pub pattern: String,
 }
 
+/// Administrator-owned deterministic escalation rule; client JSON cannot supply this value.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ContentClassificationRule {
+	pub id: String,
+	pub classification: DataClassification,
+	pub pattern: String,
+}
+
 /// Source, size, quarantine, and label controls for one document ingestion path.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct IngestionGuardConfig {
 	#[serde(default = "default_allowed_source_schemes")]
 	pub allowed_source_schemes: Vec<String>,
+	#[serde(default = "default_max_document_bytes")]
 	pub max_document_bytes: usize,
 	/// Case-insensitive signals that send a document to quarantine instead of the index.
 	#[serde(default = "default_quarantine_patterns")]
 	pub quarantine_patterns: Vec<String>,
 	#[serde(default, skip_serializing_if = "Vec::is_empty")]
 	pub label_rules: Vec<ContentLabelRule>,
+	/// Baseline class of documents entering this RAG deployment. Defaults to restricted.
+	#[serde(default)]
+	pub default_classification: DataClassification,
+	#[serde(default, skip_serializing_if = "Vec::is_empty")]
+	pub classification_rules: Vec<ContentClassificationRule>,
 }
 
 impl Default for IngestionGuardConfig {
 	fn default() -> Self {
 		Self {
 			allowed_source_schemes: default_allowed_source_schemes(),
-			max_document_bytes: 10 * 1024 * 1024,
+			max_document_bytes: default_max_document_bytes(),
 			quarantine_patterns: default_quarantine_patterns(),
 			label_rules: Vec::new(),
+			default_classification: DataClassification::Restricted,
+			classification_rules: Vec::new(),
 		}
 	}
 }
 
 /// Raw document presented to the ingestion boundary. It is never written to an audit event.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(
+	tag = "kind",
+	rename_all = "camelCase",
+	rename_all_fields = "camelCase"
+)]
+pub enum SourceOrigin {
+	#[default]
+	Submitted,
+	TrustedHttps {
+		#[serde(alias = "source_id")]
+		source_id: String,
+		version: String,
+	},
+	/// Audit-only marker for a configured source fetch that failed before content was available.
+	TrustedHttpsFetchAttempt { source_id: String },
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DocumentIngestRequest {
-	pub corpus_id: String,
-	pub document_id: String,
-	pub source_uri: String,
-	pub content: String,
+	corpus_id: String,
+	document_id: String,
+	source_uri: String,
+	content: String,
+	origin: SourceOrigin,
 }
 
 impl DocumentIngestRequest {
@@ -79,6 +119,48 @@ impl DocumentIngestRequest {
 			document_id: document_id.into(),
 			source_uri: source_uri.into(),
 			content: content.into(),
+			origin: SourceOrigin::Submitted,
+		}
+	}
+
+	pub fn corpus_id(&self) -> &str {
+		&self.corpus_id
+	}
+
+	pub fn document_id(&self) -> &str {
+		&self.document_id
+	}
+
+	pub fn source_uri(&self) -> &str {
+		&self.source_uri
+	}
+
+	pub fn content(&self) -> &str {
+		&self.content
+	}
+
+	pub fn source_origin(&self) -> &SourceOrigin {
+		&self.origin
+	}
+
+	/// Available only to this crate's configured HTTPS source connector.
+	pub(crate) fn from_trusted_https(
+		corpus_id: impl Into<String>,
+		document_id: impl Into<String>,
+		source_uri: impl Into<String>,
+		content: impl Into<String>,
+		source_id: impl Into<String>,
+		version: impl Into<String>,
+	) -> Self {
+		Self {
+			corpus_id: corpus_id.into(),
+			document_id: document_id.into(),
+			source_uri: source_uri.into(),
+			content: content.into(),
+			origin: SourceOrigin::TrustedHttps {
+				source_id: source_id.into(),
+				version: version.into(),
+			},
 		}
 	}
 }
@@ -92,8 +174,12 @@ pub struct IndexedDocument {
 	pub tenant_id: String,
 	pub source_uri: String,
 	pub source_hash: String,
+	pub source_origin: SourceOrigin,
 	pub content: String,
 	pub labels: Vec<String>,
+	pub classification: DataClassification,
+	/// Stable administrator rule identifier; never supplied by the ingest request.
+	pub classification_source: String,
 }
 
 /// ACL and lifetime facts supplied by a trusted ingestion controller when it chunks an indexed
@@ -123,11 +209,14 @@ impl IndexedDocument {
 			tenant_id: self.tenant_id.clone(),
 			content: content.into(),
 			labels: self.labels.clone(),
+			classification: self.classification,
+			classification_source: self.classification_source.clone(),
 			allowed_users: access.allowed_users,
 			allowed_agents: access.allowed_agents,
 			allow_tenant_authenticated: access.allow_tenant_authenticated,
 			expires_at: access.expires_at,
 			source_hash: self.source_hash.clone(),
+			source_origin: self.source_origin.clone(),
 			token_count,
 		}
 	}
@@ -195,8 +284,11 @@ pub struct IngestionAuditEvent {
 	pub tenant_id: Option<String>,
 	pub source_scheme: Option<String>,
 	pub source_hash: Option<String>,
+	pub source_origin: SourceOrigin,
 	pub content_bytes: usize,
 	pub labels: Vec<String>,
+	pub classification: DataClassification,
+	pub classification_source: String,
 	pub findings: Vec<IngestionFinding>,
 	pub outcome: IngestionAuditOutcome,
 	pub reason: Option<String>,
@@ -263,6 +355,62 @@ where
 	S: AuditSink,
 	IS: IngestionAuditSink,
 {
+	/// Preflight authorization prevents an unauthorised caller from triggering an outbound source
+	/// fetch. The full content-bound authorization still runs after the trusted fetch.
+	pub fn authorize_import(
+		&self,
+		request_id: impl Into<String>,
+		identity: GatewayIdentity,
+		corpus_id: &str,
+		document_id: &str,
+		source_id: &str,
+	) -> Result<(), IngestionError> {
+		let action = knowledge_ingest_for_identity(request_id, identity, document_id);
+		if action.subject.tenant_id.is_none() {
+			return Err(IngestionError::MissingTenant);
+		}
+		self
+			.pipeline
+			.authorize(
+				&action,
+				Some(&serde_json::json!({
+					"corpusId": corpus_id, "sourceId": source_id, "phase": "source-fetch"
+				})),
+			)
+			.map(|_| ())
+			.map_err(IngestionError::GatewayDenied)
+	}
+
+	/// Records an authorized source fetch that failed before an ingest request could be created.
+	/// The failure reason is intentionally fixed so URLs, credentials, and response bodies do not
+	/// enter the ingestion audit stream.
+	pub fn record_source_fetch_failure(
+		&self,
+		request_id: impl Into<String>,
+		identity: GatewayIdentity,
+		corpus_id: &str,
+		document_id: &str,
+		source_id: &str,
+	) {
+		let action = knowledge_ingest_for_identity(request_id, identity, document_id);
+		self.record(
+			&action,
+			corpus_id,
+			Some("https".into()),
+			None,
+			0,
+			Vec::new(),
+			self.config.default_classification,
+			"default-classification".into(),
+			SourceOrigin::TrustedHttpsFetchAttempt {
+				source_id: source_id.into(),
+			},
+			Vec::new(),
+			IngestionAuditOutcome::Denied,
+			Some("trusted_source_fetch_failed".into()),
+		);
+	}
+
 	pub fn new(
 		backend: B,
 		pipeline: SecurityPipeline<A, S>,
@@ -299,6 +447,25 @@ where
 		{
 			return Err(IngestionError::InvalidConfig(
 				"labelRules must have non-empty label and pattern values".into(),
+			));
+		}
+		if config
+			.classification_rules
+			.iter()
+			.any(|rule| rule.id.trim().is_empty() || rule.pattern.trim().is_empty())
+		{
+			return Err(IngestionError::InvalidConfig(
+				"classificationRules must have non-empty id and pattern values".into(),
+			));
+		}
+		let mut rule_ids = std::collections::HashSet::new();
+		if config
+			.classification_rules
+			.iter()
+			.any(|rule| !rule_ids.insert(rule.id.as_str()))
+		{
+			return Err(IngestionError::InvalidConfig(
+				"classificationRules ids must be unique".into(),
 			));
 		}
 		Ok(Self {
@@ -360,6 +527,22 @@ where
 				IngestionError::InvalidSource("source URI scheme is not allowed".into()),
 			);
 		}
+		if let SourceOrigin::TrustedHttps { version, .. } = &request.origin {
+			if source_scheme != "https" || version != &source_hash {
+				return self.deny(
+					&action,
+					&request,
+					Some(source_scheme),
+					Some(source_hash),
+					content_bytes,
+					Vec::new(),
+					Vec::new(),
+					IngestionError::InvalidSource(
+						"trusted source version must equal the SHA-256 hash of fetched content".into(),
+					),
+				);
+			}
+		}
 		if content_bytes > self.config.max_document_bytes {
 			return self.deny(
 				&action,
@@ -395,6 +578,7 @@ where
 		}
 
 		let labels = self.classify_labels(&request.content);
+		let (classification, classification_source) = self.classify(&request.content);
 		let findings = self.quarantine_findings(&request.content);
 		let document = IndexedDocument {
 			corpus_id: request.corpus_id.clone(),
@@ -402,8 +586,11 @@ where
 			tenant_id,
 			source_uri: request.source_uri.clone(),
 			source_hash: source_hash.clone(),
+			source_origin: request.origin.clone(),
 			content: request.content.clone(),
 			labels: labels.clone(),
+			classification,
+			classification_source: classification_source.clone(),
 		};
 		if findings.is_empty() {
 			self
@@ -418,6 +605,9 @@ where
 				Some(source_hash),
 				content_bytes,
 				labels,
+				classification,
+				classification_source.clone(),
+				request.origin.clone(),
 				Vec::new(),
 				IngestionAuditOutcome::Indexed,
 				None,
@@ -437,6 +627,9 @@ where
 				Some(source_hash),
 				content_bytes,
 				labels,
+				classification,
+				classification_source,
+				request.origin.clone(),
 				quarantined.findings.clone(),
 				IngestionAuditOutcome::Quarantined,
 				None,
@@ -454,6 +647,19 @@ where
 			.filter(|rule| normalized.contains(&rule.pattern.to_lowercase()))
 			.map(|rule| rule.label.clone())
 			.collect()
+	}
+
+	fn classify(&self, content: &str) -> (DataClassification, String) {
+		let normalized = content.to_lowercase();
+		let mut classification = self.config.default_classification;
+		let mut source = "default-classification".to_string();
+		for rule in &self.config.classification_rules {
+			if rule.classification > classification && normalized.contains(&rule.pattern.to_lowercase()) {
+				classification = rule.classification;
+				source = format!("rule:{}", rule.id);
+			}
+		}
+		(classification, source)
 	}
 
 	fn quarantine_findings(&self, content: &str) -> Vec<IngestionFinding> {
@@ -490,6 +696,9 @@ where
 			source_hash,
 			content_bytes,
 			labels,
+			self.config.default_classification,
+			"default-classification".into(),
+			request.origin.clone(),
 			findings,
 			IngestionAuditOutcome::Denied,
 			Some(format!("{error:?}")),
@@ -507,6 +716,9 @@ where
 		source_hash: Option<String>,
 		content_bytes: usize,
 		labels: Vec<String>,
+		classification: DataClassification,
+		classification_source: String,
+		source_origin: SourceOrigin,
 		findings: Vec<IngestionFinding>,
 		outcome: IngestionAuditOutcome,
 		reason: Option<String>,
@@ -520,6 +732,9 @@ where
 			source_hash,
 			content_bytes,
 			labels,
+			classification,
+			classification_source,
+			source_origin,
 			findings,
 			outcome,
 			reason,
@@ -542,8 +757,8 @@ fn source_scheme(source_uri: &str) -> Option<String> {
 mod tests {
 	use security_audit::InMemoryAuditSink;
 	use security_pipeline::PolicyAuthorizer;
-	use security_types::{ActionType, DecisionEffect, ResourceType};
 	use security_policy::Policy;
+	use security_types::{ActionType, DecisionEffect, ResourceType};
 
 	use super::*;
 
@@ -647,6 +862,108 @@ mod tests {
 	}
 
 	#[tokio::test]
+	async fn trusted_source_version_must_match_fetched_content_hash() {
+		let backend = RecordingBackend::default();
+		let gateway_audit = InMemoryAuditSink::default();
+		let ingestion_audit = InMemoryIngestionAuditSink::default();
+		let pipeline = SecurityPipeline::new(
+			PolicyAuthorizer::new(vec![allow_ingestion_policy()]),
+			&gateway_audit,
+		);
+		let ingestor = SecureIngestor::new(
+			backend,
+			pipeline,
+			IngestionGuardConfig::default(),
+			&ingestion_audit,
+		)
+		.unwrap();
+		let request = DocumentIngestRequest::from_trusted_https(
+			"support-corpus",
+			"password-guide",
+			"https://kb.example.com/password-guide",
+			"fetched bytes",
+			"support-kb",
+			"00".repeat(32),
+		);
+		let result = ingestor
+			.ingest("ingest-request-trusted-mismatch", identity(), request)
+			.await;
+		assert!(matches!(result, Err(IngestionError::InvalidSource(_))));
+		assert!(ingestor.backend.indexed.lock().unwrap().is_empty());
+		assert_eq!(
+			ingestion_audit.events()[0].outcome,
+			IngestionAuditOutcome::Denied
+		);
+
+		let version = hex::encode(Sha256::digest(b"fetched bytes"));
+		let valid = DocumentIngestRequest::from_trusted_https(
+			"support-corpus",
+			"password-guide",
+			"https://kb.example.com/password-guide",
+			"fetched bytes",
+			"support-kb",
+			version.clone(),
+		);
+		let result = ingestor
+			.ingest("ingest-request-trusted-valid", identity(), valid)
+			.await
+			.unwrap();
+		let IngestionResult::Indexed(document) = result else {
+			panic!("expected trusted source to be indexed");
+		};
+		assert_eq!(document.source_hash, version);
+		assert_eq!(
+			document.source_origin,
+			SourceOrigin::TrustedHttps {
+				source_id: "support-kb".into(),
+				version,
+			}
+		);
+		assert_eq!(ingestor.backend.indexed.lock().unwrap().len(), 1);
+		assert_eq!(
+			ingestion_audit.events()[1].source_origin,
+			document.source_origin
+		);
+	}
+
+	#[test]
+	fn failed_source_fetch_is_audited_without_content_or_source_url() {
+		let backend = RecordingBackend::default();
+		let gateway_audit = InMemoryAuditSink::default();
+		let ingestion_audit = InMemoryIngestionAuditSink::default();
+		let pipeline = SecurityPipeline::new(
+			PolicyAuthorizer::new(vec![allow_ingestion_policy()]),
+			&gateway_audit,
+		);
+		let ingestor = SecureIngestor::new(
+			backend,
+			pipeline,
+			IngestionGuardConfig::default(),
+			&ingestion_audit,
+		)
+		.unwrap();
+		ingestor.record_source_fetch_failure(
+			"fetch-failed",
+			identity(),
+			"support-corpus",
+			"password-guide",
+			"kb",
+		);
+		let event = ingestion_audit.events().pop().unwrap();
+		assert_eq!(event.outcome, IngestionAuditOutcome::Denied);
+		assert_eq!(event.source_hash, None);
+		assert_eq!(event.content_bytes, 0);
+		assert_eq!(event.reason.as_deref(), Some("trusted_source_fetch_failed"));
+		assert_eq!(
+			event.source_origin,
+			SourceOrigin::TrustedHttpsFetchAttempt {
+				source_id: "kb".into(),
+			}
+		);
+		assert!(ingestor.backend.indexed.lock().unwrap().is_empty());
+	}
+
+	#[tokio::test]
 	async fn risky_document_is_quarantined_not_indexed() {
 		let backend = RecordingBackend::default();
 		let gateway_audit = InMemoryAuditSink::default();
@@ -687,8 +1004,11 @@ mod tests {
 			tenant_id: "tenant-a".into(),
 			source_uri: "https://kb.example.com/password-guide".into(),
 			source_hash: "immutable-source-hash".into(),
+			source_origin: SourceOrigin::Submitted,
 			content: "source content".into(),
 			labels: vec!["pii".into(), "internal".into()],
+			classification: DataClassification::Internal,
+			classification_source: "default-classification".into(),
 		};
 
 		let chunk = document.to_chunk(
@@ -703,6 +1023,8 @@ mod tests {
 		assert_eq!(chunk.corpus_id, "support-corpus");
 		assert_eq!(chunk.tenant_id, "tenant-a");
 		assert_eq!(chunk.labels, ["pii", "internal"]);
+		assert_eq!(chunk.classification, DataClassification::Internal);
+		assert_eq!(chunk.classification_source, "default-classification");
 		assert_eq!(chunk.source_hash, "immutable-source-hash");
 		assert_eq!(chunk.allowed_users, ["alice"]);
 	}

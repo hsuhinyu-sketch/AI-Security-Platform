@@ -227,7 +227,10 @@ fn existing_writable_dir(path: &std::path::Path) -> bool {
 	if !path.is_dir() {
 		return false;
 	}
-	let probe = path.join(format!(".ai-security-platform-write-test-{}", std::process::id()));
+	let probe = path.join(format!(
+		".ai-security-platform-write-test-{}",
+		std::process::id()
+	));
 	match fs_err::OpenOptions::new()
 		.write(true)
 		.create_new(true)

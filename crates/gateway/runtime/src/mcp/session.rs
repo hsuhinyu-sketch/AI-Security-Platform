@@ -6,11 +6,11 @@ use std::time::{Duration, Instant};
 use ::http::StatusCode;
 use ::http::header::CONTENT_TYPE;
 use ::http::request::Parts;
-use platform_core::prelude::AssertSize;
-use platform_core::version::BuildInfo;
 use anyhow::anyhow;
 use futures_util::StreamExt;
 use headers::HeaderMapExt;
+use platform_core::prelude::AssertSize;
+use platform_core::version::BuildInfo;
 use rmcp::model::{
 	ClientInfo, ClientJsonRpcMessage, ClientNotification, ClientRequest, ConstString, GetMeta,
 	Implementation, InitializeRequest, JsonRpcRequest, ProtocolVersion, Reference, RequestId,

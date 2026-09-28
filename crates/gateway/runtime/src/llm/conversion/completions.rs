@@ -1,7 +1,7 @@
 use std::time::Instant;
 
-use platform_core::strng;
 use bytes::Bytes;
+use platform_core::strng;
 use tracing::debug;
 
 use crate::http::Response;
@@ -124,10 +124,10 @@ pub mod from_messages {
 	use std::collections::{HashMap, HashSet};
 	use std::time::Instant;
 
-	use platform_core::strng;
 	use bytes::Bytes;
 	use itertools::Itertools;
 	use messages::{ToolResultContent, ToolResultContentPart};
+	use platform_core::strng;
 	use serde_json::Value;
 	use types::completions::typed as completions;
 	use types::messages::typed as messages;

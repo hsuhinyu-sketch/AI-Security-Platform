@@ -4,9 +4,9 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use ::http::request::Parts;
-use platform_core::drain::DrainWatcher;
 use bytes::Bytes;
 use futures_util::FutureExt;
+use platform_core::drain::DrainWatcher;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::sync::{oneshot, watch};
 use tracing::{Instrument, debug};
