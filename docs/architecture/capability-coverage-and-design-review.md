@@ -165,5 +165,4 @@ LLM Token 限额和请求速率是必要控制，但 Agent 工作流的资源消
 
 - [当前 Workspace 结构](current-structure.md)
 - [产品身份与当前安全能力阶段](product-identity.md)
-- [Workspace 重组和模块边界](workspace-reorganization.md)
 - [Capability Broker 信任边界](capability-broker.md)
