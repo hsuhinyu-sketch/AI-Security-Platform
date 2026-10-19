@@ -213,7 +213,41 @@ pub(crate) async fn start_configured_gateways(
 	let systems = local.into_rag_systems()?;
 	let count = systems.len();
 
-	for system in systems {
+	for mut system in systems {
+		if system.security.required_audit.is_some() && config.security_audit.is_none() {
+			anyhow::bail!("RAG requiredAudit requires config.securityAudit");
+		}
+		use security_integration_runtime::dependency_egress::DependencyKind as D;
+		if let Some(parent) = &config.dependency_egress {
+			system.security.dependency_egress = Some(
+				system
+					.security
+					.dependency_egress
+					.as_ref()
+					.map_or_else(|| parent.clone(), |local| parent.intersect(local)),
+			);
+		}
+		system
+			.security
+			.validate_composition()
+			.map_err(anyhow::Error::msg)?;
+		if let Some(policy) = &system.security.dependency_egress {
+			policy
+				.check_url(D::Qdrant, &system.gateway.qdrant.endpoint)
+				.map_err(anyhow::Error::msg)?;
+			policy
+				.check_url(D::Embedding, &system.gateway.embedding.endpoint)
+				.map_err(anyhow::Error::msg)?;
+			for source in &system.gateway.trusted_sources {
+				policy
+					.check_url(D::TrustedSource, &source.base_url)
+					.map_err(anyhow::Error::msg)?;
+			}
+		}
+		system
+			.security
+			.prepare_runtime_stores()
+			.map_err(anyhow::Error::msg)?;
 		let jwt = Arc::new(
 			system
 				.authentication
@@ -229,9 +263,35 @@ pub(crate) async fn start_configured_gateways(
 		let backend = Arc::new(
 			system
 				.gateway
-				.build_qdrant_backend(reqwest::Client::new())
+				.build_qdrant_backend(
+					reqwest::Client::builder()
+						.redirect(reqwest::redirect::Policy::none())
+						.no_proxy()
+						.timeout(std::time::Duration::from_secs(30))
+						.build()?,
+				)
 				.map_err(|error| anyhow::anyhow!("RAG backend for '{}': {error}", system.name))?,
 		);
+		let lifecycle = system
+			.gateway
+			.lifecycle
+			.clone()
+			.map(security_rag::lifecycle::DocumentLifecycleStore::open)
+			.transpose()
+			.map_err(anyhow::Error::msg)?;
+		if let (Some(store), Some(flow)) = (&lifecycle, &system.security.cross_component) {
+			flow
+				.context_store()
+				.map_err(|_| anyhow::anyhow!("context store unavailable"))?
+				.register_document_validator(&flow.namespace, store.clone())
+				.map_err(|_| anyhow::anyhow!("document validator registration failed"))?;
+		}
+		let purger: Arc<dyn security_rag::lifecycle::DocumentPurger> = backend.clone();
+		let backend = Arc::new(security_rag::lifecycle::LifecycleBackend {
+			backend,
+			store: lifecycle.clone(),
+			default_access: system.gateway.qdrant.default_chunk_access.clone(),
+		});
 		let trusted_sources = system
 			.gateway
 			.build_trusted_sources()
@@ -251,7 +311,7 @@ pub(crate) async fn start_configured_gateways(
 		let retriever = SecureRetriever::new(
 			backend,
 			SecurityPipeline::new(
-				SecurityConfigAuthorizer::with_audit(security, UiSecurityAuditSink),
+				SecurityConfigAuthorizer::with_audit(security.clone(), UiSecurityAuditSink),
 				DiscardAudit,
 			),
 			system.gateway.retrieval.clone(),
@@ -260,11 +320,15 @@ pub(crate) async fn start_configured_gateways(
 		.map_err(|error| anyhow::anyhow!("RAG retrieval guard for '{}': {error:?}", system.name))?;
 		let context_guard = ContextGuard::new(system.gateway.context_guard.clone())
 			.map_err(|error| anyhow::anyhow!("RAG context guard for '{}': {error:?}", system.name))?;
-		let service: Arc<dyn gateway_rag::RagHttpService> = Arc::new(
-			gateway_rag::RagGatewayAdapter::new(ingestor, retriever, context_guard, TracingContextAudit),
+		let mut service =
+			gateway_rag::RagGatewayAdapter::new(ingestor, retriever, context_guard, TracingContextAudit);
+		if let Some(store) = lifecycle {
+			service = service.with_lifecycle(store, purger);
+		}
+		let service: Arc<dyn gateway_rag::RagHttpService> = Arc::new(service);
+		let router = gateway_rag::router_with_sources(service, trusted_sources).layer(
+			middleware::from_fn_with_state(Arc::new(RagAuthState { jwt, security }), verify_rag_jwt),
 		);
-		let router = gateway_rag::router_with_sources(service, trusted_sources)
-			.layer(middleware::from_fn_with_state(jwt, verify_rag_jwt));
 		let system_name = system.name;
 		let task_system_name = system_name.clone();
 		let drain = drain.clone();
@@ -283,18 +347,31 @@ pub(crate) async fn start_configured_gateways(
 	Ok(count)
 }
 
+struct RagAuthState {
+	jwt: Arc<crate::http::jwt::Jwt>,
+	security: Arc<security_integration_runtime::SecurityConfig>,
+}
 async fn verify_rag_jwt(
-	State(jwt): State<Arc<crate::http::jwt::Jwt>>,
+	State(state): State<Arc<RagAuthState>>,
 	mut request: Request,
 	next: Next,
 ) -> Response {
 	let Some(token) = bearer_token(request.headers()) else {
 		return StatusCode::UNAUTHORIZED.into_response();
 	};
-	let claims = match jwt.validate_claims(token) {
+	let claims = match state.jwt.validate_claims(token) {
 		Ok(claims) => claims,
 		Err(_) => return StatusCode::UNAUTHORIZED.into_response(),
 	};
+	if state.security.cross_component.is_some() {
+		let issuer = match crate::security_flow::rag_issuer(state.security.clone(), &claims) {
+			Ok(issuer) => issuer,
+			Err(_) => return StatusCode::FORBIDDEN.into_response(),
+		};
+		request
+			.extensions_mut()
+			.insert(gateway_rag::http::VerifiedContextIssuer(Arc::new(issuer)));
+	}
 	request
 		.extensions_mut()
 		.insert(gateway_rag::VerifiedGatewayIdentity(identity_from_claims(

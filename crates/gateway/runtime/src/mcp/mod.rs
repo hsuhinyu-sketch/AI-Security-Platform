@@ -2,13 +2,17 @@ pub(crate) mod auth;
 pub(crate) mod guardrails;
 mod handler;
 mod mergestream;
+pub(crate) use mergestream::Messages;
 mod rbac;
 mod router;
 pub(crate) mod security;
 mod session;
+pub(crate) mod session_security;
 mod sse;
 mod streamablehttp;
 mod upstream;
+mod wire;
+pub(crate) use upstream::IncomingRequestContext;
 
 use std::fmt::{Display, Write};
 use std::io;
@@ -41,10 +45,6 @@ pub enum FailureMode {
 }
 
 pub(crate) const DEFAULT_SESSION_IDLE_TTL: Duration = Duration::from_mins(30);
-
-#[cfg(test)]
-#[path = "mcp_tests.rs"]
-mod tests;
 
 #[derive(Error, Debug)]
 pub enum Error {

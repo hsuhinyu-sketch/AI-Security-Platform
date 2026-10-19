@@ -1,0 +1,44 @@
+# SecurityConfig fragment. Stateful 2025-11-25 Streamable HTTP, one logical backend.
+# Install strict JWT and issue initialize + tools/list before creating an async Task.
+mode: enforce
+mcpSessions:
+  maxStreams: 32
+  maxMessageBytes: 262144
+  tasks:
+    tools: [slow-report]
+    maxTasks: 64
+    maxTaskSeconds: 300
+    maxArgumentBytes: 16384
+policies:
+  - id: session
+    actionType: mcpSessionOperation
+    userId: alice
+    effect: allow
+    enabled: true
+  - id: discovery
+    actionType: toolList
+    userId: alice
+    effect: allow
+    enabled: true
+  - id: report-tool
+    actionType: toolInvoke
+    resourceId: slow-report
+    userId: alice
+    effect: allow
+    enabled: true
+  - id: async-lifecycle
+    actionType: mcpTaskOperation
+    resourceType: mcpTask
+    userId: alice
+    effect: allow
+    enabled: true
+  - id: source-methods
+    actionType: mcpOperation
+    resourceType: mcpServer
+    resourceId: reports
+    userId: alice
+    effect: allow
+    enabled: true
+# Bind reports to the actual logical server name. For executionBudget see mcp-task-budget.yaml.
+# External MCP hooks are not yet adapted to async Tasks.
+# Existing dataEgress/crossComponent policies must allow this source AND the original Tool.

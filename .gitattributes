@@ -1,2 +1,0 @@
-crates/agentgateway/src/llm/tests/** text eol=lf
-crates/agentgateway/src/llm/tests/**/*.bin -text

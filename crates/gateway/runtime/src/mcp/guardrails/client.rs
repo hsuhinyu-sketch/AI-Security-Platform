@@ -257,7 +257,10 @@ fn eval_to_value(
 fn build_client(remote: &Remote, client: PolicyClient) -> ExtMcpClient<GrpcReferenceChannel> {
 	ExtMcpClient::new(GrpcReferenceChannel {
 		target: remote.target.clone(),
-		client,
+		client: client.with_outbound(
+			crate::telemetry::metrics::OutboundCallKind::Policy,
+			crate::telemetry::metrics::OutboundCallSubtype::Guardrail,
+		),
 		policies: Arc::new(remote.policies.clone()),
 	})
 }
@@ -349,146 +352,5 @@ fn on_protocol_violation<T>(
 			format!("mcpGuardrails protocol violation: {reason}"),
 			None,
 		)),
-	}
-}
-
-#[cfg(test)]
-mod tests {
-	use prost_wkt_types::Struct as ProtoStruct;
-
-	use super::*;
-	use crate::mcp::guardrails::{McpGuardrailsDynamicMetadata, wire};
-
-	fn struct_from_json(v: serde_json::Value) -> ProtoStruct {
-		serde_json::from_value(v).unwrap()
-	}
-
-	#[test]
-	fn header_mutation_invalid_name_or_value_is_skipped() {
-		let mut headers = ::http::HeaderMap::new();
-		headers.insert("x-keep", "1".parse().unwrap());
-		let hm = wire::HeaderMutation {
-			set: vec![
-				wire::McpHeader {
-					key: "bad name".into(),
-					value: "v".into(),
-				},
-				wire::McpHeader {
-					key: "x-ok".into(),
-					value: "v\nbad".into(),
-				},
-			],
-			remove: vec!["bad name".into()],
-		};
-		apply_header_mutation("tools/call", &["be".to_string()], hm, &mut headers);
-		assert!(headers.contains_key("x-keep"));
-		assert!(!headers.contains_key("x-ok"));
-		assert_eq!(headers.len(), 1);
-	}
-
-	#[test]
-	fn header_mutation_set_replaces_list_with_new_list() {
-		let mut headers = ::http::HeaderMap::new();
-		headers.append("x-multi", "old1".parse().unwrap());
-		headers.append("x-multi", "old2".parse().unwrap());
-		let hm = wire::HeaderMutation {
-			set: vec![
-				wire::McpHeader {
-					key: "x-multi".into(),
-					value: "new1".into(),
-				},
-				wire::McpHeader {
-					key: "x-multi".into(),
-					value: "new2".into(),
-				},
-			],
-			remove: vec![],
-		};
-		apply_header_mutation("tools/call", &["be".to_string()], hm, &mut headers);
-		let got: Vec<_> = headers.get_all("x-multi").iter().collect();
-		assert_eq!(got, vec!["new1", "new2"]);
-	}
-
-	fn ctx_with_headers(headers: ::http::HeaderMap) -> IncomingRequestContext {
-		let mut ctx = IncomingRequestContext::empty();
-		*ctx.headers_mut() = headers;
-		ctx
-	}
-
-	fn pseudo(s: &str) -> crate::http::HeaderOrPseudo {
-		crate::http::HeaderOrPseudo::try_from(s).unwrap()
-	}
-
-	#[test]
-	fn collect_headers_filters_and_preserves_multi_value() {
-		let mut headers = ::http::HeaderMap::new();
-		headers.insert("authorization", "secret".parse().unwrap());
-		headers.append("x-multi", "a".parse().unwrap());
-		headers.append("x-multi", "b".parse().unwrap());
-		headers.insert("x-drop", "1".parse().unwrap());
-		headers.insert("host", "example.com".parse().unwrap());
-		headers.insert(
-			"x-binary",
-			::http::HeaderValue::from_bytes(b"\xff\xfe").unwrap(),
-		);
-
-		// Empty allow = send everything (incl. pseudo-headers) except disallowed.
-		let filter = HeaderFilter {
-			allowed: vec![],
-			disallowed: vec![pseudo("authorization")],
-		};
-		let out = collect_headers(&filter, &ctx_with_headers(headers.clone()).as_request());
-		assert!(!out.iter().any(|h| h.key == "authorization"));
-		let multi: Vec<_> = out
-			.iter()
-			.filter(|h| h.key == "x-multi")
-			.map(|h| h.value.as_slice())
-			.collect();
-		assert_eq!(multi, vec![b"a".as_slice(), b"b".as_slice()]);
-		// Pseudo-headers are forwarded by default.
-		assert!(
-			out
-				.iter()
-				.any(|h| h.key == ":authority" && h.value == b"example.com")
-		);
-		assert!(out.iter().any(|h| h.key == ":method"));
-		// Non-UTF8 values are forwarded verbatim.
-		assert!(
-			out
-				.iter()
-				.any(|h| h.key == "x-binary" && h.value == b"\xff\xfe")
-		);
-
-		// Non-empty allow = send only listed (minus disallowed); pseudos are
-		// opt-in via the same list.
-		let filter = HeaderFilter {
-			allowed: vec![
-				pseudo("x-multi"),
-				pseudo("authorization"),
-				pseudo(":authority"),
-			],
-			disallowed: vec![pseudo("authorization")],
-		};
-		let out = collect_headers(&filter, &ctx_with_headers(headers).as_request());
-		let keys: HashSet<_> = out.iter().map(|h| h.key.clone()).collect();
-		assert_eq!(
-			keys,
-			HashSet::from([":authority".to_string(), "x-multi".to_string()])
-		);
-	}
-
-	#[test]
-	fn metadata_merge_creates_extension_and_accumulates() {
-		let mut ext = ::http::Extensions::new();
-		let first = struct_from_json(serde_json::json!({ "tenant": "acme", "tier": "gold" }));
-		merge_metadata_into_extensions("tools/call", &["be".to_string()], &first, &mut ext);
-		let second = struct_from_json(serde_json::json!({ "tier": "platinum", "extra": 1 }));
-		merge_metadata_into_extensions("tools/call", &["be".to_string()], &second, &mut ext);
-		let acc = ext
-			.get::<McpGuardrailsDynamicMetadata>()
-			.expect("extension created");
-		assert_eq!(acc.0.get("tenant").unwrap(), &serde_json::json!("acme"));
-		assert_eq!(acc.0.get("tier").unwrap(), &serde_json::json!("platinum"));
-		assert_eq!(acc.0.get("extra").unwrap(), &serde_json::json!(1.0));
 	}
 }

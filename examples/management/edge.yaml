@@ -1,0 +1,5 @@
+# Management-only example; merge the desired aiSystems into this configuration.
+config:
+  adminAddr: off
+  management:
+    mode: edge

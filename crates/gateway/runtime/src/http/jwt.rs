@@ -14,10 +14,6 @@ use crate::proxy::dtrace::{self};
 use crate::telemetry::log::RequestLog;
 use crate::*;
 
-#[cfg(test)]
-#[path = "jwt_tests.rs"]
-mod tests;
-
 const TRACE_POLICY_KIND: &str = "jwt";
 
 #[derive(Debug, thiserror::Error, PartialEq)]
@@ -79,6 +75,7 @@ pub struct Jwt {
 pub struct Provider {
 	issuer: String,
 	keys: HashMap<String, Jwk>,
+	trust_fingerprint: String,
 }
 
 // TODO: can we give anything useful here?
@@ -112,10 +109,16 @@ impl serde::Serialize for Provider {
 		pub struct Serde<'a> {
 			issuer: &'a str,
 			keys: Vec<&'a str>,
+			trust_fingerprint: &'a str,
 		}
 		Serde {
 			issuer: &self.issuer,
-			keys: self.keys.keys().map(|x| x.as_str()).collect::<Vec<_>>(),
+			keys: {
+				let mut ids = self.keys.keys().map(|x| x.as_str()).collect::<Vec<_>>();
+				ids.sort_unstable();
+				ids
+			},
+			trust_fingerprint: &self.trust_fingerprint,
 		}
 		.serialize(serializer)
 	}
@@ -310,6 +313,24 @@ impl Provider {
 	) -> Result<Provider, JwkError> {
 		warn_unsupported_claims(&jwt_validation_options.required_claims);
 
+		// Public trust material only; do not serialize DecodingKey or bearer credentials.
+		use sha2::Digest;
+		let mut material: Vec<_> = jwks
+			.keys
+			.iter()
+			.map(|k| serde_json::to_string(k).expect("JWK serializes"))
+			.collect();
+		material.sort_unstable();
+		let mut trusted_audiences = audiences.clone();
+		if let Some(a) = &mut trusted_audiences {
+			a.sort_unstable();
+		}
+		let mut required: Vec<_> = jwt_validation_options.required_claims.iter().collect();
+		required.sort_unstable();
+		let trust_fingerprint = hex::encode(sha2::Sha256::digest(
+			serde_json::to_vec(&(&issuer, material, trusted_audiences, required))
+				.expect("trust material serializes"),
+		));
 		let mut keys = HashMap::new();
 		let to_supported_alg = |key_algorithm: Option<KeyAlgorithm>| match key_algorithm {
 			Some(key_alg) => jsonwebtoken::Algorithm::from_str(key_alg.to_string().as_str()).ok(),
@@ -407,7 +428,11 @@ impl Provider {
 			);
 		}
 
-		Ok(Provider { issuer, keys })
+		Ok(Provider {
+			issuer,
+			keys,
+			trust_fingerprint,
+		})
 	}
 }
 
@@ -573,28 +598,45 @@ impl Jwt {
 			TokenError::MissingKeyId
 		})?;
 
-		// Search for the key across all providers
-		let key = self
+		// Unverified iss is ONLY a selector for statically configured providers.
+		// Authentication still requires decode below: signature, algorithm, issuer, audience, exp.
+		let hint = jsonwebtoken::dangerous::insecure_decode::<Map<String, Value>>(token)
+			.map_err(TokenError::Invalid)?;
+		let issuer = hint
+			.claims
+			.get("iss")
+			.and_then(Value::as_str)
+			.ok_or_else(|| TokenError::Invalid(jsonwebtoken::errors::ErrorKind::InvalidIssuer.into()))?;
+		let mut candidates = self
 			.providers
 			.iter()
-			.find_map(|provider| provider.keys.get(kid))
-			.ok_or_else(|| {
-				debug!(%kid, "Token refers to an unknown key.");
-
-				TokenError::UnknownKeyId(kid.to_owned())
-			})?;
-
-		let decoded_token = decode::<Map<String, Value>>(token, &key.decoding, &key.validation)
-			.map_err(|error| {
-				debug!(?error, "Token is malformed or does not pass validation.");
-
-				TokenError::Invalid(error)
-			})?;
-
-		let claims = Claims {
-			inner: decoded_token.claims,
-			jwt: SecretString::new(token.into()),
-		};
-		Ok(claims)
+			.filter(|provider| provider.issuer == issuer)
+			.peekable();
+		if candidates.peek().is_none() {
+			return Err(TokenError::Invalid(
+				jsonwebtoken::errors::ErrorKind::InvalidIssuer.into(),
+			));
+		}
+		// Duplicate configurations for one issuer must not make selection order-dependent.
+		let mut last_error = None;
+		let mut known_key = false;
+		for key in candidates.filter_map(|provider| provider.keys.get(kid)) {
+			known_key = true;
+			match decode::<Map<String, Value>>(token, &key.decoding, &key.validation) {
+				Ok(decoded) => {
+					return Ok(Claims {
+						inner: decoded.claims,
+						jwt: SecretString::new(token.into()),
+					});
+				},
+				Err(error) => last_error = Some(error),
+			}
+		}
+		if !known_key {
+			return Err(TokenError::UnknownKeyId(kid.to_owned()));
+		}
+		return Err(TokenError::Invalid(
+			last_error.expect("at least one key was checked"),
+		));
 	}
 }

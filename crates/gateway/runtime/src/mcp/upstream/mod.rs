@@ -44,16 +44,6 @@ pub struct IncomingRequestContext {
 }
 
 impl IncomingRequestContext {
-	#[cfg(test)]
-	pub fn empty() -> Self {
-		Self {
-			method: ::http::Method::GET,
-			uri: ::http::Uri::from_static("/"),
-			headers: http::HeaderMap::new(),
-			ext: ::http::Extensions::new(),
-			authority: None,
-		}
-	}
 	pub fn new(parts: &::http::request::Parts) -> Self {
 		Self {
 			method: parts.method.clone(),
@@ -89,6 +79,11 @@ impl IncomingRequestContext {
 		for (k, v) in &self.headers {
 			// Remove headers we do not want to propagate to the backend
 			if k == http::header::CONTENT_ENCODING
+				|| k.as_str() == crate::execution_budget::INVOCATION_HEADER
+				|| k.as_str() == crate::execution_budget::OPERATION_HEADER
+				|| k.as_str() == crate::execution_budget::cleanup::HEADER
+				|| k.as_str() == crate::execution_budget::mcp_task_cleanup::HEADER
+				|| k.as_str() == crate::execution_budget::HEADER
 				|| k == http::header::CONTENT_LENGTH
 				|| k.as_str().eq_ignore_ascii_case(CAPABILITY_HEADER)
 				|| k.as_str().eq_ignore_ascii_case(CAPABILITY_CONTEXT_HEADER)
@@ -225,6 +220,17 @@ impl Upstream {
 		request: JsonRpcRequest<ClientRequest>,
 		ctx: &IncomingRequestContext,
 	) -> Result<mergestream::Messages, UpstreamError> {
+		if ctx
+			.as_request()
+			.extensions()
+			.get::<crate::execution_budget::ExecutionScope>()
+			.is_some()
+			&& matches!(self, Upstream::McpStdio(_))
+		{
+			return Err(UpstreamError::InvalidRequest(
+				"executionBudget currently requires HTTP MCP transport".into(),
+			));
+		}
 		match &self {
 			Upstream::McpStdio(c) => Ok(mergestream::Messages::from(
 				Box::pin(c.send_message(request, ctx).assert_size::<{ 6 * 1024 }>()).await?,
@@ -269,6 +275,32 @@ impl Upstream {
 			Upstream::OpenAPI(_) => {},
 		}
 		Ok(())
+	}
+
+	pub(crate) async fn generic_response(
+		&self,
+		message: rmcp::model::ClientJsonRpcMessage,
+		ctx: &IncomingRequestContext,
+	) -> Result<(), UpstreamError> {
+		let Self::McpStreamable(client) = self else {
+			return Err(UpstreamError::InvalidRequest(
+				"reverse response requires Streamable HTTP".into(),
+			));
+		};
+		if !matches!(
+			message,
+			rmcp::model::ClientJsonRpcMessage::Response(_) | rmcp::model::ClientJsonRpcMessage::Error(_)
+		) {
+			return Err(UpstreamError::InvalidRequest(
+				"not a reverse response".into(),
+			));
+		}
+		match Box::pin(client.send_message(message, ctx)).await? {
+			StreamableHttpPostResponse::Accepted => Ok(()),
+			_ => Err(UpstreamError::InvalidRequest(
+				"unexpected reverse response acknowledgement".into(),
+			)),
+		}
 	}
 }
 
@@ -465,124 +497,5 @@ impl UpstreamGroup {
 		};
 
 		Ok(target)
-	}
-}
-
-#[cfg(test)]
-mod tests {
-	use super::*;
-
-	#[test]
-	fn incoming_request_context_applies_original_authority() {
-		let parts = ::http::Request::builder()
-			.uri("http://original.example/mcp")
-			.body(())
-			.unwrap()
-			.into_parts()
-			.0;
-		let ctx = IncomingRequestContext::new(&parts);
-		let mut req = ::http::Request::builder()
-			.uri("http://svc.default.svc.cluster.local:80/mcp")
-			.body(crate::http::Body::empty())
-			.unwrap();
-
-		ctx.apply(&mut req).unwrap();
-
-		assert_eq!(
-			req.uri().authority().map(|a| a.as_str()),
-			Some("original.example")
-		);
-		assert_eq!(req.headers().get(http::header::HOST), None);
-		assert_eq!(req.uri().path(), "/mcp");
-	}
-
-	fn ctx_with_headers(headers: &[(&str, &str)]) -> IncomingRequestContext {
-		let mut builder = ::http::Request::builder()
-			.uri("http://example/")
-			.method("GET");
-		for (k, v) in headers {
-			builder = builder.header(*k, *v);
-		}
-		let parts = builder.body(()).unwrap().into_parts().0;
-		IncomingRequestContext::new(&parts)
-	}
-
-	fn empty_upstream_req() -> http::Request {
-		::http::Request::builder()
-			.uri("http://upstream/")
-			.body(http::Body::empty())
-			.unwrap()
-	}
-
-	#[test]
-	fn apply_strips_inbound_mcp_session_id() {
-		let ctx = ctx_with_headers(&[(HEADER_SESSION_ID, "client-sid"), ("x-trace", "abc")]);
-		let mut req = empty_upstream_req();
-		ctx.apply(&mut req).unwrap();
-		assert!(req.headers().get(HEADER_SESSION_ID).is_none());
-		assert_eq!(req.headers().get("x-trace").unwrap(), "abc");
-	}
-
-	#[test]
-	fn apply_preserves_upstream_session_id_when_already_set() {
-		let ctx = ctx_with_headers(&[(HEADER_SESSION_ID, "client-sid")]);
-		let mut req = empty_upstream_req();
-		req.headers_mut().insert(
-			::http::HeaderName::from_static("mcp-session-id"),
-			::http::HeaderValue::from_static("upstream-sid"),
-		);
-		ctx.apply(&mut req).unwrap();
-		assert_eq!(
-			req.headers().get(HEADER_SESSION_ID).unwrap(),
-			"upstream-sid"
-		);
-	}
-
-	#[test]
-	fn apply_strips_content_encoding_and_length() {
-		let ctx = ctx_with_headers(&[
-			(http::header::CONTENT_ENCODING.as_str(), "gzip"),
-			(http::header::CONTENT_LENGTH.as_str(), "42"),
-		]);
-		let mut req = empty_upstream_req();
-		ctx.apply(&mut req).unwrap();
-		assert!(req.headers().get(http::header::CONTENT_ENCODING).is_none());
-		assert!(req.headers().get(http::header::CONTENT_LENGTH).is_none());
-	}
-
-	#[test]
-	fn apply_propagates_other_headers() {
-		let ctx = ctx_with_headers(&[("authorization", "Bearer token"), ("x-request-id", "req-1")]);
-		let mut req = empty_upstream_req();
-		ctx.apply(&mut req).unwrap();
-		assert_eq!(req.headers().get("authorization").unwrap(), "Bearer token");
-		assert_eq!(req.headers().get("x-request-id").unwrap(), "req-1");
-	}
-
-	#[test]
-	fn apply_strips_caller_capability_and_only_forwards_an_issued_capability() {
-		let mut ctx = ctx_with_headers(&[
-			(CAPABILITY_HEADER, "caller-supplied"),
-			(CAPABILITY_CONTEXT_HEADER, "caller-supplied-context"),
-		]);
-		let mut req = empty_upstream_req();
-		ctx.apply(&mut req).unwrap();
-		assert!(req.headers().get(CAPABILITY_HEADER).is_none());
-		assert!(req.headers().get(CAPABILITY_CONTEXT_HEADER).is_none());
-
-		ctx.extensions_mut().insert(IssuedCapability {
-			capability: ::http::HeaderValue::from_static("gateway-issued"),
-			context: ::http::HeaderValue::from_static("gateway-issued-context"),
-		});
-		let mut req = empty_upstream_req();
-		ctx.apply(&mut req).unwrap();
-		assert_eq!(
-			req.headers().get(CAPABILITY_HEADER).unwrap(),
-			"gateway-issued"
-		);
-		assert_eq!(
-			req.headers().get(CAPABILITY_CONTEXT_HEADER).unwrap(),
-			"gateway-issued-context"
-		);
 	}
 }

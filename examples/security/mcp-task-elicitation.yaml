@@ -1,0 +1,41 @@
+# SecurityConfig fragment, not a complete listener/route configuration.
+# Strict JWT, one stateful 2025-11-25 MCP source named reports, execution control routes required.
+mode: enforce
+mcpSessions:
+  tasks:
+    tools: [slow-report]
+    elicitation: true
+    maxTasks: 32
+    maxTaskSeconds: 300
+  reverse:
+    elicitation: true
+    elicitationFields: [range]
+    maxPending: 8
+    timeoutSeconds: 30
+executionBudget:
+  namespace: reports-workflow
+  maxModelCalls: 1
+  maxToolCalls: 4
+  maxAgentCalls: 1
+  maxAttempts: 32
+  maxConcurrent: 2
+  maxDurationSeconds: 300
+policies:
+  - { id: session, actionType: mcpSessionOperation, userId: alice, effect: allow, enabled: true }
+  - { id: discover, actionType: toolList, userId: alice, effect: allow, enabled: true }
+  - { id: report, actionType: toolInvoke, resourceId: slow-report, userId: alice, effect: allow, enabled: true }
+  - { id: source-init, actionType: mcpOperation, actionName: initialize, resourceId: reports, userId: alice, effect: allow, enabled: true }
+  - { id: source-read, actionType: mcpOperation, actionName: tasks/get, resourceId: reports, userId: alice, effect: allow, enabled: true }
+  - { id: source-result, actionType: mcpOperation, actionName: tasks/result, resourceId: reports, userId: alice, effect: allow, enabled: true }
+  - { id: source-ask, actionType: mcpOperation, actionName: elicitation/create/request, resourceId: reports, userId: alice, effect: allow, enabled: true }
+  - { id: source-answer, actionType: mcpOperation, actionName: elicitation/create/respond, resourceId: reports, userId: alice, effect: allow, enabled: true }
+  - { id: task-create, actionType: mcpTaskOperation, actionName: tools/call, resourceType: mcpTask, userId: alice, effect: allow, enabled: true }
+  - { id: task-read, actionType: mcpTaskOperation, actionName: tasks/get, resourceType: mcpTask, userId: alice, effect: allow, enabled: true }
+  - { id: task-result, actionType: mcpTaskOperation, actionName: tasks/result, resourceType: mcpTask, userId: alice, effect: allow, enabled: true }
+  - { id: task-ask, actionType: mcpTaskOperation, actionName: elicitation/create/request, resourceType: mcpTask, userId: alice, effect: allow, enabled: true }
+  - { id: task-answer, actionType: mcpTaskOperation, actionName: elicitation/create/respond, resourceType: mcpTask, userId: alice, effect: allow, enabled: true }
+  - { id: execution-create, actionType: executionOperation, actionName: execution/create, userId: alice, effect: allow, enabled: true }
+  - { id: invocation-create, actionType: executionOperation, actionName: execution/invocation/create, userId: alice, effect: allow, enabled: true }
+  - { id: invocation-read, actionType: executionOperation, actionName: execution/invocation/read, userId: alice, effect: allow, enabled: true }
+# Task grants are still intersected with the recorded Owner/source/workflow; UUID possession is not authority.
+# Cancellation/independent taskCleanup require additional explicit grants; a form answer is not approval.

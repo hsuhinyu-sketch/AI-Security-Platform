@@ -48,7 +48,7 @@ export function RawConfigEditor({ invalid, onChange, onSave, value }: RawConfigE
 	function mountEditor(editor: Monaco.editor.IStandaloneCodeEditor, monaco: typeof Monaco) {
 		editorRef.current = editor;
 		monacoRef.current = monaco;
-		if (import.meta.env.DEV || import.meta.env.MODE === 'e2e') {
+		if (import.meta.env.DEV) {
 			window.__rawConfigEditor = editor;
 			window.__rawConfigMonaco = monaco;
 		}

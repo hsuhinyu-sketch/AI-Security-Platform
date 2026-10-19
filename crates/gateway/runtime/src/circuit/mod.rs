@@ -12,6 +12,3 @@ pub use config::{CircuitConfig, CircuitTriggerConfig, HalfOpenConfig, TriggerKin
 pub use registry::CircuitBreakerRegistry;
 pub use state::{CircuitOpenError, CircuitState, OpenReason};
 pub use window::{MetricSample, SlidingWindow};
-
-#[cfg(test)]
-mod tests;

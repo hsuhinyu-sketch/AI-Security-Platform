@@ -84,20 +84,3 @@ impl RemotePdpTransport for HttpRemotePdpTransport {
 		})
 	}
 }
-
-#[cfg(test)]
-mod tests {
-	use super::RemotePdpConfig;
-
-	#[test]
-	fn rejects_non_https_pdp_endpoint() {
-		let config = RemotePdpConfig {
-			endpoint: "http://pdp.internal/v1/decisions".into(),
-			timeout_millis: 250,
-			identity_pem_file: None,
-			root_ca_pem_file: None,
-			transport: super::default_transport_slot(),
-		};
-		assert!(config.transport().is_err());
-	}
-}

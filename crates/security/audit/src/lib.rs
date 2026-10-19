@@ -3,6 +3,13 @@ use std::sync::Mutex;
 use chrono::Utc;
 use security_types::{ActionRequest, Decision, SecurityEvent};
 
+mod journal;
+pub use journal::JsonlJournal;
+mod state_journal;
+pub use state_journal::{StateJournal, StateJournalConfig};
+mod rotating;
+pub use rotating::{AuditJournalConfig, RotatingAuditJournal};
+
 pub fn event_from_decision(
 	event_id: impl Into<String>,
 	request: &ActionRequest,
@@ -27,9 +34,16 @@ pub fn event_from_decision(
 /// for an event stream or durable store; the PoC uses the in-memory implementation below.
 pub trait AuditSink: Send + Sync {
 	fn record(&self, event: SecurityEvent);
+	/// Default fails closed: in-memory/tracing-only sinks cannot promise durable admission.
+	fn record_required(&self, _event: SecurityEvent) -> Result<(), String> {
+		Err("durable audit acknowledgement unavailable".into())
+	}
 }
 
 impl<T: AuditSink + ?Sized> AuditSink for &T {
+	fn record_required(&self, event: SecurityEvent) -> Result<(), String> {
+		(*self).record_required(event)
+	}
 	fn record(&self, event: SecurityEvent) {
 		(*self).record(event);
 	}

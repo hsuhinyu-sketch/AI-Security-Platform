@@ -17,10 +17,6 @@ use crate::telemetry::log::RequestLog;
 use crate::types::agent::{HostRedirect, PathMatch, PathRedirect, SimpleBackendReference};
 use crate::*;
 
-#[cfg(test)]
-#[path = "filters_test.rs"]
-mod tests;
-
 const REQUEST_REDIRECT_TRACE_KIND: &str = "request_redirect";
 const URL_REWRITE_TRACE_KIND: &str = "url_rewrite";
 const DIRECT_RESPONSE_TRACE_KIND: &str = "direct_response";

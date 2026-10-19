@@ -1,0 +1,6 @@
+# Explicit local development/demo profile; unsafeDebug is still disabled.
+config:
+  adminAddr: localhost:15000
+  management:
+    mode: demo
+    unsafeDebug: false

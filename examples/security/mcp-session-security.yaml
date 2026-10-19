@@ -1,0 +1,48 @@
+# Template: replace the inline public JWKS and local backend before deployment.
+config:
+  management:
+    mode: edge
+aiSystems:
+  - name: local-tools
+    security:
+      mode: enforce
+      mcpSessions:
+        maxSessions: 1024
+        maxStreams: 128
+        maxSessionSeconds: 86400
+        reauthorizeSeconds: 5
+        streamIdleSeconds: 30
+        maxStreamSeconds: 3600
+        maxMessageBytes: 262144
+      policies:
+        - id: allow-own-session-operations
+          tenantId: tenant-a
+          actionType: mcpSessionOperation
+          effect: allow
+          enabled: true
+        - id: list-local-tools
+          tenantId: tenant-a
+          actionType: toolList
+          effect: allow
+          enabled: true
+        - id: invoke-echo
+          tenantId: tenant-a
+          actionType: toolInvoke
+          actionName: echo
+          resourceId: echo
+          effect: allow
+          enabled: true
+      # Resource/Prompt reads, subscriptions, async Tasks and reverse RPC are not granted.
+    mcp:
+      port: 14202
+      statefulMode: stateful
+      policies:
+        jwtAuth:
+          mode: strict
+          issuer: https://identity.example.invalid
+          audiences: [mcp]
+          jwks: '{"keys":[]}'
+      targets:
+        - name: local
+          mcp:
+            host: http://127.0.0.1:18200/mcp

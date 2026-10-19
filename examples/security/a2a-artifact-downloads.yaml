@@ -1,0 +1,58 @@
+# SecurityConfig fragment, not a full deployment. A2A route must validate strict JWT.
+# Replace Agent endpoint, pinned IP and CA before deployment.
+mode: enforce
+requiredIdentity:
+  user: true
+  tenant: true
+  agent: false
+a2aObjects:
+  artifactDownloads:
+    sources:
+      - origin: https://files.example:8443
+        addresses: [192.0.2.20]
+        pathPrefix: /artifacts/
+        rootCaPemFile: /etc/aisp/files-ca.pem
+    maxFiles: 4
+    maxFileBytes: 65536
+    maxTotalBytes: 262144
+    timeoutSeconds: 5
+dataEgress:
+  classification: restricted
+  agentDestinations: [agents.internal:8443]
+  artifactDestinations: [files.example:8443]
+policies:
+  - id: send-message
+    actionType: agentInvoke
+    actionName: message/send
+    resourceId: agents.internal:8443
+    userId: alice
+    effect: allow
+    enabled: true
+  - id: get-task
+    actionType: agentInvoke
+    actionName: tasks/get
+    resourceId: agents.internal:8443
+    userId: alice
+    effect: allow
+    enabled: true
+  - id: owned-task-operations
+    actionType: agentTaskOperation
+    userId: alice
+    effect: allow
+    enabled: true
+  - id: read-owned-artifacts
+    actionType: agentArtifactRead
+    resourceType: agentArtifact
+    userId: alice
+    effect: allow
+    enabled: true
+  - id: download-owned-artifacts
+    actionType: agentArtifactDownload
+    actionName: download
+    resourceType: agentArtifact
+    userId: alice
+    effect: allow
+    enabled: true
+# Owner/scope checks still apply. Tighten artifact resourceId using
+# artifact_resource_id(scope, taskId, artifactId) when IDs are known.
+# With crossComponent, set artifactDestinations at each classification; they intersect.

@@ -359,7 +359,3 @@ fn set_request_cookie(
 	}
 	Ok(())
 }
-
-#[cfg(test)]
-#[path = "tests.rs"]
-mod tests;

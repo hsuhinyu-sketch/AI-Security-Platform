@@ -2,6 +2,7 @@ import { Link } from '@tanstack/react-router';
 import { Bot, Database, GitBranch, Network, Play, Server, ShieldCheck } from 'lucide-react';
 
 import { PageHeader, Panel } from '@/components/Primitives';
+import { useRuntimeInfo } from '@/hooks';
 
 const capabilities = [
 	{ title: 'LLM Gateway', description: '统一模型入口、参数治理、限流与 Guardrails。', icon: Bot },
@@ -12,6 +13,11 @@ const capabilities = [
 ] as const;
 
 export function PlatformHomePage() {
+	const runtime = useRuntimeInfo();
+	if (runtime.data?.ui.managementMode === 'diagnostic') return <div className="page-stack">
+		<PageHeader title="Local diagnostics" description="查看本机请求日志与安全事件。配置编辑和调用测试由部署模式限制。" />
+		<Panel><div className="button-row"><Link className="button" to="/security/events">Security Events</Link><Link className="button" to="/llm/logs">Request Logs</Link></div></Panel>
+	</div>;
 	return (
 		<div className="page-stack">
 			<PageHeader

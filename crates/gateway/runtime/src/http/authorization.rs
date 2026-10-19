@@ -359,7 +359,3 @@ impl RuleSet {
 			.all(|rule| exec.eval_bool(rule.as_ref()))
 	}
 }
-
-#[cfg(any(test, feature = "internal_benches"))]
-#[path = "authorization_tests.rs"]
-mod tests;

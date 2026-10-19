@@ -21,6 +21,7 @@ export interface RuntimeInfo {
 	};
 	ui: {
 		gatewayMode: 'standalone' | 'xds';
+		managementMode?: 'edge' | 'diagnostic' | 'demo';
 		configStoreMode: 'file' | 'hybrid' | 'readOnly';
 	};
 }

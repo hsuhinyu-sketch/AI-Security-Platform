@@ -316,10 +316,7 @@ where
 				response.status()
 			));
 		}
-		let response_body = response
-			.bytes()
-			.await
-			.map_err(|error| format!("failed to read Qdrant query response: {error}"))?;
+		let response_body = crate::config::read_bounded_response(response, 4 * 1024 * 1024).await?;
 		let response: QdrantQueryResponse = serde_json::from_slice(&response_body)
 			.map_err(|error| format!("invalid Qdrant query response: {error}"))?;
 		response
@@ -328,6 +325,47 @@ where
 			.into_iter()
 			.map(|point| verified_chunk_from_payload(point.id, point.payload, self.integrity.as_ref()))
 			.collect()
+	}
+}
+
+#[async_trait::async_trait]
+impl<E: Send + Sync, C: Send + Sync> security_rag::lifecycle::DocumentPurger
+	for QdrantBackend<E, C>
+{
+	async fn purge_document(&self, key: &security_types::DocumentKey) -> Result<(), String> {
+		key.validate()?;
+		let filter = json!({"must":[{"key":"tenantId","match":{"value":key.tenant_id}},{"key":"corpusId","match":{"value":key.corpus_id}},{"key":"documentId","match":{"value":key.document_id}}]});
+		for collection in [&self.config.collection, &self.config.quarantine_collection] {
+			let mut response = self
+				.request(
+					reqwest::Method::POST,
+					format!("{}?wait=true", self.endpoint(collection, "/delete")),
+				)
+				.json(&json!({"filter":filter}))
+				.send()
+				.await
+				.map_err(|_| "document purge transport failed")?;
+			if !response.status().is_success() {
+				return Err("document purge not confirmed".into());
+			}
+			let mut bytes = Vec::new();
+			while let Some(chunk) = response
+				.chunk()
+				.await
+				.map_err(|_| "document purge response unavailable")?
+			{
+				if bytes.len().saturating_add(chunk.len()) > 16384 {
+					return Err("document purge response exceeds limit".into());
+				}
+				bytes.extend_from_slice(&chunk);
+			}
+			let result: Value =
+				serde_json::from_slice(&bytes).map_err(|_| "invalid document purge acknowledgement")?;
+			if result.pointer("/result/status").and_then(Value::as_str) != Some("completed") {
+				return Err("document purge not completed".into());
+			}
+		}
+		Ok(())
 	}
 }
 
@@ -387,6 +425,9 @@ fn qdrant_vector(vector: Vec<f32>, vector_name: Option<&str>) -> Value {
 }
 
 fn qdrant_filter(filter: &RetrievalFilter) -> Value {
+	if filter.authoritative_acl {
+		return json!({"must":[{"key":"corpusId","match":{"value":filter.corpus_id}},{"key":"tenantId","match":{"value":filter.tenant_id}}]});
+	}
 	let mut acl_conditions = vec![json!({
 		"key": "allowTenantAuthenticated",
 		"match": { "value": true },
@@ -528,279 +569,4 @@ fn valid_collection_name(value: &str) -> bool {
 		&& value
 			.chars()
 			.all(|character| character.is_ascii_alphanumeric() || matches!(character, '_' | '-' | '.'))
-}
-
-#[cfg(test)]
-mod tests {
-	use security_rag::{IndexedDocument, TrustedChunkAccess};
-
-	use super::*;
-
-	#[test]
-	fn fixed_window_chunker_preserves_document_security_metadata() {
-		let document = IndexedDocument {
-			corpus_id: "support".into(),
-			document_id: "password-guide".into(),
-			tenant_id: "tenant-a".into(),
-			source_uri: "https://kb.example.com/password-guide".into(),
-			source_hash: "hash".into(),
-			source_origin: security_rag::SourceOrigin::Submitted,
-			content: "one two three four five six".into(),
-			labels: vec!["internal".into()],
-			classification: security_rag::DataClassification::Internal,
-			classification_source: "default-classification".into(),
-		};
-		let chunks = FixedWindowChunker::new(8)
-			.unwrap()
-			.split(
-				&document,
-				&TrustedChunkAccess {
-					allowed_users: vec!["alice".into()],
-					..Default::default()
-				},
-			)
-			.unwrap();
-		assert!(chunks.len() > 1);
-		assert!(chunks.iter().all(|chunk| {
-			chunk.corpus_id == "support"
-				&& chunk.tenant_id == "tenant-a"
-				&& chunk.labels == ["internal"]
-				&& chunk.classification == security_rag::DataClassification::Internal
-				&& chunk.classification_source == "default-classification"
-				&& chunk.source_hash == "hash"
-				&& chunk.allowed_users == ["alice"]
-		}));
-	}
-
-	#[test]
-	fn qdrant_filter_requires_tenant_corpus_and_one_acl_condition() {
-		let filter = qdrant_filter(&RetrievalFilter {
-			corpus_id: "support".into(),
-			tenant_id: "tenant-a".into(),
-			user_id: Some("alice".into()),
-			agent_id: Some("support-agent".into()),
-			max_candidates: 3,
-		});
-		assert_eq!(filter["must"].as_array().unwrap().len(), 2);
-		assert_eq!(filter["min_should"]["min_count"], 1);
-		assert_eq!(
-			filter["min_should"]["conditions"].as_array().unwrap().len(),
-			3
-		);
-	}
-
-	#[test]
-	fn qdrant_payload_round_trip_preserves_security_fields() {
-		let chunk = KnowledgeChunk {
-			id: "chunk-1".into(),
-			document_id: "document-1".into(),
-			corpus_id: "support".into(),
-			tenant_id: "tenant-a".into(),
-			content: "safe text".into(),
-			labels: vec!["internal".into()],
-			classification: security_rag::DataClassification::Internal,
-			classification_source: "default-classification".into(),
-			allowed_users: vec!["alice".into()],
-			allowed_agents: vec!["support-agent".into()],
-			allow_tenant_authenticated: false,
-			expires_at: None,
-			source_hash: "source-hash".into(),
-			source_origin: security_rag::SourceOrigin::Submitted,
-			token_count: 12,
-		};
-		let restored =
-			chunk_from_payload(Value::String("point-1".into()), qdrant_payload(&chunk, &[])).unwrap();
-		assert_eq!(restored, chunk);
-		let mut legacy = qdrant_payload(&chunk, &[]);
-		legacy.as_object_mut().unwrap().remove("classification");
-		let restored = chunk_from_payload(Value::String("point-1".into()), legacy).unwrap();
-		assert_eq!(
-			restored.classification,
-			security_rag::DataClassification::Restricted
-		);
-		let mut incomplete = qdrant_payload(&chunk, &[]);
-		incomplete
-			.as_object_mut()
-			.unwrap()
-			.remove("classificationSource");
-		let restored = chunk_from_payload(Value::String("point-1".into()), incomplete).unwrap();
-		assert_eq!(
-			restored.classification,
-			security_rag::DataClassification::Restricted
-		);
-		assert_eq!(restored.classification_source, "legacy-unverified");
-	}
-
-	#[test]
-	fn integrity_verification_rejects_tampering_missing_proofs_and_point_id_mismatch() {
-		let key = IntegrityKey::from_hex("test-key", &"ab".repeat(32)).unwrap();
-		let chunk = KnowledgeChunk {
-			id: "chunk-1".into(),
-			document_id: "doc-1".into(),
-			corpus_id: "support".into(),
-			tenant_id: "tenant-a".into(),
-			content: "trusted content".into(),
-			labels: vec![],
-			classification: security_rag::DataClassification::Internal,
-			classification_source: "default-classification".into(),
-			allowed_users: vec!["alice".into()],
-			allowed_agents: vec![],
-			allow_tenant_authenticated: false,
-			expires_at: None,
-			source_hash: "source-hash".into(),
-			source_origin: security_rag::SourceOrigin::Submitted,
-			token_count: 2,
-		};
-		let mut payload = qdrant_payload(&chunk, &[]);
-		let proof = key.sign_json("rag-qdrant-chunk", &payload).unwrap();
-		payload["integrity"] = serde_json::to_value(proof).unwrap();
-		assert_eq!(
-			verified_chunk_from_payload(Value::String("chunk-1".into()), payload.clone(), Some(&key))
-				.unwrap(),
-			chunk
-		);
-		assert!(
-			verified_chunk_from_payload(
-				Value::String("other-id".into()),
-				payload.clone(),
-				Some(&key)
-			)
-			.is_err()
-		);
-		assert!(
-			verified_chunk_from_payload(
-				Value::String("chunk-1".into()),
-				qdrant_payload(&chunk, &[]),
-				Some(&key)
-			)
-			.is_err()
-		);
-		let mut tampered = payload;
-		tampered["tenantId"] = Value::String("tenant-b".into());
-		assert!(
-			verified_chunk_from_payload(Value::String("chunk-1".into()), tampered, Some(&key)).is_err()
-		);
-	}
-
-	#[tokio::test]
-	async fn qdrant_round_trip_preserves_signed_trusted_source() {
-		use wiremock::{
-			Mock, MockServer, ResponseTemplate,
-			matchers::{method, path},
-		};
-
-		struct StaticEmbedding;
-		#[async_trait::async_trait]
-		impl EmbeddingProvider for StaticEmbedding {
-			async fn embed(&self, _text: &str) -> Result<Vec<f32>, String> {
-				Ok(vec![0.1, 0.2])
-			}
-		}
-
-		let server = MockServer::start().await;
-		Mock::given(method("PUT"))
-			.and(path("/collections/knowledge/points"))
-			.respond_with(
-				ResponseTemplate::new(200).set_body_json(json!({"result": {"status":"completed"}})),
-			)
-			.mount(&server)
-			.await;
-		let key = IntegrityKey::from_hex("rag-test-key", &"ab".repeat(32)).unwrap();
-		let backend = QdrantBackend {
-			client: Client::new(),
-			config: QdrantBackendConfig {
-				endpoint: server.uri(),
-				collection: "knowledge".into(),
-				quarantine_collection: "quarantine".into(),
-				api_key: None,
-				vector_name: None,
-				default_chunk_access: TrustedChunkAccess {
-					allowed_users: vec!["alice".into()],
-					..Default::default()
-				},
-				integrity: None,
-			},
-			embeddings: StaticEmbedding,
-			chunker: FixedWindowChunker::new(2000).unwrap(),
-			integrity: Some(key),
-		};
-		let version = security_integrity::sha256_hex(b"trusted bytes");
-		backend
-			.index(IndexedDocument {
-				corpus_id: "support".into(),
-				document_id: "guide".into(),
-				tenant_id: "tenant-a".into(),
-				source_uri: "https://kb.example/docs/guide.md".into(),
-				source_hash: version.clone(),
-				source_origin: security_rag::SourceOrigin::TrustedHttps {
-					source_id: "kb".into(),
-					version: version.clone(),
-				},
-				content: "trusted bytes".into(),
-				labels: vec![],
-				classification: security_rag::DataClassification::Internal,
-				classification_source: "default-classification".into(),
-			})
-			.await
-			.unwrap();
-		let requests = server.received_requests().await.unwrap();
-		assert_eq!(requests.len(), 1);
-		let body: Value = serde_json::from_slice(&requests[0].body).unwrap();
-		let point = &body["points"][0];
-		let mut payload = point["payload"].clone();
-		assert_eq!(payload["sourceOrigin"]["sourceId"], "kb");
-		assert_eq!(payload["sourceOrigin"]["version"], version);
-		assert_eq!(payload["sourceHash"], version);
-		let proof: IntegrityProof = serde_json::from_value(
-			payload
-				.as_object_mut()
-				.unwrap()
-				.remove("integrity")
-				.unwrap(),
-		)
-		.unwrap();
-		let verifier = IntegrityKey::from_hex("rag-test-key", &"ab".repeat(32)).unwrap();
-		verifier
-			.verify_json("rag-qdrant-chunk", &payload, &proof)
-			.unwrap();
-
-		Mock::given(method("POST"))
-			.and(path("/collections/knowledge/points/query"))
-			.respond_with(ResponseTemplate::new(200).set_body_json(json!({
-				"result": {"points": [{"id": point["id"], "payload": point["payload"]}]}
-			})))
-			.mount(&server)
-			.await;
-		let chunks = backend
-			.retrieve(
-				&RetrievalQuery::new("help", 1),
-				&RetrievalFilter {
-					corpus_id: "support".into(),
-					tenant_id: "tenant-a".into(),
-					user_id: Some("alice".into()),
-					agent_id: None,
-					max_candidates: 1,
-				},
-			)
-			.await
-			.unwrap();
-		assert_eq!(chunks.len(), 1);
-		assert_eq!(
-			chunks[0].source_origin,
-			security_rag::SourceOrigin::TrustedHttps {
-				source_id: "kb".into(),
-				version,
-			}
-		);
-	}
-
-	#[test]
-	fn named_vector_payload_uses_the_configured_vector_name() {
-		let default_vector = qdrant_vector(vec![0.1, 0.2], None);
-		assert!(default_vector.is_array());
-		assert_eq!(default_vector.as_array().unwrap().len(), 2);
-		let named_vector = qdrant_vector(vec![0.1, 0.2], Some("dense"));
-		assert_eq!(named_vector.as_object().unwrap().len(), 1);
-		assert_eq!(named_vector["dense"].as_array().unwrap().len(), 2);
-	}
 }

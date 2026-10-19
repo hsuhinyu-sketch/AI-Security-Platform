@@ -1,0 +1,51 @@
+# Security configuration fragment; install on a stateful Streamable HTTP MCP
+# gateway whose route already validates JWT. Backend server name here is "mcp".
+# This is not a complete runnable deployment or a grant to arbitrary servers.
+mode: enforce
+requiredIdentity:
+  user: true
+  tenant: true
+  agent: false
+mcpSessions:
+  maxSessions: 128
+  maxStreams: 32
+  maxMessageBytes: 65536
+  reverse:
+    samplingModels: [client-model]
+    maxSamplingTokens: 256
+    elicitation: true
+    elicitationFields: [confirm]
+    roots: [file:///approved]
+    maxPending: 16
+    timeoutSeconds: 30
+policies:
+  - id: own-mcp-session
+    actionType: mcpSessionOperation
+    effect: allow
+    enabled: true
+    userId: alice
+  - id: echo-tool
+    actionType: toolInvoke
+    resourceType: tool
+    resourceId: echo
+    effect: allow
+    enabled: true
+    userId: alice
+  - id: roots-request
+    actionType: mcpOperation
+    actionName: roots/list/request
+    resourceType: mcpServer
+    resourceId: mcp
+    effect: allow
+    enabled: true
+    userId: alice
+  - id: roots-disclosure
+    actionType: mcpOperation
+    actionName: roots/list/respond
+    resourceType: mcpServer
+    resourceId: mcp
+    effect: allow
+    enabled: true
+    userId: alice
+# Sampling and Elicitation are installed but not granted here. Add their exact
+# request/respond grants for a specific server/subject only when required.

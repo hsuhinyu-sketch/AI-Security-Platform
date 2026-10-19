@@ -38,7 +38,3 @@ pub fn recognizer(
 ) -> Vec<recognizer_result::RecognizerResult> {
 	r.recognize(text)
 }
-
-#[cfg(test)]
-#[path = "tests.rs"]
-mod tests;

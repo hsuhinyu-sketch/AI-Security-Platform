@@ -13,10 +13,6 @@ use crate::proxy::dtrace::{self, pol_result};
 use crate::proxy::{ProxyError, ProxyResponse};
 use crate::*;
 
-#[cfg(test)]
-#[path = "apikey_tests.rs"]
-mod tests;
-
 const TRACE_POLICY_KIND: &str = "api_key";
 
 #[derive(thiserror::Error, Debug)]

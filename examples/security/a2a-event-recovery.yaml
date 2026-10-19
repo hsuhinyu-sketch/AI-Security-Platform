@@ -1,0 +1,64 @@
+# SecurityConfig fragment, NOT a full deployment. Route must validate strict JWT.
+# Pre-create private 0700 parent directory. For aiSystems, use its name as namespace.
+mode: enforce
+requiredIdentity:
+  user: true
+  tenant: true
+  agent: false
+a2aObjects:
+  storage:
+    type: sqlite
+    path: /var/lib/ai-security-platform/tasks.db
+    namespace: service-agent
+    busyTimeoutMillis: 100
+  retentionSeconds: 86400
+  eventRecovery:
+    namespace: service-agent
+    storage:
+      path: /var/lib/ai-security-platform/events.jsonl
+      maxBytes: 16777216
+    maxEvents: 1024
+    maxMemoryBytes: 8388608
+    maxEventBytes: 262144
+    retentionSeconds: 3600
+    maxBatchEvents: 16
+    maxBatchBytes: 1048576
+policies:
+  - id: stream-agent
+    actionType: agentInvoke
+    actionName: message/stream
+    resourceId: agents.internal:8443
+    userId: alice
+    effect: allow
+    enabled: true
+  - id: local-event-method
+    actionType: agentInvoke
+    actionName: aisp.events/read
+    resourceId: agents.internal:8443
+    userId: alice
+    effect: allow
+    enabled: true
+  - id: create-own-task
+    actionType: agentTaskOperation
+    actionName: create
+    resourceType: agent
+    resourceId: '["agents.internal:8443","/"]'
+    userId: alice
+    effect: allow
+    enabled: true
+  - id: read-own-task
+    actionType: agentTaskOperation
+    actionName: read
+    resourceType: agentTask
+    userId: alice
+    effect: allow
+    enabled: true
+  - id: recover-own-events
+    actionType: agentEventRecover
+    actionName: read
+    resourceType: agentTask
+    userId: alice
+    effect: allow
+    enabled: true
+# No Artifact read grant: artifact content remains hidden until separately granted.
+# Tighten task resourceId when IDs are known. Owner/scope checks always apply.

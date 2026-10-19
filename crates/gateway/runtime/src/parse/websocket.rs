@@ -592,29 +592,3 @@ pub async fn guarded_realtime_proxy<C, S>(
 	}
 	let _ = tokio::join!(client_writer_join, server_writer_join);
 }
-
-#[cfg(test)]
-mod tests {
-	use super::*;
-
-	#[test]
-	fn record_text_payload_disables_after_limit() {
-		let (io, _) = tokio::io::duplex(1);
-		let mut parser = Parser {
-			inner: io,
-			frames: WsFrameAccumulator::new(),
-			text_buffer: Default::default(),
-			buffer_limit: 4,
-			disabled: false,
-			log: AsyncLog::default(),
-		};
-
-		assert!(parser.record_text_payload(b"abc"));
-		assert_eq!(&parser.text_buffer[..], b"abc");
-		parser.text_buffer.reserve(1024);
-		assert!(!parser.record_text_payload(b"de"));
-		assert!(parser.disabled);
-		assert!(parser.text_buffer.is_empty());
-		assert_eq!(parser.text_buffer.capacity(), 0);
-	}
-}

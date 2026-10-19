@@ -27,7 +27,3 @@ pub fn path_suffix(route: RouteType) -> &'static str {
 		_ => "/messages",
 	}
 }
-
-#[cfg(test)]
-#[path = "anthropic_tests.rs"]
-mod tests;

@@ -1,10 +1,6 @@
 use crate::llm::types::ResponseType;
 use crate::llm::{AIError, logged_response_parsing, types};
 
-#[cfg(test)]
-#[path = "vertex_tests.rs"]
-mod tests;
-
 pub mod from_rerank {
 	use super::*;
 

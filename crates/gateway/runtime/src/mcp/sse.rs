@@ -37,6 +37,22 @@ impl LegacySSEService {
 		inputs: RelayInputs,
 	) -> Result<Response, ProxyError> {
 		let method = request.method().clone();
+		if inputs
+			.security_audit
+			.as_ref()
+			.is_some_and(|c| c.mcp_sessions.is_some())
+		{
+			let (mut parts, _) = request.into_parts();
+			let access = super::session_security::SessionAccess::prepare(
+				&mut parts,
+				&inputs,
+				&self.session_manager,
+				"use",
+				None,
+			)?
+			.expect("enabled");
+			return Err(access.denial("unsupported-legacy-sse"));
+		}
 
 		match method {
 			http::Method::POST => self.handle_post(request, inputs).await,

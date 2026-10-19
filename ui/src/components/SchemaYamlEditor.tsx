@@ -45,7 +45,7 @@ export function SchemaYamlEditor(props: {
 
 	function onMount(editor: Monaco.editor.IStandaloneCodeEditor, monaco: typeof Monaco) {
 		monacoRef.current = monaco;
-		if (import.meta.env.DEV || import.meta.env.MODE === 'e2e') {
+		if (import.meta.env.DEV) {
 			window.__schemaYamlEditor = editor;
 			window.__schemaYamlMonaco = monaco;
 		}

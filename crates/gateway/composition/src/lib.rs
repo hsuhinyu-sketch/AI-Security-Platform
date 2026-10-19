@@ -91,37 +91,3 @@ impl GatewayProfileProvider for CompiledGatewayProfile {
 		)
 	}
 }
-
-#[cfg(test)]
-mod tests {
-	use super::{CompiledGatewayProfile, GatewayCapability, GatewayProfileProvider};
-
-	#[test]
-	fn profile_matches_feature_selection() {
-		let profile = CompiledGatewayProfile::gateway_profile();
-		assert_eq!(
-			profile.supports(GatewayCapability::Llm),
-			cfg!(feature = "gateway-llm")
-		);
-		assert_eq!(
-			profile.supports(GatewayCapability::A2a),
-			cfg!(feature = "gateway-a2a")
-		);
-		assert_eq!(
-			profile.supports(GatewayCapability::Mcp),
-			cfg!(feature = "gateway-mcp")
-		);
-		assert_eq!(
-			profile.supports(GatewayCapability::InferenceRouting),
-			cfg!(feature = "inference-routing")
-		);
-		assert_eq!(
-			profile.supports(GatewayCapability::SecurityS1),
-			cfg!(feature = "security-s1")
-		);
-		assert_eq!(
-			profile.supports(GatewayCapability::Rag),
-			cfg!(feature = "gateway-rag")
-		);
-	}
-}

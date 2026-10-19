@@ -34,10 +34,6 @@ const EXTPROC_ATTRIBUTES_NAMESPACE: &str = "envoy.filters.http.ext_proc";
 pub(crate) const EXTPROC_GRPC_INITIAL_METADATA_NAMESPACE: &str =
 	"agentgateway.dev.grpc_initial_metadata";
 
-#[cfg(test)]
-#[path = "ext_proc_tests.rs"]
-mod tests;
-
 const TRACE_POLICY_KIND: &str = "ext_proc";
 
 #[derive(Debug, thiserror::Error)]
@@ -85,8 +81,7 @@ use buffering::{
 };
 pub use channel::GrpcReferenceChannel;
 use headers::{req_to_header_map, resp_to_header_map, to_header_map};
-#[cfg(test)]
-use mutation::extract_dynamic_metadata;
+
 use mutation::{
 	handle_response_for_request_mutation, handle_response_for_response_mutation,
 	request_body_response_has_no_mutation, request_response_has_streamed_body_mutation,

@@ -1,0 +1,74 @@
+# SecurityConfig fragment: place under one aiSystems[] entry.
+# All associated gateways must share this config and enforce verified JWT identity.
+security:
+  mode: enforce
+  executionBudget:
+    namespace: local-assistant
+    # Opt-in single-writer recovery. Provision the private directory before enabling.
+    # storage:
+    #   type: journal
+    #   path: /var/lib/ai-security-platform/executions.jsonl
+    #   maxBytes: 67108864
+    maxDurationSeconds: 300
+    maxContexts: 1024
+    maxContextsPerOwner: 4
+    maxModelCalls: 8
+    maxToolCalls: 4
+    maxAgentCalls: 4
+    # Includes retry/fallback and MCP transport/setup HTTP requests.
+    maxAttempts: 32
+    maxConcurrent: 4
+    # One-use Tool invocation handles, including already claimed handles.
+    maxInvocations: 32
+  # Required if the AI system includes MCP. Remove for an LLM-only composition.
+  mcpSessions: {}
+  # Required when the AI system includes A2A; remove for other compositions.
+  # a2aObjects: {}
+  requiredIdentity: {user: true, agent: false, tenant: true}
+  policies:
+    # Only this verified Agent principal may create contexts. Do not grant to every caller.
+    - id: trusted-execution-creator
+      actionType: executionOperation
+      actionName: execution/create
+      resourceType: execution
+      resourceId: local-assistant
+      agentId: local-orchestrator
+      tenantId: tenant-a
+      effect: allow
+      enabled: true
+    - id: trusted-invocation-issuer
+      actionType: executionOperation
+      actionName: execution/invocation/create
+      resourceType: execution
+      resourceId: local-assistant
+      agentId: local-orchestrator
+      tenantId: tenant-a
+      effect: allow
+      enabled: true
+    - id: trusted-invocation-reader
+      actionType: executionOperation
+      actionName: execution/invocation/read
+      resourceType: execution
+      resourceId: local-assistant
+      agentId: local-orchestrator
+      tenantId: tenant-a
+      effect: allow
+      enabled: true
+    # Independent lifecycle permission; still restricted to the workflow's exact Owner.
+    - id: trusted-execution-canceller
+      actionType: executionOperation
+      actionName: execution/cancel
+      resourceType: execution
+      resourceId: local-assistant
+      agentId: local-orchestrator
+      tenantId: tenant-a
+      effect: allow
+      enabled: true
+    - {id: model, tenantId: tenant-a, actionType: modelInvoke, effect: allow, enabled: true}
+    - {id: agent, tenantId: tenant-a, actionType: agentInvoke, effect: allow, enabled: true}
+    # With A2A objects enabled, also grant only the required agentTaskOperation
+    # and agentArtifactRead actions; AgentInvoke alone does not authorize objects.
+    - {id: session, tenantId: tenant-a, actionType: mcpSessionOperation, effect: allow, enabled: true}
+    - {id: list, tenantId: tenant-a, actionType: toolList, effect: allow, enabled: true}
+    - {id: tool, tenantId: tenant-a, actionType: toolInvoke, effect: allow, enabled: true}
+    - {id: resource, tenantId: tenant-a, actionType: mcpOperation, effect: allow, enabled: true}

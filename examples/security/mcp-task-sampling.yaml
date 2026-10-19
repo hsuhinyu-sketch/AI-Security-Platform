@@ -1,0 +1,45 @@
+# SecurityConfig fragment. Apply the SAME complete profile to MCP and actual LLM backend.
+# Requires strict JWT, stateful MCP source "reports", execution routes and a local AI route.
+# The route must accept the original caller credential; no credential exchange is performed.
+mode: enforce
+mcpSessions:
+  tasks:
+    tools: [workspace-report]
+    sampling:
+      authority: llm.internal
+      path: /v1/chat/completions
+      model: managed-model
+    maxTasks: 32
+    maxTaskSeconds: 300
+  reverse:
+    samplingModels: [managed-model]
+    maxSamplingTokens: 256
+    maxPending: 8
+    timeoutSeconds: 30
+executionBudget:
+  namespace: reports-sampling
+  maxModelCalls: 4
+  maxToolCalls: 1
+  maxAgentCalls: 1
+  maxAttempts: 32
+  maxConcurrent: 3
+  maxDurationSeconds: 300
+policies:
+  - { id: session, actionType: mcpSessionOperation, userId: alice, effect: allow, enabled: true }
+  - { id: discover, actionType: toolList, userId: alice, effect: allow, enabled: true }
+  - { id: report, actionType: toolInvoke, resourceId: workspace-report, userId: alice, effect: allow, enabled: true }
+  - { id: source-init, actionType: mcpOperation, actionName: initialize, resourceId: reports, userId: alice, effect: allow, enabled: true }
+  - { id: source-read, actionType: mcpOperation, actionName: tasks/get, resourceId: reports, userId: alice, effect: allow, enabled: true }
+  - { id: source-result, actionType: mcpOperation, actionName: tasks/result, resourceId: reports, userId: alice, effect: allow, enabled: true }
+  - { id: source-sampling-request, actionType: mcpOperation, actionName: sampling/createMessage/request, resourceId: reports, userId: alice, effect: allow, enabled: true }
+  - { id: source-sampling-respond, actionType: mcpOperation, actionName: sampling/createMessage/respond, resourceId: reports, userId: alice, effect: allow, enabled: true }
+  - { id: task-create, actionType: mcpTaskOperation, actionName: tools/call, resourceType: mcpTask, userId: alice, effect: allow, enabled: true }
+  - { id: task-read, actionType: mcpTaskOperation, actionName: tasks/get, resourceType: mcpTask, userId: alice, effect: allow, enabled: true }
+  - { id: task-result, actionType: mcpTaskOperation, actionName: tasks/result, resourceType: mcpTask, userId: alice, effect: allow, enabled: true }
+  - { id: task-sampling-request, actionType: mcpTaskOperation, actionName: sampling/createMessage/request, resourceType: mcpTask, userId: alice, effect: allow, enabled: true }
+  - { id: task-sampling-respond, actionType: mcpTaskOperation, actionName: sampling/createMessage/respond, resourceType: mcpTask, userId: alice, effect: allow, enabled: true }
+  - { id: model, actionType: modelInvoke, actionName: invoke, userId: alice, effect: allow, enabled: true }
+  - { id: execution-create, actionType: executionOperation, actionName: execution/create, userId: alice, effect: allow, enabled: true }
+  - { id: invocation-create, actionType: executionOperation, actionName: execution/invocation/create, userId: alice, effect: allow, enabled: true }
+  - { id: invocation-read, actionType: executionOperation, actionName: execution/invocation/read, userId: alice, effect: allow, enabled: true }
+# Narrow actual model resource/egress and add explicit cancellation grants for your deployment.

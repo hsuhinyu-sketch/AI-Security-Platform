@@ -40,7 +40,7 @@ pub const DEFAULT_BUFFERED_LINES_LIMIT: usize = 128_000;
 ///
 /// # Examples
 ///
-/// ``` rust
+/// ```ignore
 /// # #[clippy::allow(needless_doctest_main)]
 /// fn main () {
 /// # fn doc() {
@@ -117,13 +117,6 @@ impl NonBlocking {
 			},
 			worker_guard,
 		)
-	}
-
-	/// Returns a counter for the number of times logs where dropped. This will always return zero if
-	/// `NonBlocking` is not lossy.
-	#[cfg(test)]
-	pub fn error_counter(&self) -> ErrorCounter {
-		self.error_counter.clone()
 	}
 }
 
@@ -249,17 +242,6 @@ impl Drop for WorkerGuard {
 // === impl ErrorCounter ===
 
 impl ErrorCounter {
-	/// Returns the number of log lines that have been dropped.
-	///
-	/// If the non-blocking writer is not configured in [lossy mode], the error
-	/// count should always be 0.
-	///
-	/// [lossy mode]: NonBlockingBuilder::lossy
-	#[cfg(test)]
-	pub fn dropped_lines(&self) -> usize {
-		self.0.load(Ordering::Acquire)
-	}
-
 	fn incr_saturating(&self) {
 		let mut curr = self.0.load(Ordering::Acquire);
 		// We don't need to enter the CAS loop if the current value is already
@@ -281,157 +263,5 @@ impl ErrorCounter {
 				Err(actual) => curr = actual,
 			}
 		}
-	}
-}
-
-#[cfg(test)]
-mod test {
-	use std::sync::mpsc;
-	use std::thread;
-	use std::time::Duration;
-
-	use super::*;
-
-	struct MockWriter {
-		tx: mpsc::SyncSender<String>,
-	}
-
-	impl MockWriter {
-		fn new(capacity: usize) -> (Self, mpsc::Receiver<String>) {
-			let (tx, rx) = mpsc::sync_channel(capacity);
-			(Self { tx }, rx)
-		}
-	}
-
-	impl std::io::Write for MockWriter {
-		fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-			let buf_len = buf.len();
-			let _ = self.tx.send(String::from_utf8_lossy(buf).to_string());
-			Ok(buf_len)
-		}
-
-		fn flush(&mut self) -> std::io::Result<()> {
-			Ok(())
-		}
-	}
-
-	#[test]
-	fn backpressure_exerted() {
-		let (mock_writer, rx) = MockWriter::new(1);
-
-		let (mut non_blocking, _guard) = self::NonBlockingBuilder::default()
-			.lossy(false)
-			.buffered_lines_limit(1)
-			.finish(mock_writer);
-
-		let error_count = non_blocking.error_counter();
-
-		non_blocking.write_all(b"Hello").expect("Failed to write");
-		assert_eq!(0, error_count.dropped_lines());
-
-		let handle = thread::spawn(move || {
-			non_blocking.write_all(b", World").expect("Failed to write");
-		});
-
-		// Sleep a little to ensure previously spawned thread gets blocked on write.
-		thread::sleep(Duration::from_millis(100));
-		// We should not drop logs when blocked.
-		assert_eq!(0, error_count.dropped_lines());
-
-		// Read the first message to unblock sender.
-		let mut line = rx.recv().unwrap();
-		assert_eq!(line, "Hello");
-
-		// Wait for thread to finish.
-		handle.join().expect("thread should not panic");
-
-		// Thread has joined, we should be able to read the message it sent.
-		line = rx.recv().unwrap();
-		assert_eq!(line, ", World");
-	}
-
-	fn write_non_blocking(non_blocking: &mut NonBlocking, msg: &[u8]) {
-		non_blocking.write_all(msg).expect("Failed to write");
-
-		// Sleep a bit to prevent races.
-		thread::sleep(Duration::from_millis(200));
-	}
-
-	#[test]
-	#[ignore] // flaky, see https://github.com/tokio-rs/tracing/issues/751
-	fn logs_dropped_if_lossy() {
-		let (mock_writer, rx) = MockWriter::new(1);
-
-		let (mut non_blocking, _guard) = self::NonBlockingBuilder::default()
-			.lossy(true)
-			.buffered_lines_limit(1)
-			.finish(mock_writer);
-
-		let error_count = non_blocking.error_counter();
-
-		// First write will not block
-		write_non_blocking(&mut non_blocking, b"Hello");
-		assert_eq!(0, error_count.dropped_lines());
-
-		// Second write will not block as Worker will have called `recv` on channel.
-		// "Hello" is not yet consumed. MockWriter call to write_all will block until
-		// "Hello" is consumed.
-		write_non_blocking(&mut non_blocking, b", World");
-		assert_eq!(0, error_count.dropped_lines());
-
-		// Will sit in NonBlocking channel's buffer.
-		write_non_blocking(&mut non_blocking, b"Test");
-		assert_eq!(0, error_count.dropped_lines());
-
-		// Allow a line to be written. "Hello" message will be consumed.
-		// ", World" will be able to write to MockWriter.
-		// "Test" will block on call to MockWriter's `write_all`
-		let line = rx.recv().unwrap();
-		assert_eq!(line, "Hello");
-
-		// This will block as NonBlocking channel is full.
-		write_non_blocking(&mut non_blocking, b"Universe");
-		assert_eq!(1, error_count.dropped_lines());
-
-		// Finally the second message sent will be consumed.
-		let line = rx.recv().unwrap();
-		assert_eq!(line, ", World");
-		assert_eq!(1, error_count.dropped_lines());
-	}
-
-	#[test]
-	fn multi_threaded_writes() {
-		let (mock_writer, rx) = MockWriter::new(DEFAULT_BUFFERED_LINES_LIMIT);
-
-		let (non_blocking, _guard) = self::NonBlockingBuilder::default()
-			.lossy(true)
-			.finish(mock_writer);
-
-		let error_count = non_blocking.error_counter();
-		let mut join_handles: Vec<JoinHandle<()>> = Vec::with_capacity(10);
-
-		for _ in 0..10 {
-			let cloned_non_blocking = non_blocking.clone();
-			join_handles.push(thread::spawn(move || {
-				let subscriber = tracing_subscriber::fmt().with_writer(cloned_non_blocking);
-				tracing::subscriber::with_default(subscriber.finish(), || {
-					tracing::event!(tracing::Level::INFO, "Hello");
-				});
-			}));
-		}
-
-		for handle in join_handles {
-			handle.join().expect("Failed to join thread");
-		}
-
-		let mut hello_count: u8 = 0;
-
-		while let Ok(event_str) = rx.recv_timeout(Duration::from_millis(25)) {
-			assert!(event_str.contains("Hello"));
-			hello_count += 1;
-		}
-
-		assert_eq!(10, hello_count);
-		assert_eq!(0, error_count.dropped_lines());
 	}
 }

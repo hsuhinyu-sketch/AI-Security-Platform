@@ -1,0 +1,47 @@
+# SecurityConfig fragment; install strict JWT on the business A2A route.
+# Prepare private 0700 directory. In aiSystems, namespace must equal system name.
+mode: enforce
+a2aObjects:
+  storage:
+    type: sqlite
+    path: /var/lib/ai-security-platform/tasks.db
+    namespace: service-agent
+    busyTimeoutMillis: 100
+  eventRecovery:
+    namespace: service-agent
+    storage:
+      path: /var/lib/ai-security-platform/events.jsonl
+      maxBytes: 16777216
+  push:
+    callbackBaseUrl: https://platform.example/v1/a2a/push/
+    maxChannels: 32
+    maxChannelSeconds: 300
+    maxPayloadBytes: 65536
+    timeoutSeconds: 5
+policies:
+  - id: agent-methods
+    actionType: agentInvoke
+    resourceId: agents.internal:8443
+    userId: alice
+    effect: allow
+    enabled: true
+  - id: own-task
+    actionType: agentTaskOperation
+    userId: alice
+    effect: allow
+    enabled: true
+  - id: own-push
+    actionType: agentPushOperation
+    resourceType: agentTask
+    userId: alice
+    effect: allow
+    enabled: true
+  - id: own-inbox
+    actionType: agentEventRecover
+    resourceType: agentTask
+    userId: alice
+    effect: allow
+    enabled: true
+# No Artifact read grant. Tighten Task resourceIds for known Tasks before production.
+# Register only the exact callbackBaseUrl; the Gateway generates ID/credentials.
+# Do not log raw upstream registration bodies: they contain channel credentials.

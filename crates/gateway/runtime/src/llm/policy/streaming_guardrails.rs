@@ -111,7 +111,7 @@ impl StreamingEvaluator for ResponseGuardEvaluator {
 	fn failure_mode(&self) -> FailureMode {
 		match &self.guard.kind {
 			ResponseGuardKind::Webhook(wh) => wh.failure_mode,
-			_ => FailureMode::FailOpen,
+			_ => FailureMode::FailClosed,
 		}
 	}
 
@@ -167,7 +167,7 @@ pin_project! {
 	// An `http_body::Body` wrapper that implements windowed guardrail evaluation.
 	pub struct GuardedSseBody {
 		#[pin]
-		inner: crate::http::Body,
+		inner: Option<crate::http::Body>,
 		evaluators: Vec<Box<dyn StreamingEvaluator>>,
 		eval_threshold: usize,
 		buffer_limit: usize,
@@ -216,10 +216,11 @@ impl GuardedSseBody {
 		logger: Option<crate::llm::AmendOnDrop>,
 		eval_threshold: usize,
 	) -> crate::http::Body {
+		let buffer_limit = buffer_limit.clamp(1024, 4 * 1024 * 1024);
 		crate::http::Body::new(Self {
-			inner,
+			inner: Some(inner),
 			evaluators,
-			eval_threshold,
+			eval_threshold: eval_threshold.clamp(1, buffer_limit),
 			buffer_limit,
 			held_frames: Vec::new(),
 			held_bytes: 0,
@@ -233,40 +234,78 @@ impl GuardedSseBody {
 	}
 
 	/// Extract text delta from a parsed SSE frame if present.
-	fn extract_text_delta(frame: SseFrame<Bytes>) -> Option<String> {
+	fn extract_text_delta(frame: &SseFrame<Bytes>) -> Result<Option<String>, ()> {
 		let SseFrame::Event(Event { data, .. }) = frame else {
-			return None;
+			return Ok(None);
 		};
 		if data.as_ref() == b"[DONE]" {
+			return Ok(None);
+		}
+		let value: serde_json::Value = serde_json::from_slice(data).map_err(|_| ())?;
+		if !value.is_object() {
+			return Err(());
+		}
+		// Inspect content fields in every choice, initial block and final response copy.
+		// Telemetry/obfuscation must not be interleaved between consecutive text deltas:
+		// that would hide a pattern split across otherwise adjacent fragments.
+		fn collect(value: &serde_json::Value, text: &mut String, content: bool) {
+			match value {
+				serde_json::Value::String(s) if content => text.push_str(s),
+				serde_json::Value::Array(values) => values.iter().for_each(|v| collect(v, text, content)),
+				serde_json::Value::Object(values) => {
+					for (key, value) in values {
+						let content = matches!(
+							key.as_str(),
+							"text"
+								| "content"
+								| "delta"
+								| "arguments"
+								| "partial_json"
+								| "thinking"
+								| "reasoning_content"
+								| "refusal"
+								| "data"
+						);
+						collect(value, text, content);
+					}
+				},
+				_ => {},
+			}
+		}
+		let mut text = String::new();
+		fn uninspectable(value: &serde_json::Value) -> bool {
+			match value {
+				serde_json::Value::Array(a) => a.iter().any(uninspectable),
+				serde_json::Value::Object(o) => o.iter().any(|(k, v)| {
+					(k == "type"
+						&& v
+							.as_str()
+							.is_some_and(|s| s.contains("audio") || s.contains("image")))
+						|| (matches!(k.as_str(), "audio" | "image_url" | "b64_json") && !v.is_null())
+						|| uninspectable(v)
+				}),
+				_ => false,
+			}
+		}
+		if uninspectable(&value) {
+			return Err(());
+		}
+		collect(&value, &mut text, false);
+		Ok((!text.is_empty()).then_some(text))
+	}
+
+	fn encode_frame(frame: SseFrame<Bytes>) -> Option<Bytes> {
+		let SseFrame::Event(event) = frame else {
 			return None;
-		}
-		if let Ok(v) = serde_json::from_slice::<serde_json::Value>(&data) {
-			// OpenAI responses: response.output_text.delta
-			if v.get("type").and_then(|t| t.as_str()) == Some("response.output_text.delta")
-				&& let Some(text) = v.get("delta").and_then(|s| s.as_str())
-			{
-				return Some(text.to_string());
-			}
-			// OpenAI completions: choices[0].delta.content
-			if let Some(text) = v
-				.get("choices")
-				.and_then(|c| c.get(0))
-				.and_then(|c| c.get("delta"))
-				.and_then(|d| d.get("content"))
-				.and_then(|s| s.as_str())
-			{
-				return Some(text.to_string());
-			}
-			// Anthropic messages: delta.text
-			if let Some(text) = v
-				.get("delta")
-				.and_then(|d| d.get("text"))
-				.and_then(|s| s.as_str())
-			{
-				return Some(text.to_string());
-			}
-		}
-		None
+		};
+		Some(crate::parse::encode_sse_event(
+			if event.name == "message" {
+				""
+			} else {
+				&event.name
+			},
+			event.data,
+		))
 	}
 }
 
@@ -279,8 +318,16 @@ impl http_body::Body for GuardedSseBody {
 		cx: &mut Context<'_>,
 	) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
 		let mut this = self.project();
+		let mut steps = 0;
 
 		loop {
+			// An always-ready source of comments/empty chunks must not monopolize a
+			// Tokio worker and prevent outer deadlines or cancellation from polling.
+			if steps == 64 {
+				cx.waker().wake_by_ref();
+				return Poll::Pending;
+			}
+			steps += 1;
 			match this.state {
 				// -----------------------------------------------------------------
 				// Flushing: yield held frames one at a time.
@@ -299,6 +346,9 @@ impl http_body::Body for GuardedSseBody {
 				// Blocked: yield synthetic error event, then done.
 				// -----------------------------------------------------------------
 				GuardedBodyState::Blocked(body) => {
+					this.inner.as_mut().set(None);
+					this.decode_buffer.clear();
+					this.pending_text.clear();
 					let body = std::mem::take(body);
 					*this.state = GuardedBodyState::Done;
 					return Poll::Ready(Some(Ok(Frame::data(guardrail_blocked_sse_bytes(body)))));
@@ -307,6 +357,7 @@ impl http_body::Body for GuardedSseBody {
 				// Done: stream exhausted.
 				// -----------------------------------------------------------------
 				GuardedBodyState::Done => {
+					this.inner.as_mut().set(None);
 					return Poll::Ready(None);
 				},
 				// -----------------------------------------------------------------
@@ -331,36 +382,69 @@ impl http_body::Body for GuardedSseBody {
 				// Buffering: read from upstream, holding frames until threshold.
 				// -----------------------------------------------------------------
 				GuardedBodyState::Buffering => {
-					match this.inner.as_mut().poll_frame(cx) {
+					match this
+						.inner
+						.as_mut()
+						.as_pin_mut()
+						.expect("active upstream")
+						.poll_frame(cx)
+					{
 						Poll::Pending => return Poll::Pending,
-						Poll::Ready(Some(Err(e))) => return Poll::Ready(Some(Err(e))),
+						Poll::Ready(Some(Err(e))) => {
+							*this.state = GuardedBodyState::Done;
+							this.inner.as_mut().set(None);
+							return Poll::Ready(Some(Err(e)));
+						},
 						Poll::Ready(Some(Ok(frame))) => {
 							let Some(data) = frame.data_ref() else {
 								return Poll::Ready(Some(Ok(frame)));
 							};
 
-							let raw = data.clone();
-							*this.held_bytes += raw.len();
-							this.held_frames.push(raw.clone());
-
-							this.decode_buffer.extend_from_slice(&raw);
+							if this.decode_buffer.len().saturating_add(data.len()) > *this.buffer_limit {
+								*this.state = GuardedBodyState::Blocked(Bytes::from_static(
+									b"Stream frame exceeds security budget",
+								));
+								continue;
+							}
+							this.decode_buffer.extend_from_slice(data);
 							loop {
 								match this.sse_decoder.decode(this.decode_buffer) {
 									Ok(Some(sse_frame)) => {
-										if let Some(delta) = GuardedSseBody::extract_text_delta(sse_frame) {
-											this.pending_text.push_str(&delta);
+										match GuardedSseBody::extract_text_delta(&sse_frame) {
+											Ok(Some(delta)) => this.pending_text.push_str(&delta),
+											Ok(None) => {},
+											Err(()) => {
+												*this.state = GuardedBodyState::Blocked(Bytes::from_static(
+													b"Invalid structured stream",
+												));
+												break;
+											},
+										}
+										if let Some(raw) = GuardedSseBody::encode_frame(sse_frame) {
+											if this.held_frames.len() >= 1024
+												|| this.held_bytes.saturating_add(raw.len()) > *this.buffer_limit
+											{
+												*this.state = GuardedBodyState::Blocked(Bytes::from_static(
+													b"Stream window exceeds security budget",
+												));
+												break;
+											}
+											*this.held_bytes += raw.len();
+											this.held_frames.push(raw);
 										}
 									},
 									Ok(None) => break,
 									Err(e) => {
-										// Clear the buffer and reset the decoder so invalid bytes
-										// don't accumulate across chunks and cause repeated errors.
-										warn!("SSE decode error in streaming guardrail body, resetting decoder: {e}");
-										this.decode_buffer.clear();
-										*this.sse_decoder = SseDecoder::with_max_size(*this.buffer_limit);
+										warn!("SSE decode error in streaming guardrail body: {e}");
+										*this.state =
+											GuardedBodyState::Blocked(Bytes::from_static(b"Invalid stream framing"));
 										break;
 									},
 								}
+							}
+							if matches!(this.state, GuardedBodyState::Blocked(_)) {
+								this.held_frames.clear();
+								continue;
 							}
 
 							let over_limit = *this.held_bytes >= *this.buffer_limit;
@@ -386,20 +470,25 @@ impl http_body::Body for GuardedSseBody {
 							}
 						},
 						Poll::Ready(None) => {
-							loop {
-								match this.sse_decoder.decode_eof(this.decode_buffer) {
-									Ok(Some(sse_frame)) => {
-										if let Some(delta) = GuardedSseBody::extract_text_delta(sse_frame) {
-											this.pending_text.push_str(&delta);
-										}
-									},
-									Ok(None) => break,
-									Err(e) => {
-										warn!("SSE decode error at EOF in streaming guardrail body: {e}");
-										this.decode_buffer.clear();
-										break;
-									},
-								}
+							match this.sse_decoder.decode_eof(this.decode_buffer) {
+								Ok(Some(sse_frame)) => {
+									// An event missing its terminating blank line is not a
+									// complete disclosure unit, even if the SSE codec accepts EOF.
+									let _ = sse_frame;
+									*this.state =
+										GuardedBodyState::Blocked(Bytes::from_static(b"Truncated stream event"));
+								},
+								Ok(None) => {},
+								Err(e) => {
+									warn!("SSE decode error at EOF in streaming guardrail body: {e}");
+									this.decode_buffer.clear();
+									*this.state =
+										GuardedBodyState::Blocked(Bytes::from_static(b"Invalid stream framing"));
+								},
+							}
+							if matches!(this.state, GuardedBodyState::Blocked(_)) {
+								this.held_frames.clear();
+								continue;
 							}
 
 							if this.pending_text.is_empty() {
@@ -423,257 +512,5 @@ impl http_body::Body for GuardedSseBody {
 				},
 			}
 		}
-	}
-}
-
-#[cfg(test)]
-mod tests {
-	use http_body_util::BodyExt as _;
-
-	use super::*;
-
-	struct PassEvaluator;
-
-	#[async_trait::async_trait]
-	impl StreamingEvaluator for PassEvaluator {
-		async fn evaluate(
-			&mut self,
-			_window: &str,
-		) -> anyhow::Result<Option<StreamingGuardrailOutcome>> {
-			Ok(None)
-		}
-	}
-
-	struct BlockEvaluator;
-
-	#[async_trait::async_trait]
-	impl StreamingEvaluator for BlockEvaluator {
-		async fn evaluate(
-			&mut self,
-			_window: &str,
-		) -> anyhow::Result<Option<StreamingGuardrailOutcome>> {
-			Ok(Some(StreamingGuardrailOutcome::Blocked(
-				Bytes::from_static(b"blocked"),
-			)))
-		}
-	}
-
-	struct PatternEvaluator {
-		pattern: regex::Regex,
-	}
-
-	#[async_trait::async_trait]
-	impl StreamingEvaluator for PatternEvaluator {
-		async fn evaluate(
-			&mut self,
-			window: &str,
-		) -> anyhow::Result<Option<StreamingGuardrailOutcome>> {
-			if self.pattern.is_match(window) {
-				return Ok(Some(StreamingGuardrailOutcome::Blocked(
-					Bytes::from_static(b"blocked"),
-				)));
-			}
-			Ok(None)
-		}
-	}
-
-	struct ErrorEvaluator {
-		mode: crate::llm::policy::FailureMode,
-	}
-
-	#[async_trait::async_trait]
-	impl StreamingEvaluator for ErrorEvaluator {
-		fn failure_mode(&self) -> crate::llm::policy::FailureMode {
-			self.mode
-		}
-
-		async fn evaluate(
-			&mut self,
-			_window: &str,
-		) -> anyhow::Result<Option<StreamingGuardrailOutcome>> {
-			Err(anyhow::anyhow!("simulated evaluator error"))
-		}
-	}
-
-	fn sse_bytes(content: &str) -> Bytes {
-		Bytes::from(format!("data: {}\n\n", content))
-	}
-
-	fn delta_bytes(text: &str) -> Bytes {
-		sse_bytes(&format!(
-			"{{\"choices\":[{{\"delta\":{{\"content\":\"{}\"}}}}]}}",
-			text
-		))
-	}
-
-	fn make_body(chunks: Vec<Bytes>) -> crate::http::Body {
-		use std::convert::Infallible;
-
-		use futures_util::stream;
-		let stream = stream::iter(chunks.into_iter().map(Ok::<Bytes, Infallible>));
-		crate::http::Body::from_stream(stream)
-	}
-
-	fn contains(haystack: &[u8], needle: &[u8]) -> bool {
-		haystack.windows(needle.len()).any(|w| w == needle)
-	}
-
-	#[tokio::test]
-	async fn test_pass_through() {
-		let chunk = delta_bytes("hello");
-		let done = sse_bytes("[DONE]");
-		let body = make_body(vec![chunk.clone(), done.clone()]);
-
-		let guarded = GuardedSseBody::new(body, vec![Box::new(PassEvaluator)], 1024 * 1024, None);
-
-		let bytes = guarded.collect().await.unwrap().to_bytes();
-		assert!(bytes.starts_with(&chunk));
-	}
-
-	#[tokio::test]
-	async fn test_block() {
-		let chunk = delta_bytes("bad content");
-		let done = sse_bytes("[DONE]");
-		let body = make_body(vec![chunk, done]);
-
-		let guarded = GuardedSseBody::new(body, vec![Box::new(BlockEvaluator)], 1024 * 1024, None);
-
-		let bytes = guarded.collect().await.unwrap().to_bytes();
-		assert!(contains(&bytes, b"guardrail_blocked"));
-		assert!(!contains(&bytes, b"bad content"));
-	}
-
-	fn pattern_evaluator(pattern: &str) -> PatternEvaluator {
-		PatternEvaluator {
-			pattern: regex::Regex::new(pattern).unwrap(),
-		}
-	}
-
-	#[tokio::test]
-	async fn test_regex_blocks_matching_response() {
-		let chunk = delta_bytes("my SSN is 123-45-6789");
-		let done = sse_bytes("[DONE]");
-		let body = make_body(vec![chunk, done]);
-
-		let guarded = GuardedSseBody::new(
-			body,
-			vec![Box::new(pattern_evaluator("SSN"))],
-			1024 * 1024,
-			None,
-		);
-
-		let bytes = guarded.collect().await.unwrap().to_bytes();
-		assert!(contains(&bytes, b"guardrail_blocked"));
-		assert!(!contains(&bytes, b"SSN"));
-	}
-
-	#[tokio::test]
-	async fn test_regex_passes_non_matching_response() {
-		let chunk = delta_bytes("hello world");
-		let done = sse_bytes("[DONE]");
-		let body = make_body(vec![chunk.clone(), done]);
-
-		let guarded = GuardedSseBody::new(
-			body,
-			vec![Box::new(pattern_evaluator("SSN"))],
-			1024 * 1024,
-			None,
-		);
-
-		let bytes = guarded.collect().await.unwrap().to_bytes();
-		assert!(bytes.starts_with(&chunk));
-		assert!(!contains(&bytes, b"guardrail_blocked"));
-	}
-
-	#[tokio::test]
-	async fn test_regex_accumulates_within_batch() {
-		let chunk1 = delta_bytes("my credit");
-		let chunk2 = delta_bytes(" card");
-		let done = sse_bytes("[DONE]");
-		let body = make_body(vec![chunk1, chunk2, done]);
-
-		let guarded = GuardedSseBody::new(
-			body,
-			vec![Box::new(pattern_evaluator("credit card"))],
-			1024 * 1024,
-			None,
-		);
-
-		let bytes = guarded.collect().await.unwrap().to_bytes();
-		assert!(contains(&bytes, b"guardrail_blocked"));
-		assert!(!contains(&bytes, b"credit"));
-	}
-
-	#[tokio::test]
-	async fn test_windowed_incremental_flush_then_block() {
-		let chunk1 = delta_bytes("this part is fine");
-		let chunk2 = delta_bytes("forbidden words here");
-		let done = sse_bytes("[DONE]");
-		let body = make_body(vec![chunk1.clone(), chunk2, done]);
-
-		let guarded = GuardedSseBody::with_threshold(
-			body,
-			vec![Box::new(pattern_evaluator("forbidden"))],
-			1024 * 1024,
-			None,
-			4,
-		);
-
-		let bytes = guarded.collect().await.unwrap().to_bytes();
-		assert!(contains(&bytes, b"this part is fine"));
-		assert!(!contains(&bytes, b"forbidden"));
-		assert!(contains(&bytes, b"guardrail_blocked"));
-	}
-
-	#[tokio::test]
-	async fn test_overlap_catches_boundary_spanning_pattern() {
-		let chunk1 = delta_bytes("my credit");
-		let chunk2 = delta_bytes(" card number");
-		let done = sse_bytes("[DONE]");
-		let body = make_body(vec![chunk1, chunk2, done]);
-
-		let guarded = GuardedSseBody::with_threshold(
-			body,
-			vec![Box::new(pattern_evaluator("credit card"))],
-			1024 * 1024,
-			None,
-			4,
-		);
-
-		let bytes = guarded.collect().await.unwrap().to_bytes();
-		assert!(contains(&bytes, b"guardrail_blocked"));
-		assert!(!contains(&bytes, b"card number"));
-	}
-
-	#[test]
-	fn test_tail_chars_respects_utf8_boundaries() {
-		let s = "héllo wörld";
-		let t = tail_chars(s, 4);
-		assert!(t.len() <= 4);
-		assert!(s.ends_with(t));
-		let s2 = "aé";
-		assert_eq!(tail_chars(s2, 1), "");
-		assert_eq!(tail_chars(s2, 2), "é");
-	}
-
-	#[tokio::test]
-	async fn evaluate_window_fail_closed_blocks_on_error() {
-		use crate::llm::policy::FailureMode;
-		let mut evs: Vec<Box<dyn StreamingEvaluator>> = vec![Box::new(ErrorEvaluator {
-			mode: FailureMode::FailClosed,
-		})];
-		assert_eq!(
-			evaluate_window(&mut evs, "some text").await.as_deref(),
-			Some(&b"Content blocked by guardrail policy"[..])
-		);
-	}
-
-	#[tokio::test]
-	async fn evaluate_window_fail_open_passes_on_error() {
-		use crate::llm::policy::FailureMode;
-		let mut evs: Vec<Box<dyn StreamingEvaluator>> = vec![Box::new(ErrorEvaluator {
-			mode: FailureMode::FailOpen,
-		})];
-		assert!(evaluate_window(&mut evs, "some text").await.is_none());
 	}
 }

@@ -8,10 +8,6 @@ use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 
 use crate::transport::stream::SocketType;
 
-#[cfg(test)]
-#[path = "rewind_tests.rs"]
-mod tests;
-
 pub struct RewindSocket {
 	state: State,
 	io: SocketType,

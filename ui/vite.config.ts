@@ -2,8 +2,8 @@ import { fileURLToPath, URL } from 'node:url';
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vite';
 
-export default defineConfig(({ command, mode }) => ({
-	base: mode === 'e2e' ? '/' : command === 'build' ? '/ui/' : './',
+export default defineConfig(({ command }) => ({
+	base: command === 'build' ? '/ui/' : './',
 	plugins: [react()],
 	resolve: {
 		alias: {
@@ -24,7 +24,7 @@ export default defineConfig(({ command, mode }) => ({
 		port: 19000
 	},
 	preview: {
-		host: mode === 'e2e' ? '127.0.0.1' : '0.0.0.0',
+		host: '0.0.0.0',
 		port: 19100
 	}
 }));

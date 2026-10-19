@@ -140,55 +140,149 @@ impl App {
 		}
 
 		// MCP requires CEL execution after the snapshot so we do not clear extensions
+		if req
+			.headers()
+			.contains_key(crate::execution_budget::mcp_task_cleanup::HEADER)
+			&& !security_audit
+				.as_ref()
+				.is_some_and(|c| c.execution_budget.is_some())
+		{
+			return Err(ProxyError::AuthorizationFailed);
+		}
+		if let Some(config) = &security_audit {
+			if config.execution_budget.is_some() {
+				if config.mcp_sessions.is_none()
+					|| backends
+						.targets
+						.iter()
+						.any(|t| !matches!(t.spec, McpTargetSpec::Mcp(_)))
+				{
+					return Err(ProxyError::AuthorizationFailed);
+				}
+				if crate::execution_budget::is_control_path(req.uri().path()) {
+					let req = req.take_and_snapshot_without_clearing_extensions(Some(&mut log))?;
+					return Box::pin(crate::execution_budget::control(config, req)).await;
+				}
+				if req
+					.headers()
+					.contains_key(crate::execution_budget::mcp_task_cleanup::HEADER)
+				{
+					Box::pin(crate::execution_budget::mcp_task_cleanup::prepare(
+						config, &mut req,
+					))
+					.await?;
+				}
+				crate::execution_budget::prepare(config, &mut req)?;
+			}
+		}
+		if security_audit.as_ref().is_some_and(|c| {
+			(c.cross_component.is_some() || c.execution_budget.is_some()) && c.mcp_sessions.is_none()
+		}) {
+			let identity = crate::security::identity_from_extensions(req.extensions());
+			let action = security_pipeline::mcp_session_for_identity(
+				crate::security::request_id(req.extensions_mut()),
+				identity,
+				"use",
+				"mcp-gateway",
+			);
+			return Err(super::session_security::deny(
+				&action,
+				"cross-component-requires-session-protection",
+			));
+		}
+		if security_audit
+			.as_ref()
+			.is_some_and(|c| c.mcp_sessions.is_some())
+		{
+			let targets = backends
+				.targets
+				.iter()
+				.map(|t| (&t.name, format!("{:?}", t.spec), format!("{:?}", t.backend)))
+				.collect::<Vec<_>>();
+			let scope = serde_json::to_string(&(
+				&backend_group_name,
+				&log.bind_name,
+				&log.listener_name,
+				&log.route_name,
+				req.uri().authority().map(|a| a.as_str()),
+				req.uri().path_and_query().map(|p| p.as_str()),
+				targets,
+			))
+			.expect("scope serializes");
+			req
+				.extensions_mut()
+				.insert(super::session_security::SessionScope(
+					super::session_security::digest(&scope),
+				));
+		}
 		let req = req.take_and_snapshot_without_clearing_extensions(Some(&mut log))?;
+		let execution = req
+			.extensions()
+			.get::<crate::execution_budget::ExecutionScope>()
+			.cloned()
+			.map(Box::new);
+		let task_cleanup = req
+			.extensions()
+			.get::<crate::execution_budget::mcp_task_cleanup::Scope>()
+			.cloned()
+			.map(Box::new);
 		if log.request_processing_duration.is_none() {
 			// This is a bit inaccurate but the best we can do for the MCP path without very invasive changes.
 			log.request_processing_duration = Some(log.request_processing_start.elapsed());
 		}
 		let upstream_start = Instant::now();
-		let mut response = if req.uri().path() == "/sse" {
-			// Legacy handling
-			// Assume this is streamable HTTP otherwise
-			let sse = LegacySSEService::new(sessions);
-			Box::pin(
-				sse
-					.handle(
-						req,
-						RelayInputs {
-							backend: backends.clone(),
-							policies: authorization_policies.clone(),
-							mcp_guardrails: mcp_guardrails.clone(),
-							security_pipeline: security_pipeline.clone(),
-							security_audit: security_audit.clone(),
-							client: client.clone(),
-						},
-					)
-					.assert_size::<{ 20 * 1024 }>(),
-			)
-			.await
+		let serve = async {
+			if req.uri().path() == "/sse" {
+				// Legacy handling
+				// Assume this is streamable HTTP otherwise
+				let sse = LegacySSEService::new(sessions);
+				Box::pin(
+					sse
+						.handle(
+							req,
+							RelayInputs {
+								backend: backends.clone(),
+								policies: authorization_policies.clone(),
+								mcp_guardrails: mcp_guardrails.clone(),
+								security_pipeline: security_pipeline.clone(),
+								security_audit: security_audit.clone(),
+								client: client.clone(),
+							},
+						)
+						.assert_size::<{ 20 * 1024 }>(),
+				)
+				.await
+			} else {
+				let streamable = StreamableHttpService::new(
+					sessions,
+					StreamableHttpServerConfig {
+						stateful_mode: backend.stateful,
+					},
+				);
+				Box::pin(
+					streamable
+						.handle(
+							req,
+							RelayInputs {
+								backend: backends.clone(),
+								policies: authorization_policies.clone(),
+								mcp_guardrails: mcp_guardrails.clone(),
+								security_pipeline: security_pipeline.clone(),
+								security_audit: security_audit.clone(),
+								client: client.clone(),
+							},
+						)
+						.assert_size::<{ 4 * 1024 }>(),
+				)
+				.await
+			}
+		};
+		let mut response = if let Some(scope) = &task_cleanup {
+			Box::pin(scope.run(serve)).await?
+		} else if let Some(scope) = &execution {
+			Box::pin(scope.run(serve)).await?
 		} else {
-			let streamable = StreamableHttpService::new(
-				sessions,
-				StreamableHttpServerConfig {
-					stateful_mode: backend.stateful,
-				},
-			);
-			Box::pin(
-				streamable
-					.handle(
-						req,
-						RelayInputs {
-							backend: backends.clone(),
-							policies: authorization_policies.clone(),
-							mcp_guardrails: mcp_guardrails.clone(),
-							security_pipeline: security_pipeline.clone(),
-							security_audit: security_audit.clone(),
-							client: client.clone(),
-						},
-					)
-					.assert_size::<{ 4 * 1024 }>(),
-			)
-			.await
+			serve.await
 		};
 		let upstream_end = Instant::now();
 		// This aggregates the total time; no per-backend timings for fanout.
@@ -205,7 +299,16 @@ impl App {
 					log.response_processing_duration,
 				));
 		}
-		response
+		response.map(|response| {
+			if let Some(scope) = &task_cleanup {
+				scope.protect(response)
+			} else {
+				match &execution {
+					Some(scope) => crate::execution_budget::protect_output(response, scope),
+					None => response,
+				}
+			}
+		})
 	}
 
 	fn snapshot_request_without_clearing_extensions(

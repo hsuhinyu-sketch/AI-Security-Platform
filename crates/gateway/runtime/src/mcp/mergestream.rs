@@ -97,7 +97,9 @@ impl TryFrom<StreamableHttpPostResponse> for Messages {
 									.data
 									.filter(|data| !data.is_empty())
 									.map(|data| {
-										serde_json::from_str::<ServerJsonRpcMessage>(&data).map_err(ClientError::new)
+										serde_json::from_str(&data)
+											.and_then(super::wire::decode_server)
+											.map_err(ClientError::new)
 									})
 									.transpose()
 							})

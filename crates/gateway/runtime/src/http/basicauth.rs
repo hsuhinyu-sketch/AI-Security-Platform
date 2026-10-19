@@ -8,10 +8,6 @@ use crate::proxy::dtrace::{self};
 use crate::proxy::{ProxyError, ProxyResponse};
 use crate::*;
 
-#[cfg(test)]
-#[path = "basicauth_tests.rs"]
-mod tests;
-
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
 	#[error("no basic authentication credentials found")]

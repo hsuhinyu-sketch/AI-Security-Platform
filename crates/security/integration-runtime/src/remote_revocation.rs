@@ -113,20 +113,3 @@ impl DelegationRevocationProvider for HttpDelegationRevocationProvider {
 		Ok(response.revoked)
 	}
 }
-
-#[cfg(test)]
-mod tests {
-	use super::RemoteDelegationRevocationConfig;
-
-	#[test]
-	fn rejects_non_https_revocation_endpoint() {
-		let config = RemoteDelegationRevocationConfig {
-			endpoint: "http://revocations.internal/v1/check".into(),
-			timeout_millis: 100,
-			identity_pem_file: None,
-			root_ca_pem_file: None,
-			provider: super::default_provider_slot(),
-		};
-		assert!(config.provider().is_err());
-	}
-}

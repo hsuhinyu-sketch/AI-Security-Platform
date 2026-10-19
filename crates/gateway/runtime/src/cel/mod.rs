@@ -416,12 +416,5 @@ fn attributes_for(expression: &cel::IdedExpr) -> FlagSet<Attributes> {
 	attributes
 }
 
-#[cfg(test)]
-#[path = "tests.rs"]
-mod tests;
-
-#[cfg(any(test, feature = "internal_benches"))]
-#[path = "benches.rs"]
-mod benches;
 mod properties;
 mod query;

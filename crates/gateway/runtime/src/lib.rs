@@ -31,6 +31,7 @@ pub mod circuit;
 pub mod client;
 pub mod config;
 pub mod control;
+pub(crate) mod execution_budget;
 pub mod guardrails;
 pub mod http;
 pub mod json;
@@ -44,12 +45,15 @@ pub mod resource_manager;
 pub mod runtime;
 pub(crate) mod security;
 pub(crate) mod security_events;
+pub(crate) mod security_flow;
+
+#[cfg(feature = "ui")]
+mod management_audit;
 pub mod serdes;
 pub mod state_manager;
 pub mod store;
 pub mod telemetry;
-#[cfg(any(test, feature = "internal_benches"))]
-pub mod test_helpers;
+
 pub mod transport;
 pub mod types;
 #[cfg(feature = "ui")]
@@ -153,6 +157,17 @@ pub struct RawDnsConfig {
 #[derive(Default)]
 // RawConfig represents the inputs a user can pass in. Config represents the internal representation of this.
 pub struct RawConfig {
+	/// Local management exposure; defaults to edge mode. Restart required.
+	#[serde(default)]
+	management: management::access::ManagementConfig,
+	/// Optional single-writer security audit journal; restart required when changed.
+	security_audit_path: Option<std::path::PathBuf>,
+	#[cfg_attr(feature = "schema", schemars(with = "Option<serde_json::Value>"))]
+	security_audit: Option<security_audit::AuditJournalConfig>,
+	/// Infrastructure dependency destinations, separate from model/Tool dataEgress.
+	#[cfg_attr(feature = "schema", schemars(with = "Option<serde_json::Value>"))]
+	pub(crate) dependency_egress:
+		Option<security_integration_runtime::dependency_egress::DependencyEgressConfig>,
 	enable_ipv6: Option<bool>,
 
 	/// DNS resolver settings.
@@ -541,6 +556,7 @@ pub struct Config {
 	/// Specify the number of worker threads the Tokio Runtime will use.
 	pub num_worker_threads: usize,
 	pub admin_addr: Address,
+	pub management: management::access::ManagementConfig,
 	pub stats_addr: Address,
 	pub readiness_addr: Address,
 	// For waypoint identification
@@ -553,6 +569,10 @@ pub struct Config {
 	pub tracing: Option<trc::DeprecatedConfig>,
 	pub metrics: crate::telemetry::log::MetricsConfig,
 	pub logging: crate::telemetry::log::Config,
+	pub security_audit_path: Option<std::path::PathBuf>,
+	pub security_audit: Option<security_audit::AuditJournalConfig>,
+	pub dependency_egress:
+		Option<security_integration_runtime::dependency_egress::DependencyEgressConfig>,
 	pub database: Option<telemetry::log_store::Config>,
 
 	pub dns: client::Config,

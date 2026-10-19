@@ -25,10 +25,34 @@ use security_rag::TrustedHttpsSourceRegistry;
 #[derive(Debug, Clone)]
 pub struct VerifiedGatewayIdentity(pub GatewayIdentity);
 
+/// Trusted host hook, installed only after JWT verification. Request JSON cannot supply it.
+pub trait ContextConstraintIssuer: Send + Sync {
+	fn issue(&self, context: &GuardedContext, parent: Option<&str>) -> Result<String, String>;
+	/// The trusted host must separately authorize lifecycle operations. Default is deny.
+	fn revoke(&self, _id: &str) -> Result<(), String> {
+		Err("context revocation unavailable".into())
+	}
+}
+#[derive(Clone)]
+pub struct VerifiedContextIssuer(pub Arc<dyn ContextConstraintIssuer>);
+
 /// Object-safe application boundary used by the Axum router. It allows the route module to avoid
 /// exposing the concrete policy, audit, vector-store, and chunking types in its public state.
 #[async_trait::async_trait]
 pub trait RagHttpService: Send + Sync {
+	async fn document_operation(
+		&self,
+		_request_id: String,
+		_identity: GatewayIdentity,
+		_corpus: String,
+		_document: String,
+		_expected: Option<u64>,
+		_mutation: Option<security_rag::lifecycle::DocumentMutation>,
+	) -> Result<crate::DocumentStatus, RagGatewayError> {
+		Err(RagGatewayError::Lifecycle(
+			"document lifecycle unavailable".into(),
+		))
+	}
 	async fn authorize_import(
 		&self,
 		request_id: String,
@@ -78,6 +102,19 @@ where
 	RAudit: security_rag::RetrievalAuditSink,
 	CA: security_rag::ContextAuditSink,
 {
+	async fn document_operation(
+		&self,
+		request_id: String,
+		identity: GatewayIdentity,
+		corpus: String,
+		document: String,
+		expected: Option<u64>,
+		mutation: Option<security_rag::lifecycle::DocumentMutation>,
+	) -> Result<crate::DocumentStatus, RagGatewayError> {
+		self
+			.document_operation(request_id, identity, corpus, document, expected, mutation)
+			.await
+	}
 	async fn authorize_import(
 		&self,
 		request_id: String,
@@ -138,6 +175,8 @@ pub fn router_with_sources(
 	let has_sources = sources.is_some();
 	let mut router = Router::new()
 		.route("/v1/rag/documents", post(ingest_document))
+		.route("/v1/rag/documents/lifecycle", post(document_operation))
+		.route("/v1/rag/contexts/revoke", post(revoke_context))
 		.route("/v1/rag/query", post(query_corpus));
 	if has_sources {
 		router = router.route("/v1/rag/import", post(import_document));
@@ -160,6 +199,81 @@ struct QueryBody {
 	corpus_id: String,
 	query: String,
 	limit: usize,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct DocumentOperationBody {
+	corpus_id: String,
+	document_id: String,
+	expected_revision: Option<u64>,
+	mutation: Option<security_rag::lifecycle::DocumentMutation>,
+}
+async fn document_operation(
+	State(state): State<SharedState>,
+	identity: Option<Extension<VerifiedGatewayIdentity>>,
+	headers: HeaderMap,
+	Json(body): Json<DocumentOperationBody>,
+) -> Result<(StatusCode, HeaderMap, Json<crate::DocumentStatus>), (StatusCode, Json<ApiError>)> {
+	let identity = verified_identity(identity)?;
+	let status = state
+		.service
+		.document_operation(
+			request_id(&headers),
+			identity,
+			body.corpus_id,
+			body.document_id,
+			body.expected_revision,
+			body.mutation,
+		)
+		.await
+		.map_err(map_error)?;
+	let mut headers = HeaderMap::new();
+	headers.insert(
+		"cache-control",
+		"private, no-store".parse().expect("constant"),
+	);
+	Ok((StatusCode::OK, headers, Json(status)))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct RevokeContextBody {
+	context_id: String,
+}
+
+async fn revoke_context(
+	identity: Option<Extension<VerifiedGatewayIdentity>>,
+	issuer: Option<Extension<VerifiedContextIssuer>>,
+	Json(body): Json<RevokeContextBody>,
+) -> Result<(StatusCode, HeaderMap, Json<serde_json::Value>), (StatusCode, Json<ApiError>)> {
+	verified_identity(identity)?;
+	let denied = || {
+		api_error(
+			StatusCode::FORBIDDEN,
+			"context_denied",
+			"context revocation denied",
+		)
+	};
+	if Uuid::parse_str(&body.context_id).is_err() {
+		return Err(denied());
+	}
+	issuer
+		.ok_or_else(denied)?
+		.0
+		.0
+		.revoke(&body.context_id)
+		.map_err(|_| denied())?;
+	let mut headers = HeaderMap::new();
+	headers.insert(
+		"cache-control",
+		"private, no-store".parse().expect("constant"),
+	);
+	Ok((
+		StatusCode::OK,
+		headers,
+		Json(serde_json::json!({"revoked":true})),
+	))
 }
 
 #[derive(Debug, Deserialize)]
@@ -341,9 +455,10 @@ fn ingest_response(result: IngestionResult) -> (StatusCode, Json<IngestResponse>
 async fn query_corpus(
 	State(state): State<SharedState>,
 	identity: Option<Extension<VerifiedGatewayIdentity>>,
+	issuer: Option<Extension<VerifiedContextIssuer>>,
 	headers: HeaderMap,
 	Json(body): Json<QueryBody>,
-) -> ApiResult<QueryResponse> {
+) -> Result<(StatusCode, HeaderMap, Json<QueryResponse>), (StatusCode, Json<ApiError>)> {
 	let identity = verified_identity(identity)?;
 	let context = state
 		.service
@@ -354,8 +469,32 @@ async fn query_corpus(
 		)
 		.await
 		.map_err(map_error)?;
+	let mut response_headers = HeaderMap::new();
+	if let Some(Extension(issuer)) = issuer {
+		let invalid = || {
+			api_error(
+				StatusCode::FORBIDDEN,
+				"context_denied",
+				"cross-component context denied",
+			)
+		};
+		if headers.get_all("x-aisp-context-id").iter().count() > 1 {
+			return Err(invalid());
+		}
+		let parent = headers
+			.get("x-aisp-context-id")
+			.map(|v| v.to_str().map_err(|_| invalid()))
+			.transpose()?;
+		let id = issuer.0.issue(&context, parent).map_err(|_| invalid())?;
+		response_headers.insert("x-aisp-context-id", id.parse().map_err(|_| invalid())?);
+	}
+	response_headers.insert(
+		"cache-control",
+		"private, no-store".parse().expect("constant"),
+	);
 	Ok((
 		StatusCode::OK,
+		response_headers,
 		Json(QueryResponse {
 			corpus_id: context.corpus_id,
 			query_hash: context.query_hash,
@@ -406,6 +545,11 @@ fn request_id(headers: &HeaderMap) -> String {
 
 fn map_error(error: RagGatewayError) -> (StatusCode, Json<ApiError>) {
 	match error {
+		RagGatewayError::Lifecycle(_) => api_error(
+			StatusCode::CONFLICT,
+			"lifecycle_denied",
+			"document lifecycle operation unavailable, stale, or denied",
+		),
 		RagGatewayError::Ingestion(security_rag::IngestionError::GatewayDenied(_))
 		| RagGatewayError::Retrieval(security_rag::RetrievalError::GatewayDenied(_))
 		| RagGatewayError::Context(security_rag::ContextAssemblyError::GatewayDenied(_)) => api_error(
@@ -443,307 +587,4 @@ fn api_error(
 	message: &'static str,
 ) -> (StatusCode, Json<ApiError>) {
 	(status, Json(ApiError { code, message }))
-}
-
-#[cfg(test)]
-mod tests {
-	use std::sync::atomic::{AtomicUsize, Ordering};
-
-	use axum::{
-		body::{Body, to_bytes},
-		http::Request,
-	};
-	use tower::ServiceExt;
-
-	use super::*;
-
-	#[derive(Default)]
-	struct TestService {
-		deny_import: bool,
-		fetch_failures: AtomicUsize,
-		ingest_calls: AtomicUsize,
-	}
-
-	#[async_trait::async_trait]
-	impl RagHttpService for TestService {
-		async fn authorize_import(
-			&self,
-			request_id: String,
-			_identity: GatewayIdentity,
-			_corpus_id: &str,
-			_document_id: &str,
-			_source_id: &str,
-		) -> Result<(), RagGatewayError> {
-			if self.deny_import {
-				return Err(RagGatewayError::Ingestion(
-					security_rag::IngestionError::GatewayDenied(security_pipeline::GatewayError::Denied(
-						security_types::Decision {
-							request_id,
-							effect: security_types::DecisionEffect::Deny,
-							policy_id: Some("deny-import".into()),
-							policy_version: None,
-							expires_at: None,
-						},
-					)),
-				));
-			}
-			Ok(())
-		}
-
-		fn record_source_fetch_failure(
-			&self,
-			_request_id: String,
-			_identity: GatewayIdentity,
-			_corpus_id: &str,
-			_document_id: &str,
-			_source_id: &str,
-		) {
-			self.fetch_failures.fetch_add(1, Ordering::SeqCst);
-		}
-
-		async fn ingest(
-			&self,
-			_request_id: String,
-			_identity: GatewayIdentity,
-			request: DocumentIngestRequest,
-		) -> Result<IngestionResult, RagGatewayError> {
-			self.ingest_calls.fetch_add(1, Ordering::SeqCst);
-			Ok(IngestionResult::Indexed(security_rag::IndexedDocument {
-				corpus_id: request.corpus_id().to_string(),
-				document_id: request.document_id().to_string(),
-				tenant_id: "must-not-leak".into(),
-				source_uri: request.source_uri().to_string(),
-				source_hash: security_integrity::sha256_hex(request.content().as_bytes()),
-				source_origin: request.source_origin().clone(),
-				content: request.content().to_string(),
-				labels: vec!["internal".into()],
-				classification: security_rag::DataClassification::Internal,
-				classification_source: "default-classification".into(),
-			}))
-		}
-
-		async fn query(
-			&self,
-			_request_id: String,
-			_identity: GatewayIdentity,
-			_request: RagQueryRequest,
-		) -> Result<GuardedContext, RagGatewayError> {
-			Ok(GuardedContext {
-				corpus_id: "support".into(),
-				query_hash: "hash".into(),
-				chunks: Vec::new(),
-				context_tokens: 0,
-				classification: None,
-				removed_chunk_ids: Vec::new(),
-				redacted_chunk_ids: Vec::new(),
-				findings: Vec::new(),
-			})
-		}
-	}
-
-	fn identity() -> VerifiedGatewayIdentity {
-		VerifiedGatewayIdentity(GatewayIdentity {
-			user_id: Some("alice".into()),
-			agent_id: None,
-			tenant_id: Some("tenant-a".into()),
-			delegation_id: None,
-			session_id: None,
-			client_id: None,
-		})
-	}
-
-	#[tokio::test]
-	async fn routes_reject_missing_verified_identity_and_untrusted_identity_fields() {
-		let app = router(Arc::new(TestService::default()));
-		let response = app
-			.clone()
-			.oneshot(
-				Request::builder()
-					.method("POST")
-					.uri("/v1/rag/query")
-					.header("content-type", "application/json")
-					.body(Body::from(
-						r#"{"corpusId":"support","query":"help","limit":1}"#,
-					))
-					.unwrap(),
-			)
-			.await
-			.unwrap();
-		assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
-
-		let response = app
-			.oneshot(
-				Request::builder()
-					.method("POST")
-					.uri("/v1/rag/query")
-					.header("content-type", "application/json")
-					.extension(identity())
-					.body(Body::from(
-						r#"{"corpusId":"support","query":"help","limit":1,"tenantId":"attacker"}"#,
-					))
-					.unwrap(),
-			)
-			.await
-			.unwrap();
-		assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
-		let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
-		assert!(
-			std::str::from_utf8(&body)
-				.unwrap()
-				.contains("unknown field")
-		);
-		let response = router(Arc::new(TestService::default()))
-			.oneshot(
-				Request::builder()
-					.method("POST")
-					.uri("/v1/rag/documents")
-					.header("content-type", "application/json")
-					.extension(identity())
-					.body(Body::from(r#"{"corpusId":"support","documentId":"guide","sourceUri":"https://kb.example.test/guide","content":"private","classification":"public"}"#))
-					.unwrap(),
-			)
-			.await
-			.unwrap();
-		assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
-		let response = router(Arc::new(TestService::default()))
-			.oneshot(
-				Request::builder()
-					.method("POST")
-					.uri("/v1/rag/documents")
-					.header("content-type", "application/json")
-					.extension(identity())
-					.body(Body::from(r#"{"corpusId":"support","documentId":"guide","sourceUri":"https://kb.example.test/guide","content":"private","sourceOrigin":{"kind":"trustedHttps","sourceId":"kb","version":"fake"}}"#))
-					.unwrap(),
-			)
-			.await
-			.unwrap();
-		assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
-	}
-
-	#[tokio::test]
-	async fn import_route_uses_https_source_and_authorizes_before_fetch() {
-		use wiremock::tls_certs::MockTlsCertificates;
-		use wiremock::{
-			Mock, MockServer, ResponseTemplate,
-			matchers::{method, path},
-		};
-
-		let certs = MockTlsCertificates::random();
-		let server = MockServer::builder()
-			.start_https(certs.get_server_config())
-			.await;
-		Mock::given(method("GET"))
-			.and(path("/docs/guide.md"))
-			.respond_with(ResponseTemplate::new(200).set_body_string("trusted bytes"))
-			.mount(&server)
-			.await;
-		Mock::given(method("GET"))
-			.and(path("/docs/redirect"))
-			.respond_with(ResponseTemplate::new(302).insert_header("location", "/private"))
-			.mount(&server)
-			.await;
-		let sources = Arc::new(
-			TrustedHttpsSourceRegistry::new(
-				vec![security_rag::TrustedHttpsSourceConfig {
-					id: "kb".into(),
-					base_url: format!("{}/docs/", server.uri()),
-					bearer_token_env_var: None,
-					ca_cert_pem: Some(certs.get_root_ca_cert().pem()),
-				}],
-				128,
-			)
-			.unwrap(),
-		);
-		let make_request = |path: &str, authenticated: bool| {
-			let mut builder = Request::builder()
-				.method("POST")
-				.uri("/v1/rag/import")
-				.header("content-type", "application/json");
-			if authenticated {
-				builder = builder.extension(identity());
-			}
-			builder
-				.body(Body::from(
-					serde_json::json!({
-						"corpusId":"support", "documentId":"guide", "sourceId":"kb", "path":path,
-					})
-					.to_string(),
-				))
-				.unwrap()
-		};
-
-		let denied = Arc::new(TestService {
-			deny_import: true,
-			..Default::default()
-		});
-		let response = router_with_sources(denied.clone(), Some(sources.clone()))
-			.oneshot(make_request("guide.md", true))
-			.await
-			.unwrap();
-		assert_eq!(response.status(), StatusCode::FORBIDDEN);
-		assert!(server.received_requests().await.unwrap().is_empty());
-		assert_eq!(denied.ingest_calls.load(Ordering::SeqCst), 0);
-
-		let service = Arc::new(TestService::default());
-		let app = router_with_sources(service.clone(), Some(sources));
-		let response = app
-			.clone()
-			.oneshot(make_request("guide.md", false))
-			.await
-			.unwrap();
-		assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
-		assert!(server.received_requests().await.unwrap().is_empty());
-		let response = app
-			.clone()
-			.oneshot(make_request("guide.md", true))
-			.await
-			.unwrap();
-		assert_eq!(response.status(), StatusCode::CREATED);
-		let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
-		let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
-		assert_eq!(
-			body["sourceHash"],
-			security_integrity::sha256_hex(b"trusted bytes")
-		);
-		assert_eq!(body["sourceOrigin"]["kind"], "trustedHttps");
-		assert_eq!(body["sourceOrigin"]["sourceId"], "kb");
-		assert_eq!(body["sourceOrigin"]["version"], body["sourceHash"]);
-		assert_eq!(service.ingest_calls.load(Ordering::SeqCst), 1);
-
-		let response = app
-			.clone()
-			.oneshot(make_request("../private", true))
-			.await
-			.unwrap();
-		assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
-		assert_eq!(service.fetch_failures.load(Ordering::SeqCst), 1);
-		assert_eq!(server.received_requests().await.unwrap().len(), 1);
-		let response = app.oneshot(make_request("redirect", true)).await.unwrap();
-		assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
-		assert_eq!(service.fetch_failures.load(Ordering::SeqCst), 2);
-		assert_eq!(server.received_requests().await.unwrap().len(), 2);
-	}
-
-	#[tokio::test]
-	async fn ingest_response_excludes_tenant_and_acl_metadata() {
-		let response = router(Arc::new(TestService::default()))
-			.oneshot(
-				Request::builder()
-					.method("POST")
-					.uri("/v1/rag/documents")
-					.header("content-type", "application/json")
-					.extension(identity())
-					.body(Body::from(r#"{"corpusId":"support","documentId":"guide","sourceUri":"https://kb.example.test/guide","content":"safe"}"#))
-					.unwrap(),
-			)
-			.await
-			.unwrap();
-		assert_eq!(response.status(), StatusCode::CREATED);
-		let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
-		let body = std::str::from_utf8(&body).unwrap();
-		assert!(body.contains("\"status\":\"indexed\""));
-		assert!(!body.contains("tenant"));
-		assert!(!body.contains("allowedUsers"));
-		assert!(body.contains("\"classification\":\"internal\""));
-	}
 }

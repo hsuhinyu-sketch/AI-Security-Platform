@@ -1,0 +1,69 @@
+# Configuration template, not a ready-to-run deployment.
+# Provision a private parent directory and a trusted JWT provider before use.
+config:
+  management:
+    mode: edge
+# Authentication is a route policy, not a backend policy.
+policies:
+  - name:
+      name: service-agent-jwt
+      namespace: internal
+    target:
+      route:
+        name: ai-system:service-agent:a2a:request
+        namespace: internal
+    policy:
+      jwtAuth:
+        mode: strict
+        issuer: https://identity.example.invalid
+        audiences: [a2a]
+        # Replace with your trusted provider's real public JWKS.
+        jwks: '{"keys":[]}'
+aiSystems:
+  - name: service-agent
+    security:
+      mode: enforce
+      a2aObjects:
+        storage:
+          type: sqlite
+          path: /var/lib/ai-security-platform/a2a-tasks.db
+          namespace: service-agent
+          busyTimeoutMillis: 100
+        maxTasks: 10000
+        retentionSeconds: 86400
+        maxStreams: 128
+      policies:
+        - id: allow-agent-methods
+          tenantId: tenant-a
+          actionType: agentInvoke
+          resourceType: agent
+          resourceId: 127.0.0.1:18100
+          effect: allow
+          enabled: true
+        - id: allow-create-own-task
+          tenantId: tenant-a
+          actionType: agentTaskOperation
+          actionName: create
+          resourceType: agent
+          resourceId: '["127.0.0.1:18100","/"]'
+          effect: allow
+          enabled: true
+        - id: allow-read-own-task
+          tenantId: tenant-a
+          actionType: agentTaskOperation
+          actionName: read
+          resourceType: agentTask
+          effect: allow
+          enabled: true
+        - id: allow-subscribe-own-task
+          tenantId: tenant-a
+          actionType: agentTaskOperation
+          actionName: subscribe
+          resourceType: agentTask
+          effect: allow
+          enabled: true
+      # Artifact read, continue and cancel are denied until separately granted.
+    a2a:
+      port: 14201
+      backend:
+        host: 127.0.0.1:18100

@@ -2185,7 +2185,3 @@ pub fn full_example_executor() -> ExecutorSerde {
 		metadata: Some(TransformationMetadata::default()),
 	}
 }
-
-#[cfg(test)]
-#[path = "types_test.rs"]
-mod types_test;

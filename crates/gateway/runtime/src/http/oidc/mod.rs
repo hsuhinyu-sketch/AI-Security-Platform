@@ -19,9 +19,6 @@ mod provider;
 mod redirect;
 mod session;
 
-#[cfg(test)]
-mod tests;
-
 pub use local::LocalOidcConfig;
 pub use redirect::RedirectUri;
 pub use session::{

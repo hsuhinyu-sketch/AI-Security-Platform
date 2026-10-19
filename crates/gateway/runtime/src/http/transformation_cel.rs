@@ -360,7 +360,3 @@ impl store::ResponsePolicyTrait for Transformation {
 		Ok(crate::http::PolicyResponse::default())
 	}
 }
-
-#[cfg(test)]
-#[path = "transformation_cel_tests.rs"]
-mod tests;

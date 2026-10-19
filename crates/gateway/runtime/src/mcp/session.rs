@@ -32,6 +32,7 @@ use crate::{mcp, *};
 
 #[derive(Debug, Clone)]
 pub struct Session {
+	pub(crate) binding: Option<Arc<super::session_security::SessionBinding>>,
 	encoder: http::sessionpersistence::Encoder,
 	relay: Arc<Relay>,
 	pub id: Arc<str>,
@@ -147,7 +148,14 @@ impl Session {
 	}
 
 	pub fn with_inputs(mut self, inputs: RelayInputs) -> Self {
-		self.relay = Arc::new(self.relay.with_policies(inputs.policies));
+		self.relay = Arc::new(Relay {
+			upstreams: self.relay.upstreams.clone(),
+			policies: inputs.policies,
+			mcp_guardrails: inputs.mcp_guardrails,
+			security_pipeline: inputs.security_pipeline,
+			security_audit: inputs.security_audit,
+			policy_client: inputs.client,
+		});
 		self
 	}
 
@@ -397,6 +405,46 @@ impl Session {
 		// For example, this may return [server1-notification, server2-notification, server2-notification, merge(server1-response, server2-response)].
 		// It's very common to not have any notifications, though.
 		match message {
+			message @ (ClientJsonRpcMessage::Response(_) | ClientJsonRpcMessage::Error(_)) => {
+				let mut ctx = IncomingRequestContext::new(&parts);
+				let http = ctx.as_request();
+				let access = http
+					.extensions()
+					.get::<super::session_security::SessionAccess>()
+					.ok_or_else(|| {
+						UpstreamError::InvalidRequest("reverse response requires protected session".into())
+					})?;
+				let (server, message, action, response_ticket) =
+					super::session_security::reverse::response(access, message)?;
+				if let Some(ticket) = &response_ticket {
+					ctx.extensions_mut().insert(ticket.clone());
+				}
+				ctx
+					.extensions_mut()
+					.insert(super::security::McpEgressContext {
+						server: server.clone(),
+						action,
+						supported: true,
+					});
+				let send = Box::pin(
+					self
+						.relay
+						.upstreams
+						.get(&server)?
+						.generic_response(message, &ctx),
+				);
+				if let Some(ticket) = &response_ticket {
+					ticket.run(send).await?;
+				} else {
+					send.await?;
+				}
+				Ok(
+					::http::Response::builder()
+						.status(StatusCode::ACCEPTED)
+						.body(http::Body::empty())
+						.expect("static response"),
+				)
+			},
 			ClientJsonRpcMessage::Request(mut r) => {
 				let method = r.request.method().to_string();
 				let mut ctx = IncomingRequestContext::new(&parts);
@@ -409,7 +457,54 @@ impl Session {
 				self.strip_unsupported_client_capabilities_from_meta(&mut r.request);
 				match &mut r.request {
 					ClientRequest::InitializeRequest(ir) => {
-						self.strip_unsupported_client_capabilities(&mut ir.params.capabilities);
+						if self
+							.relay
+							.security_audit
+							.as_ref()
+							.and_then(|c| c.mcp_sessions.as_ref())
+							.is_some_and(|s| s.tasks.is_some())
+							&& ir.params.protocol_version.as_str() != "2025-11-25"
+						{
+							return Err(UpstreamError::InvalidRequest(
+								"asynchronous tasks require MCP 2025-11-25".into(),
+							));
+						}
+						if let (Some(binding), Some(reverse)) = (
+							&self.binding,
+							self
+								.relay
+								.security_audit
+								.as_ref()
+								.and_then(|c| c.mcp_sessions.as_ref())
+								.and_then(|c| c.reverse.as_ref()),
+						) {
+							if !matches!(
+								ir.params.protocol_version.as_str(),
+								"2025-06-18" | "2025-11-25"
+							) {
+								return Err(UpstreamError::InvalidRequest(
+									"reverse RPC requires an adapted 2025 protocol revision".into(),
+								));
+							}
+							// Explicit Gateway-managed sampling: the Gateway is the upstream client.
+							if self
+								.relay
+								.security_audit
+								.as_ref()
+								.and_then(|c| c.mcp_sessions.as_ref())
+								.and_then(|s| s.tasks.as_ref())
+								.is_some_and(|t| t.sampling.is_some())
+							{
+								ir.params.capabilities.sampling = Some(Default::default());
+							}
+							super::session_security::reverse::negotiate(
+								binding,
+								reverse,
+								&mut ir.params.capabilities,
+							)?;
+						} else {
+							self.strip_unsupported_client_capabilities(&mut ir.params.capabilities);
+						}
 
 						let pv = ir.params.protocol_version.clone();
 						let res = Box::pin(
@@ -422,7 +517,9 @@ impl Session {
 							),
 						)
 						.await;
-						if let Some(sessions) = self.relay.get_sessions() {
+						if self.binding.is_none()
+							&& let Some(sessions) = self.relay.get_sessions()
+						{
 							let s = http::sessionpersistence::SessionState::MCP(
 								http::sessionpersistence::MCPSessionState::new(sessions),
 							);
@@ -493,18 +590,25 @@ impl Session {
 						.await
 					},
 					ClientRequest::ListPromptsRequest(_) => {
-						Box::pin(self.relay.send_fanout(r, ctx, self.relay.merge_prompts())).await
+						let merge = self.relay.merge_prompts(
+							r.id.to_string(),
+							crate::mcp::security::identity_from_context(&ctx),
+						);
+						Box::pin(self.relay.send_fanout(r, ctx, merge)).await
 					},
 					ClientRequest::ListResourcesRequest(_) => {
-						Box::pin(self.relay.send_fanout(r, ctx, self.relay.merge_resources())).await
+						let merge = self.relay.merge_resources(
+							r.id.to_string(),
+							crate::mcp::security::identity_from_context(&ctx),
+						);
+						Box::pin(self.relay.send_fanout(r, ctx, merge)).await
 					},
 					ClientRequest::ListResourceTemplatesRequest(_) => {
-						Box::pin(
-							self
-								.relay
-								.send_fanout(r, ctx, self.relay.merge_resource_templates()),
-						)
-						.await
+						let merge = self.relay.merge_resource_templates(
+							r.id.to_string(),
+							crate::mcp::security::identity_from_context(&ctx),
+						);
+						Box::pin(self.relay.send_fanout(r, ctx, merge)).await
 					},
 					ClientRequest::CallToolRequest(ctr) => {
 						let name = ctr.params.name.clone();
@@ -612,13 +716,15 @@ impl Session {
 						Box::pin(self.relay.send_single(r, ctx, service_name, None)).await
 					},
 
-					ClientRequest::ListTasksRequest(_)
-					| ClientRequest::GetTaskRequest(_)
-					| ClientRequest::GetTaskPayloadRequest(_)
-					| ClientRequest::CancelTaskRequest(_)
-					| ClientRequest::CustomRequest(_) => {
+					ClientRequest::ListTasksRequest(_) | ClientRequest::CustomRequest(_) => {
 						// TODO(https://github.com/agentgateway/agentgateway/issues/404)
 						Err(UpstreamError::InvalidMethod(r.request.method().to_string()))
+					},
+					ClientRequest::GetTaskRequest(_)
+					| ClientRequest::GetTaskPayloadRequest(_)
+					| ClientRequest::CancelTaskRequest(_) => {
+						let server = super::session_security::tasks::route(&mut r, &mut ctx)?;
+						Box::pin(self.relay.send_single(r, ctx, &server, None)).await
 					},
 					ClientRequest::CompleteRequest(cr) => match &cr.params.r#ref {
 						Reference::Prompt(prompt) => {
@@ -647,6 +753,46 @@ impl Session {
 				}
 			},
 			ClientJsonRpcMessage::Notification(mut r) => {
+				if matches!(r.notification, ClientNotification::CancelledNotification(_))
+					&& let Some(access) = parts
+						.extensions
+						.get::<super::session_security::SessionAccess>()
+				{
+					let server = super::session_security::reverse::cancel(access, &r.notification)?;
+					let mut ctx = IncomingRequestContext::new(&parts);
+					let action = security_pipeline::mcp_operation_for_identity(
+						uuid::Uuid::new_v4().to_string(),
+						crate::security::identity_from_extensions(&parts.extensions),
+						"notifications/cancelled/request",
+						security_types::ResourceType::McpServer,
+						&server,
+					);
+					ctx
+						.extensions_mut()
+						.insert(super::security::McpEgressContext {
+							server: server.clone(),
+							action,
+							supported: true,
+						});
+					// Drop arbitrary client cancellation reasons instead of disclosing them.
+					if let ClientNotification::CancelledNotification(n) = &mut r.notification {
+						n.params.reason = None;
+					}
+					Box::pin(
+						self
+							.relay
+							.upstreams
+							.get(&server)?
+							.generic_notification(r.notification, &ctx),
+					)
+					.await?;
+					return Ok(
+						::http::Response::builder()
+							.status(StatusCode::ACCEPTED)
+							.body(http::Body::empty())
+							.expect("static response"),
+					);
+				}
 				let method = match &r.notification {
 					ClientNotification::CancelledNotification(r) => r.method.as_str(),
 					ClientNotification::ProgressNotification(r) => r.method.as_str(),
@@ -667,10 +813,6 @@ impl Session {
 				// however, we don't have a way to map to the correct service yet
 				Box::pin(self.relay.send_notification(r, ctx)).await
 			},
-
-			_ => Err(UpstreamError::InvalidRequest(
-				"unsupported message type".to_string(),
-			)),
 		}
 	}
 
@@ -697,6 +839,8 @@ impl Session {
 
 #[derive(Debug)]
 pub struct SessionManager {
+	pub(crate) protected_sessions: Arc<std::sync::atomic::AtomicUsize>,
+	pub(crate) protected_streams: Arc<std::sync::atomic::AtomicUsize>,
 	encoder: http::sessionpersistence::Encoder,
 	sessions: Arc<RwLock<HashMap<String, SessionEntry>>>,
 	idle_reaper: OnceLock<tokio::task::AbortHandle>,
@@ -709,6 +853,8 @@ fn session_id() -> Arc<str> {
 impl SessionManager {
 	pub fn new(encoder: http::sessionpersistence::Encoder) -> Arc<Self> {
 		Arc::new(Self {
+			protected_sessions: Default::default(),
+			protected_streams: Default::default(),
 			encoder,
 			sessions: Arc::new(RwLock::new(HashMap::new())),
 			idle_reaper: OnceLock::new(),
@@ -724,6 +870,9 @@ impl SessionManager {
 	pub fn get_session(&self, id: &str, builder: RelayInputs) -> Option<Session> {
 		let mut sessions = self.sessions.write().ok()?;
 		let entry = sessions.get_mut(id)?;
+		if entry.session.binding.is_some() {
+			return None;
+		}
 		entry.last_access = Instant::now();
 		Some(entry.session.clone().with_inputs(builder))
 	}
@@ -734,6 +883,9 @@ impl SessionManager {
 		builder: RelayInputs,
 	) -> Result<Option<Session>, mcp::Error> {
 		if let Some(s) = self.sessions.write().expect("poisoned").get_mut(id) {
+			if s.session.binding.is_some() {
+				return Ok(None);
+			}
 			s.last_access = Instant::now();
 			return Ok(Some(s.session.clone().with_inputs(builder)));
 		}
@@ -750,6 +902,7 @@ impl SessionManager {
 		}
 
 		let sess = Session {
+			binding: None,
 			id: id.into(),
 			relay: Arc::new(relay),
 			tx: None,
@@ -773,6 +926,7 @@ impl SessionManager {
 
 		// Do NOT insert yet
 		Session {
+			binding: None,
 			id: id.clone(),
 			relay: Arc::new(relay),
 			tx: None,
@@ -799,6 +953,7 @@ impl SessionManager {
 	pub fn create_stateless_session(&self, relay: Relay) -> Session {
 		let id = session_id();
 		Session {
+			binding: None,
 			id,
 			relay: Arc::new(relay),
 			tx: None,
@@ -816,6 +971,7 @@ impl SessionManager {
 		let (tx, rx) = tokio::sync::mpsc::channel(64);
 		let id = session_id();
 		let sess = Session {
+			binding: None,
 			id: id.clone(),
 			relay: Arc::new(relay),
 			tx: Some(tx),
@@ -836,10 +992,91 @@ impl SessionManager {
 	pub async fn delete_session(&self, id: &str, parts: Parts) -> Option<Response> {
 		let sess = {
 			let mut sm = self.sessions.write().expect("write lock");
+			if sm.get(id)?.session.binding.is_some() {
+				return None;
+			}
 			sm.remove(id)?.session
 		};
 		// Swallow the error
 		sess.delete_session(parts).await.ok()
+	}
+
+	pub fn get_protected(
+		&self,
+		id: &str,
+		inputs: RelayInputs,
+		access: &mut super::session_security::SessionAccess,
+	) -> Result<Session, ProxyError> {
+		let session = self
+			.sessions
+			.read()
+			.map_err(|_| access.denial("store-unavailable"))?
+			.get(id)
+			.map(|entry| entry.session.clone())
+			.ok_or_else(|| access.denial("unknown-or-not-owner"))?;
+		let binding = session
+			.binding
+			.clone()
+			.ok_or_else(|| access.denial("unknown-or-not-owner"))?;
+		// Current policy/PDP evaluation may perform I/O: never hold the session map lock.
+		access.bind(binding.clone())?;
+		let mut sessions = self
+			.sessions
+			.write()
+			.map_err(|_| access.denial("store-unavailable"))?;
+		let entry = sessions
+			.get_mut(id)
+			.filter(|entry| {
+				entry
+					.session
+					.binding
+					.as_ref()
+					.is_some_and(|b| Arc::ptr_eq(b, &binding) && !b.expired())
+			})
+			.ok_or_else(|| access.denial("unknown-or-not-owner"))?;
+		entry.last_access = Instant::now();
+		Ok(session.with_inputs(inputs))
+	}
+	pub async fn delete_protected(
+		&self,
+		id: &str,
+		parts: Parts,
+		inputs: RelayInputs,
+		access: &mut super::session_security::SessionAccess,
+	) -> Result<Response, ProxyError> {
+		let checked = self.get_protected(id, inputs, access)?;
+		let session = {
+			let mut sessions = self
+				.sessions
+				.write()
+				.map_err(|_| access.denial("store-unavailable"))?;
+			let entry = sessions
+				.get(id)
+				.ok_or_else(|| access.denial("unknown-or-not-owner"))?;
+			if !entry
+				.session
+				.binding
+				.as_ref()
+				.zip(checked.binding.as_ref())
+				.is_some_and(|(a, b)| Arc::ptr_eq(a, b) && !a.expired())
+			{
+				return Err(access.denial("unknown-or-not-owner"));
+			}
+			sessions.remove(id).expect("entry still locked");
+			let session = checked;
+			if let Some(binding) = &session.binding {
+				binding
+					.closed
+					.store(true, std::sync::atomic::Ordering::Release);
+			}
+			session
+		};
+		session.delete_session(parts).await
+	}
+	pub fn prune_protected(&self) {
+		if let Ok(mut sessions) = self.sessions.write() {
+			sessions.retain(|_, entry| entry.session.binding.as_ref().is_none_or(|b| !b.expired()));
+		}
 	}
 }
 
@@ -864,7 +1101,16 @@ fn reap_expired_entries(sessions: &Arc<RwLock<HashMap<String, SessionEntry>>>) {
 	let now = Instant::now();
 	let mut guard = sessions.write().expect("write lock");
 	let pre = guard.len();
-	guard.retain(|_, entry| now.duration_since(entry.last_access) < entry.idle_ttl);
+	guard.retain(|_, entry| {
+		let keep = now.duration_since(entry.last_access) < entry.idle_ttl
+			&& entry.session.binding.as_ref().is_none_or(|b| !b.expired());
+		if !keep && let Some(binding) = &entry.session.binding {
+			binding
+				.closed
+				.store(true, std::sync::atomic::Ordering::Release);
+		}
+		keep
+	});
 	let post = guard.len();
 	if post < pre {
 		tracing::debug!("reaped {} sessions", pre - post);

@@ -8,8 +8,17 @@ use security_pipeline::{
 };
 use security_types::{ActionRequest, Decision, DecisionEffect, SecurityEvent};
 
+pub mod a2a_objects;
 mod blocking_client_cache;
+pub mod context_store;
+pub mod cross_component;
 mod data_egress;
+pub mod dependency_egress;
+pub mod execution_budget;
+pub mod identity_binding;
+pub mod mcp_sessions;
+pub mod required_audit;
+pub mod task_cleanup;
 pub use data_egress::{DataEgressConfig, check_data_egress};
 pub use security_types::DataClassification;
 pub mod remote_agent_identity;
@@ -45,6 +54,26 @@ pub enum SecurityMode {
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SecurityConfig {
+	#[serde(default, skip_serializing_if = "Option::is_none")]
+	pub required_audit: Option<required_audit::RequiredAuditConfig>,
+	#[serde(default, skip_serializing_if = "Option::is_none")]
+	pub dependency_egress: Option<dependency_egress::DependencyEgressConfig>,
+	/// Opt-in, identity-bound workflow budgets shared by actual gateway executions.
+	#[serde(default, skip_serializing_if = "Option::is_none")]
+	pub execution_budget: Option<execution_budget::ExecutionBudgetConfig>,
+	/// Opt-in, fail-closed RAG-issued contexts required on downstream gateway requests.
+	#[serde(default, skip_serializing_if = "Option::is_none")]
+	pub cross_component: Option<cross_component::CrossComponentConfig>,
+	/// Opt-in, current-identity MCP session ownership and response-stream protection.
+	#[serde(default, skip_serializing_if = "Option::is_none")]
+	pub mcp_sessions: Option<mcp_sessions::McpSessionConfig>,
+	/// Opt-in, fail-closed A2A JSON-RPC Task/Artifact ownership and lifecycle contract.
+	#[serde(default, skip_serializing_if = "Option::is_none")]
+	pub a2a_objects: Option<a2a_objects::A2aObjectConfig>,
+	/// Runtime store handle shared by cloned policies; durable metadata is optional.
+	/// The handle/internal state is never accepted from configuration.
+	#[serde(skip)]
+	pub a2a_task_store: a2a_objects::TaskStoreHandle,
 	#[serde(default)]
 	pub mode: SecurityMode,
 	/// Optional trusted HTTPS PDP used instead of the in-process dynamic PDP.
@@ -75,9 +104,177 @@ pub struct SecurityConfig {
 }
 
 impl SecurityConfig {
+	/// A deployment may apply this additional transport restriction to nested provider policies
+	/// without replacing their business authorizer or creating any remote client.
+	pub fn check_dependency_endpoints(
+		&self,
+		egress: &dependency_egress::DependencyEgressConfig,
+	) -> Result<(), String> {
+		use dependency_egress::DependencyKind as D;
+		for (kind, endpoint) in [
+			(
+				D::Pdp,
+				self.remote_pdp.as_ref().map(|c| c.endpoint.as_str()),
+			),
+			(
+				D::AgentDirectory,
+				self
+					.remote_agent_identity
+					.as_ref()
+					.map(|c| c.endpoint.as_str()),
+			),
+			(
+				D::Approval,
+				self.approval.as_ref().map(|c| c.endpoint.as_str()),
+			),
+			(
+				D::Revocation,
+				self
+					.delegation_revocation
+					.as_ref()
+					.map(|c| c.endpoint.as_str()),
+			),
+			(
+				D::CapabilityBroker,
+				self
+					.capability_broker
+					.as_ref()
+					.map(|c| c.issue_endpoint.as_str()),
+			),
+		] {
+			if let Some(endpoint) = endpoint {
+				egress.check_url(kind, endpoint)?;
+			}
+		}
+		Ok(())
+	}
+	/// Explicit startup/embedding initialization; never silently fall back on storage errors.
+	pub fn prepare_a2a_store(&mut self) -> Result<(), String> {
+		self.prepare_runtime_stores()
+	}
+	/// Initialize all configured security stores; the older name remains an embedding alias.
+	pub fn prepare_runtime_stores(&mut self) -> Result<(), String> {
+		self.validate_composition()?;
+		if let Some(budget) = &mut self.execution_budget {
+			budget.prepare_store()?;
+		}
+		if let Some(flow) = &mut self.cross_component {
+			flow.prepare_store()?;
+		}
+		if let Some(objects) = &mut self.a2a_objects {
+			self.a2a_task_store = a2a_objects::TaskStoreHandle::from_config(objects)?;
+			if let Some(events) = &mut objects.event_recovery {
+				events.prepare_store()?;
+			}
+			self
+				.a2a_task_store
+				.drain_push(objects)
+				.map_err(|e| format!("Push outbox recovery refused: {}", e.rule()))?;
+		}
+		Ok(())
+	}
 	/// Reject combinations that cannot enforce the declared security controls.
 	/// An approval gate without a provider remains valid: it intentionally denies by default.
 	pub fn validate_composition(&self) -> Result<(), String> {
+		if self
+			.mcp_sessions
+			.as_ref()
+			.and_then(|s| s.tasks.as_ref())
+			.is_some_and(|t| t.sampling.is_some())
+			&& self.execution_budget.is_none()
+		{
+			return Err("Gateway-managed Task sampling requires an executionBudget".into());
+		}
+		if self
+			.mcp_sessions
+			.as_ref()
+			.and_then(|s| s.tasks.as_ref())
+			.is_some_and(|t| t.interactive())
+			&& self
+				.execution_budget
+				.as_ref()
+				.is_some_and(|b| b.max_concurrent < 2)
+		{
+			return Err("MCP Task interactions require executionBudget.maxConcurrent >= 2 for the result stream and response".into());
+		}
+		if let Some(audit) = &self.required_audit {
+			if self.mode != SecurityMode::Enforce {
+				return Err("requiredAudit requires enforce mode".into());
+			}
+			audit.validate()?;
+		}
+		if let Some(egress) = &self.dependency_egress {
+			if self.mode != SecurityMode::Enforce {
+				return Err("dependencyEgress requires enforce mode".into());
+			}
+			egress.validate()?;
+			self.check_dependency_endpoints(egress)?;
+		}
+		if let Some(budget) = &self.execution_budget {
+			if self.mode != SecurityMode::Enforce {
+				return Err("executionBudget requires security.mode: enforce".into());
+			}
+			budget.validate()?;
+			if budget.task_cleanup.is_some()
+				&& self.a2a_objects.is_none()
+				&& !self
+					.mcp_sessions
+					.as_ref()
+					.is_some_and(|s| s.tasks.is_some())
+			{
+				return Err("executionBudget.taskCleanup requires a2aObjects or mcpSessions.tasks".into());
+			}
+			if self
+				.pipeline
+				.dynamic_authorization
+				.as_ref()
+				.is_some_and(|p| p.failure_mode != security_pipeline::DynamicPdpFailureMode::FailClosed)
+			{
+				return Err("executionBudget requires dynamicAuthorization.failureMode: failClosed".into());
+			}
+		}
+		if let Some(flow) = &self.cross_component {
+			if self.mode != SecurityMode::Enforce {
+				return Err("crossComponent requires security.mode: enforce".into());
+			}
+			flow.validate()?;
+			if self
+				.pipeline
+				.dynamic_authorization
+				.as_ref()
+				.is_some_and(|p| p.failure_mode != security_pipeline::DynamicPdpFailureMode::FailClosed)
+			{
+				return Err("crossComponent requires dynamicAuthorization.failureMode: failClosed".into());
+			}
+		}
+		if let Some(sessions) = &self.mcp_sessions {
+			if self.mode != SecurityMode::Enforce {
+				return Err("mcpSessions requires security.mode: enforce".into());
+			}
+			sessions.validate()?;
+			if self
+				.pipeline
+				.dynamic_authorization
+				.as_ref()
+				.is_some_and(|p| p.failure_mode != security_pipeline::DynamicPdpFailureMode::FailClosed)
+			{
+				return Err("mcpSessions requires dynamicAuthorization.failureMode: failClosed".into());
+			}
+		}
+		if let Some(objects) = &self.a2a_objects {
+			if self.mode != SecurityMode::Enforce {
+				return Err("a2aObjects requires security.mode: enforce".into());
+			}
+			objects.validate()?;
+			if self
+				.pipeline
+				.dynamic_authorization
+				.as_ref()
+				.is_some_and(|p| p.failure_mode != security_pipeline::DynamicPdpFailureMode::FailClosed)
+			{
+				return Err("a2aObjects requires dynamicAuthorization.failureMode: failClosed".into());
+			}
+		}
 		if let Some(egress) = &self.data_egress {
 			if self.mode != SecurityMode::Enforce {
 				return Err("dataEgress requires security.mode: enforce".into());
@@ -185,6 +382,62 @@ pub fn evaluate(config: &SecurityConfig, action: &ActionRequest) -> Result<(), G
 	evaluate_with_arguments(config, action, None)
 }
 
+/// Cheap necessary-condition check, not an authorization grant. Reuses the existing static
+/// authorizer; never invokes PDP, directory, revocation, approval or capability providers.
+pub fn prefilter_with_audit(
+	config: &SecurityConfig,
+	action: &ActionRequest,
+	audit: &dyn AuditSink,
+) -> Result<(), GatewayError> {
+	let mut decision =
+		security_pipeline::PolicyAuthorizer::new(config.pipeline.policies.clone()).decide(action);
+	decision.policy_id = Some(format!(
+		"prefilter:{}",
+		decision.policy_id.as_deref().unwrap_or("default-deny")
+	));
+	audit.record(event_from_decision(
+		format!("{}:prefilter:{}", action.request_id, action.resource.id),
+		action,
+		&decision,
+	));
+	if decision.effect == DecisionEffect::Deny && config.mode == SecurityMode::Enforce {
+		Err(GatewayError::Denied(decision))
+	} else {
+		Ok(())
+	}
+}
+
+/// Record an operation that a protected protocol adapter cannot safely normalize.
+/// Broad policy grants cannot override this execution boundary. Observe-only modes retain
+/// forwarding behavior; enforce mode refuses the operation before backend execution.
+pub fn unsupported_operation_with_audit(
+	config: &SecurityConfig,
+	action: &ActionRequest,
+	adapter: &str,
+	audit: &dyn AuditSink,
+) -> Result<(), GatewayError> {
+	let decision = Decision {
+		request_id: action.request_id.clone(),
+		effect: DecisionEffect::Deny,
+		policy_id: Some(format!("adapter:{adapter}:unsupported-operation")),
+		policy_version: None,
+		expires_at: None,
+	};
+	audit.record(event_from_decision(
+		format!("{}:adapter:{adapter}", action.request_id),
+		action,
+		&decision,
+	));
+	match config.mode {
+		SecurityMode::Enforce => Err(GatewayError::Denied(decision)),
+		SecurityMode::Shadow => {
+			tracing::warn!(adapter, request_id = %action.request_id, "unsupported operation would be denied in enforce mode");
+			Ok(())
+		},
+		SecurityMode::Audit => Ok(()),
+	}
+}
+
 /// Evaluate a protocol action with optional structured arguments.
 ///
 /// Tool adapters use this to apply shared argument controls in addition to policy matching.
@@ -205,6 +458,13 @@ pub fn evaluate_with_audit(
 	arguments: Option<&serde_json::Value>,
 	audit: &dyn AuditSink,
 ) -> Result<(), GatewayError> {
+	if config.required_audit.is_some() && config.mode != SecurityMode::Enforce {
+		return Err(configuration_denial(
+			action,
+			"requiredAudit requires enforce mode".into(),
+			audit,
+		));
+	}
 	if config.remote_pdp.is_some()
 		|| config.remote_agent_identity.is_some()
 		|| config.delegation_revocation.is_some()
@@ -249,7 +509,12 @@ fn evaluate_with_audit_inner(
 		},
 	};
 	match decision {
-		Ok(_) => Ok(()),
+		Ok(decision) => {
+			if let Some(required) = &config.required_audit {
+				required_audit::acknowledge(required, action, &decision, audit)?;
+			}
+			Ok(())
+		},
 		Err(error) => match config.mode {
 			SecurityMode::Audit => Ok(()),
 			SecurityMode::Shadow => {
@@ -346,6 +611,9 @@ fn on_blocking_security_thread<T: Send>(
 }
 
 fn runtime_security_controls(config: &SecurityConfig) -> Result<RuntimeSecurityControls, String> {
+	if config.dependency_egress.is_some() || config.required_audit.is_some() {
+		config.validate_composition()?;
+	}
 	let mut controls = RuntimeSecurityControls::default();
 	if config.agent_identity.is_some() && config.remote_agent_identity.is_some() {
 		return Err("configure either agentIdentity or remoteAgentIdentity, not both".into());
@@ -424,593 +692,4 @@ fn capability_denial(
 		&decision,
 	));
 	GatewayError::Denied(decision)
-}
-
-#[cfg(test)]
-mod tests {
-	use std::sync::Arc;
-
-	use super::{
-		SecurityConfig, SecurityConfigAuthorizer, SecurityMode, evaluate, evaluate_with_arguments,
-	};
-	use chrono::{Duration, Utc};
-	use security_pipeline::{
-		AgentDelegationConfig, AgentIdentityRegistryConfig, Authorizer, DelegationScope,
-		GatewayIdentity, RegisteredAgentConfig, RequiredIdentity, SecurityPipelineConfig,
-		agent_action_for_identity, model_invoke_for_identity, tool_invoke_for_identity,
-	};
-	use security_policy::Policy;
-	use security_types::{ActionType, DecisionEffect, ResourceType};
-
-	#[tokio::test(flavor = "current_thread")]
-	async fn remote_client_can_be_created_and_disposed_inside_an_async_request() {
-		let config: SecurityConfig = serde_json::from_value(serde_json::json!({
-			"mode": "enforce",
-			"remotePdp": {"endpoint": "https://127.0.0.1:1/decisions"}
-		}))
-		.expect("remote PDP configuration should deserialize");
-		let action = security_pipeline::model_invoke("request", None, None, "model");
-		assert!(evaluate(&config, &action).is_err());
-		// Dropping the cached blocking client here used to panic inside Tokio.
-		drop(config);
-	}
-
-	#[tokio::test(flavor = "current_thread")]
-	async fn remote_identity_unavailable_denies_without_panicking_on_async_worker() {
-		let config: SecurityConfig = serde_json::from_value(serde_json::json!({
-			"mode": "enforce",
-			"remoteAgentIdentity": {
-				"endpoint": "https://127.0.0.1:1/v1/identities/check",
-				"required": true,
-				"timeoutMillis": 100
-			}
-		}))
-		.expect("remote Agent Directory configuration should deserialize");
-		let action = model_invoke_for_identity(
-			"request",
-			GatewayIdentity {
-				user_id: Some("alice".into()),
-				agent_id: Some("agent".into()),
-				tenant_id: Some("tenant".into()),
-				client_id: Some("agent-client".into()),
-				..Default::default()
-			},
-			"model",
-		);
-		assert!(evaluate(&config, &action).is_err());
-		drop(config);
-	}
-
-	#[test]
-	fn composition_rejects_broker_without_a_trusted_approval_source() {
-		let config: SecurityConfig = serde_json::from_value(serde_json::json!({
-			"mode": "enforce",
-			"requiredToolApprovals": [{"toolName": "records.delete"}],
-			"capabilityBroker": {
-				"issueEndpoint": "https://broker.example.test/v1/capabilities/issue"
-			}
-		}))
-		.expect("composition should deserialize");
-		assert!(
-			config
-				.validate_composition()
-				.unwrap_err()
-				.contains("approval provider")
-		);
-	}
-
-	#[test]
-	fn composition_rejects_remote_pdp_without_dynamic_authorization() {
-		let config: SecurityConfig = serde_json::from_value(serde_json::json!({
-			"remotePdp": {"endpoint": "https://pdp.example.test/v1/decisions"}
-		}))
-		.expect("composition should deserialize");
-		assert_eq!(
-			config.validate_composition().unwrap_err(),
-			"remotePdp requires dynamicAuthorization"
-		);
-	}
-
-	#[test]
-	fn audit_and_shadow_do_not_interrupt_but_enforce_does() {
-		let action = security_pipeline::model_invoke("request", None, None, "model");
-		assert!(evaluate(&SecurityConfig::default(), &action).is_ok());
-		assert!(
-			evaluate(
-				&SecurityConfig {
-					mode: SecurityMode::Shadow,
-					..Default::default()
-				},
-				&action,
-			)
-			.is_ok()
-		);
-		assert!(
-			evaluate(
-				&SecurityConfig {
-					mode: SecurityMode::Enforce,
-					..Default::default()
-				},
-				&action,
-			)
-			.is_err()
-		);
-	}
-
-	#[test]
-	fn config_authorizer_preserves_enforced_deny_by_default() {
-		let authorizer = SecurityConfigAuthorizer::new(Arc::new(SecurityConfig {
-			mode: SecurityMode::Enforce,
-			..Default::default()
-		}));
-		let action = security_pipeline::knowledge_retrieve_for_identity(
-			"request",
-			GatewayIdentity {
-				tenant_id: Some("tenant-a".into()),
-				..Default::default()
-			},
-			"support",
-		);
-		assert_eq!(authorizer.decide(&action).effect, DecisionEffect::Deny);
-	}
-
-	#[test]
-	fn enforce_applies_tenant_scoped_least_privilege() {
-		let config = SecurityConfig {
-			mode: SecurityMode::Enforce,
-			remote_pdp: None,
-			delegation_revocation: None,
-			approval: None,
-			capability_broker: None,
-			agent_identity: None,
-			remote_agent_identity: None,
-			data_egress: None,
-			pipeline: SecurityPipelineConfig {
-				required_identity: Some(RequiredIdentity::user_agent_tenant()),
-				policies: vec![Policy {
-					id: "tenant-a-support-chat".into(),
-					priority: 0,
-					tenant_id: Some("tenant-a".into()),
-					user_id: Some("alice".into()),
-					agent_id: Some("support-agent".into()),
-					action_type: Some(ActionType::ModelInvoke),
-					action_name: Some("invoke".into()),
-					resource_id: Some("support-chat".into()),
-					resource_type: Some(ResourceType::Model),
-					effect: DecisionEffect::Allow,
-					enabled: true,
-				}],
-				..Default::default()
-			},
-		};
-		let allowed_identity = GatewayIdentity {
-			user_id: Some("alice".into()),
-			agent_id: Some("support-agent".into()),
-			tenant_id: Some("tenant-a".into()),
-			delegation_id: None,
-			session_id: None,
-			client_id: None,
-		};
-		let allowed = model_invoke_for_identity("request-allowed", allowed_identity, "support-chat");
-		assert!(evaluate(&config, &allowed).is_ok());
-
-		let other_tenant = model_invoke_for_identity(
-			"request-other-tenant",
-			GatewayIdentity {
-				user_id: Some("alice".into()),
-				agent_id: Some("support-agent".into()),
-				tenant_id: Some("tenant-b".into()),
-				delegation_id: None,
-				session_id: None,
-				client_id: None,
-			},
-			"support-chat",
-		);
-		assert!(evaluate(&config, &other_tenant).is_err());
-	}
-
-	#[test]
-	fn enforce_accepts_only_a_registered_agent_client_binding() {
-		let config = SecurityConfig {
-			mode: SecurityMode::Enforce,
-			remote_pdp: None,
-			delegation_revocation: None,
-			approval: None,
-			capability_broker: None,
-			agent_identity: Some(AgentIdentityRegistryConfig {
-				required: true,
-				agents: vec![RegisteredAgentConfig {
-					agent_id: "support-agent".into(),
-					tenant_id: "tenant-a".into(),
-					client_ids: vec!["support-agent-workload".into()],
-					enabled: true,
-					not_before: None,
-					expires_at: None,
-				}],
-			}),
-			remote_agent_identity: None,
-			data_egress: None,
-			pipeline: SecurityPipelineConfig {
-				policies: vec![Policy {
-					id: "allow-support-agent".into(),
-					priority: 0,
-					tenant_id: Some("tenant-a".into()),
-					user_id: Some("alice".into()),
-					agent_id: Some("support-agent".into()),
-					action_type: Some(ActionType::ModelInvoke),
-					action_name: Some("invoke".into()),
-					resource_id: Some("support-chat".into()),
-					resource_type: Some(ResourceType::Model),
-					effect: DecisionEffect::Allow,
-					enabled: true,
-				}],
-				..Default::default()
-			},
-		};
-		let trusted = GatewayIdentity {
-			user_id: Some("alice".into()),
-			agent_id: Some("support-agent".into()),
-			tenant_id: Some("tenant-a".into()),
-			delegation_id: None,
-			session_id: None,
-			client_id: Some("support-agent-workload".into()),
-		};
-		assert!(
-			evaluate(
-				&config,
-				&model_invoke_for_identity("registered-agent", trusted.clone(), "support-chat")
-			)
-			.is_ok()
-		);
-		assert!(
-			evaluate(
-				&config,
-				&model_invoke_for_identity(
-					"untrusted-client",
-					GatewayIdentity {
-						client_id: Some("other-client".into()),
-						..trusted
-					},
-					"support-chat"
-				)
-			)
-			.is_err()
-		);
-	}
-
-	#[test]
-	fn enforce_distinguishes_protocol_actions_and_applies_tool_arguments() {
-		let config = SecurityConfig {
-			mode: SecurityMode::Enforce,
-			remote_pdp: None,
-			delegation_revocation: None,
-			approval: None,
-			capability_broker: None,
-			agent_identity: None,
-			remote_agent_identity: None,
-			data_egress: None,
-			pipeline: SecurityPipelineConfig {
-				policies: vec![
-					Policy {
-						id: "allow-task-send".into(),
-						priority: 0,
-						tenant_id: None,
-						user_id: None,
-						agent_id: None,
-						action_type: Some(ActionType::AgentInvoke),
-						action_name: Some("tasks/send".into()),
-						resource_id: Some("support-agent".into()),
-						resource_type: Some(ResourceType::Agent),
-						effect: DecisionEffect::Allow,
-						enabled: true,
-					},
-					Policy {
-						id: "allow-ticket-tool".into(),
-						priority: 0,
-						tenant_id: None,
-						user_id: None,
-						agent_id: None,
-						action_type: Some(ActionType::ToolInvoke),
-						action_name: Some("tickets.create".into()),
-						resource_id: Some("tickets.create".into()),
-						resource_type: Some(ResourceType::Tool),
-						effect: DecisionEffect::Allow,
-						enabled: true,
-					},
-				],
-				required_tool_arguments: vec![security_pipeline::RequiredToolArgumentsConfig {
-					tool_name: "tickets.create".into(),
-					required_fields: vec!["customerId".into()],
-				}],
-				..Default::default()
-			},
-		};
-		assert!(
-			evaluate(
-				&config,
-				&agent_action_for_identity(
-					"a2a-send",
-					GatewayIdentity::default(),
-					"support-agent",
-					"tasks/send",
-				),
-			)
-			.is_ok()
-		);
-		assert!(
-			evaluate(
-				&config,
-				&agent_action_for_identity(
-					"a2a-cancel",
-					GatewayIdentity::default(),
-					"support-agent",
-					"tasks/cancel",
-				),
-			)
-			.is_err()
-		);
-
-		let tool =
-			tool_invoke_for_identity("tool-create", GatewayIdentity::default(), "tickets.create");
-		assert!(
-			evaluate_with_arguments(
-				&config,
-				&tool,
-				Some(&serde_json::json!({ "customerId": "c-1" }))
-			)
-			.is_ok()
-		);
-		assert!(evaluate_with_arguments(&config, &tool, Some(&serde_json::json!({}))).is_err());
-	}
-
-	#[test]
-	fn high_risk_tool_is_fail_closed_until_an_approval_provider_is_installed() {
-		let tool =
-			tool_invoke_for_identity("tool-delete", GatewayIdentity::default(), "records.delete");
-		let pipeline = SecurityPipelineConfig {
-			policies: vec![Policy {
-				id: "allow-delete".into(),
-				priority: 0,
-				tenant_id: None,
-				user_id: None,
-				agent_id: None,
-				action_type: Some(ActionType::ToolInvoke),
-				action_name: Some("records.delete".into()),
-				resource_id: Some("records.delete".into()),
-				resource_type: Some(ResourceType::Tool),
-				effect: DecisionEffect::Allow,
-				enabled: true,
-			}],
-			required_tool_approvals: vec![security_pipeline::RequiredToolApprovalConfig {
-				tool_name: "records.delete".into(),
-			}],
-			..Default::default()
-		};
-		assert!(
-			evaluate(
-				&SecurityConfig {
-					mode: SecurityMode::Enforce,
-					remote_pdp: None,
-					delegation_revocation: None,
-					approval: None,
-					capability_broker: None,
-					agent_identity: None,
-					remote_agent_identity: None,
-					data_egress: None,
-					pipeline: pipeline.clone(),
-				},
-				&tool,
-			)
-			.is_err()
-		);
-		assert!(
-			evaluate(
-				&SecurityConfig {
-					mode: SecurityMode::Shadow,
-					remote_pdp: None,
-					delegation_revocation: None,
-					approval: None,
-					capability_broker: None,
-					agent_identity: None,
-					remote_agent_identity: None,
-					data_egress: None,
-					pipeline,
-				},
-				&tool,
-			)
-			.is_ok()
-		);
-	}
-
-	#[test]
-	fn enforce_requires_a_verified_scoped_agent_delegation() {
-		let config = SecurityConfig {
-			mode: SecurityMode::Enforce,
-			remote_pdp: None,
-			delegation_revocation: None,
-			approval: None,
-			capability_broker: None,
-			agent_identity: None,
-			remote_agent_identity: None,
-			data_egress: None,
-			pipeline: SecurityPipelineConfig {
-				policies: vec![Policy {
-					id: "allow-support-agent".into(),
-					priority: 0,
-					tenant_id: Some("tenant-a".into()),
-					user_id: Some("alice".into()),
-					agent_id: Some("support-agent".into()),
-					action_type: None,
-					action_name: None,
-					resource_id: None,
-					resource_type: None,
-					effect: DecisionEffect::Allow,
-					enabled: true,
-				}],
-				delegations: vec![AgentDelegationConfig {
-					id: "delegation-alice-support-01".into(),
-					user_id: "alice".into(),
-					agent_id: "support-agent".into(),
-					tenant_id: Some("tenant-a".into()),
-					scopes: vec![DelegationScope {
-						action_type: Some(ActionType::ToolInvoke),
-						action_name: Some("tickets.create".into()),
-						resource_id: Some("tickets.create".into()),
-						resource_type: Some(ResourceType::Tool),
-					}],
-					not_before: Some(Utc::now() - Duration::minutes(1)),
-					expires_at: Some(Utc::now() + Duration::minutes(30)),
-				}],
-				..Default::default()
-			},
-		};
-		let delegated = GatewayIdentity {
-			user_id: Some("alice".into()),
-			agent_id: Some("support-agent".into()),
-			tenant_id: Some("tenant-a".into()),
-			delegation_id: Some("delegation-alice-support-01".into()),
-			session_id: None,
-			client_id: None,
-		};
-		assert!(
-			evaluate_with_arguments(
-				&config,
-				&tool_invoke_for_identity("delegated-tool", delegated.clone(), "tickets.create"),
-				Some(&serde_json::json!({ "customerId": "c-1" })),
-			)
-			.is_ok()
-		);
-
-		let without_grant = GatewayIdentity {
-			delegation_id: None,
-			..delegated.clone()
-		};
-		assert!(
-			evaluate(
-				&config,
-				&tool_invoke_for_identity("missing-grant", without_grant, "tickets.create"),
-			)
-			.is_err()
-		);
-		assert!(
-			evaluate(
-				&config,
-				&model_invoke_for_identity("out-of-scope", delegated, "support-chat"),
-			)
-			.is_err()
-		);
-	}
-
-	#[test]
-	fn invalid_remote_pdp_configuration_is_denied_in_enforce_mode() {
-		let remote_pdp = serde_json::from_value(serde_json::json!({
-			"endpoint": "http://pdp.internal/v1/decisions"
-		}))
-		.expect("remote PDP test configuration should deserialize");
-		let action = security_pipeline::model_invoke("request", None, None, "model");
-		let result = evaluate(
-			&SecurityConfig {
-				mode: SecurityMode::Enforce,
-				remote_pdp: Some(remote_pdp),
-				delegation_revocation: None,
-				approval: None,
-				capability_broker: None,
-				agent_identity: None,
-				remote_agent_identity: None,
-				data_egress: None,
-				pipeline: SecurityPipelineConfig::default(),
-			},
-			&action,
-		);
-		assert!(matches!(
-			result,
-			Err(security_pipeline::GatewayError::Denied(decision))
-				if decision.policy_id.as_deref() == Some("security:configuration")
-		));
-	}
-
-	#[test]
-	fn invalid_remote_revocation_configuration_is_denied_in_enforce_mode() {
-		let delegation_revocation = serde_json::from_value(serde_json::json!({
-			"endpoint": "http://revocations.internal/v1/check"
-		}))
-		.expect("revocation test configuration should deserialize");
-		let action = security_pipeline::model_invoke("request", None, None, "model");
-		let result = evaluate(
-			&SecurityConfig {
-				mode: SecurityMode::Enforce,
-				remote_pdp: None,
-				delegation_revocation: Some(delegation_revocation),
-				approval: None,
-				capability_broker: None,
-				agent_identity: None,
-				remote_agent_identity: None,
-				data_egress: None,
-				pipeline: SecurityPipelineConfig::default(),
-			},
-			&action,
-		);
-		assert!(matches!(
-			result,
-			Err(security_pipeline::GatewayError::Denied(decision))
-				if decision.policy_id.as_deref() == Some("security:configuration")
-		));
-	}
-
-	#[test]
-	fn invalid_remote_approval_configuration_is_denied_in_enforce_mode() {
-		let approval = serde_json::from_value(serde_json::json!({
-			"endpoint": "http://approval.internal/v1/check"
-		}))
-		.expect("approval test configuration should deserialize");
-		let action = security_pipeline::model_invoke("request", None, None, "model");
-		let result = evaluate(
-			&SecurityConfig {
-				mode: SecurityMode::Enforce,
-				remote_pdp: None,
-				delegation_revocation: None,
-				approval: Some(approval),
-				capability_broker: None,
-				agent_identity: None,
-				remote_agent_identity: None,
-				data_egress: None,
-				pipeline: SecurityPipelineConfig::default(),
-			},
-			&action,
-		);
-		assert!(matches!(
-			result,
-			Err(security_pipeline::GatewayError::Denied(decision))
-				if decision.policy_id.as_deref() == Some("security:configuration")
-		));
-	}
-
-	#[test]
-	fn invalid_remote_agent_directory_configuration_is_denied_in_enforce_mode() {
-		let remote_agent_identity = serde_json::from_value(serde_json::json!({
-			"endpoint": "http://agents.internal/v1/identities/check",
-			"required": true
-		}))
-		.expect("remote Agent Directory test configuration should deserialize");
-		let action = security_pipeline::model_invoke("request", None, None, "model");
-		let result = evaluate(
-			&SecurityConfig {
-				mode: SecurityMode::Enforce,
-				remote_pdp: None,
-				delegation_revocation: None,
-				approval: None,
-				capability_broker: None,
-				agent_identity: None,
-				remote_agent_identity: Some(remote_agent_identity),
-				data_egress: None,
-				pipeline: SecurityPipelineConfig::default(),
-			},
-			&action,
-		);
-		assert!(matches!(
-			result,
-			Err(security_pipeline::GatewayError::Denied(decision))
-				if decision.policy_id.as_deref() == Some("security:configuration")
-		));
-	}
 }

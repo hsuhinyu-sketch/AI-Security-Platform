@@ -22,6 +22,7 @@ import { marked } from 'marked';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { analyticsSummary, getLog, searchLogs, streamLogs } from '@/api/logsApi';
+import { routerBasePath } from '@/basePath';
 import { ConfigDiffSaveActions } from '@/components/ConfigDiffDrawer';
 import {
 	bucketCountForRange,
@@ -59,7 +60,7 @@ import {
 	uiLogAttributeExpressions
 } from '@/config';
 import { queryParam, useStickyQueryParam } from '@/drawerRouteState';
-import { useLlmConfigData, useUpdateConfig } from '@/hooks';
+import { useLlmConfigData, useUpdateConfig, useRuntimeInfo } from '@/hooks';
 import { llmModelOptions } from '@/llmModelOptions';
 import {
 	ANALYTICS_DIMENSIONS,
@@ -88,6 +89,8 @@ import type {
 } from '@/types';
 
 export function LogsPage() {
+	const runtime = useRuntimeInfo();
+	const readOnly = runtime.data?.ui.configStoreMode === 'readOnly';
 	const navigate = useNavigate({ from: '/llm/logs' });
 	const {
 		config,
@@ -96,7 +99,7 @@ export function LogsPage() {
 		providers,
 		isLoading: configDataLoading,
 		error: configDataError
-	} = useLlmConfigData();
+	} = useLlmConfigData({ enabled: Boolean(runtime.data) && !readOnly });
 	const updateConfig = useUpdateConfig();
 	const models = useMemo(
 		() =>
@@ -315,7 +318,7 @@ export function LogsPage() {
 				description="Inspect recent LLM calls and request/response payloads."
 				actions={
 					<div className="button-row">
-						<button className="button" type="button" onClick={() => setSettings('logs')}>
+						<button className="button" type="button" disabled={readOnly} onClick={() => setSettings('logs')}>
 							<Settings size={16} />
 							Settings
 						</button>
@@ -457,7 +460,7 @@ export function LogsPage() {
 									promptLoggingEnabled={promptLoggingEnabled}
 									loading={expandedId === entry.id && expandedLoading}
 									onToggle={() => void expand(entry)}
-									onOpenSettings={() => setSettings('logs')}
+									onOpenSettings={readOnly ? undefined : () => setSettings('logs')}
 								/>
 							))}
 						</table>
@@ -470,7 +473,7 @@ export function LogsPage() {
 				)}
 			</Panel>
 
-			{settings === 'logs' ? (
+			{!readOnly && settings === 'logs' ? (
 				<LogsSettingsDrawer
 					config={config.data}
 					enabled={promptLoggingEnabled}
@@ -1523,6 +1526,7 @@ function LogDetailView(props: {
 	onOpenSettings?: () => void;
 }) {
 	const messages = logConversation(props.entry);
+	const securityRequestId = stringValue(attributeValue(props.entry.attributes, 'security.request_id'));
 	const trajectory = trajectoryEvents(messages);
 	const conversationRef = useRef<HTMLDetailsElement>(null);
 	const usage = logUsageDetail(props.entry);
@@ -1560,6 +1564,7 @@ function LogDetailView(props: {
 
 	return (
 		<div className="log-detail-view">
+			{securityRequestId ? <div className="log-detail-id-row"><span>Security Request</span><code>{securityRequestId}</code><CopyButton value={securityRequestId} /><a href={`${routerBasePath() ?? ''}/security/events?requestId=${encodeURIComponent(securityRequestId)}`}>View security events</a></div> : null}
 			<div className="log-detail-top">
 				<div className="log-detail-title">
 					<ProviderIcon provider={providerIconName(provider)} />

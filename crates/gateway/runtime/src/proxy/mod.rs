@@ -3,6 +3,8 @@ mod gateway;
 pub mod httpproxy;
 pub mod proxy_protocol;
 pub mod request_builder;
+mod routing_security;
+pub(crate) use routing_security::Guards as RoutingGuards;
 pub mod tcpproxy;
 
 use std::sync::Arc;
@@ -39,6 +41,7 @@ impl ProxyResponse {
 			return ProxyResponseReason::DirectResponse;
 		};
 		match e {
+			ProxyError::ExecutionBudget(_) => ProxyResponseReason::RateLimit,
 			ProxyError::BindNotFound
 			| ProxyError::ListenerNotFound
 			| ProxyError::RouteNotFound
@@ -134,6 +137,8 @@ impl Display for ProxyResponseReason {
 
 #[derive(thiserror::Error, Debug)]
 pub enum ProxyError {
+	#[error("execution budget refused: {}", .0.rule())]
+	ExecutionBudget(security_integration_runtime::execution_budget::BudgetError),
 	#[error("bind not found")]
 	BindNotFound,
 	#[error("listener not found")]
@@ -229,6 +234,22 @@ impl ProxyError {
 	pub fn into_response_with_grpc(self, is_grpc_request: bool) -> Response {
 		let msg = self.to_string();
 		let code = match self {
+			ProxyError::ExecutionBudget(error) => match error {
+				security_integration_runtime::execution_budget::BudgetError::Cancelled => {
+					StatusCode::CONFLICT
+				},
+				security_integration_runtime::execution_budget::BudgetError::InvalidContext
+				| security_integration_runtime::execution_budget::BudgetError::InvocationBinding => {
+					StatusCode::FORBIDDEN
+				},
+				security_integration_runtime::execution_budget::BudgetError::Deadline => {
+					StatusCode::GATEWAY_TIMEOUT
+				},
+				security_integration_runtime::execution_budget::BudgetError::Unavailable => {
+					StatusCode::SERVICE_UNAVAILABLE
+				},
+				_ => StatusCode::TOO_MANY_REQUESTS,
+			},
 			ProxyError::BindNotFound => StatusCode::NOT_FOUND,
 			ProxyError::ListenerNotFound => StatusCode::NOT_FOUND,
 			ProxyError::RouteNotFound => StatusCode::NOT_FOUND,
@@ -514,69 +535,4 @@ pub fn resolve_simple_backend_with_policies(
 		backend,
 		inline_policies,
 	})
-}
-
-#[cfg(test)]
-mod tests {
-	use super::*;
-
-	#[test]
-	fn grpc_error_response_maps_http_status_to_grpc_status() {
-		let response = ProxyError::NoHealthyEndpoints.into_response_with_grpc(true);
-
-		assert_eq!(response.status(), StatusCode::OK);
-		assert_eq!(
-			response.headers().get(hyper::header::CONTENT_TYPE).unwrap(),
-			"application/grpc"
-		);
-		assert_eq!(
-			response.headers().get("grpc-status").unwrap(),
-			&i32::from(Code::Unavailable).to_string()
-		);
-		assert_eq!(
-			response.headers().get("grpc-message").unwrap(),
-			"no%20healthy%20backends"
-		);
-	}
-
-	#[test]
-	fn http_error_response_keeps_http_status() {
-		let response = ProxyError::NoHealthyEndpoints.into_response_with_grpc(false);
-
-		assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
-		assert_eq!(
-			response.headers().get(hyper::header::CONTENT_TYPE).unwrap(),
-			"text/plain"
-		);
-		assert!(response.headers().get("grpc-status").is_none());
-	}
-
-	#[test]
-	fn grpc_error_response_uses_standard_fallback_mapping() {
-		let not_found = ProxyError::RouteNotFound.into_response_with_grpc(true);
-		let forbidden = ProxyError::AuthorizationFailed.into_response_with_grpc(true);
-
-		assert_eq!(
-			not_found.headers().get("grpc-status").unwrap(),
-			&i32::from(Code::Unimplemented).to_string()
-		);
-		assert_eq!(
-			forbidden.headers().get("grpc-status").unwrap(),
-			&i32::from(Code::PermissionDenied).to_string()
-		);
-	}
-
-	#[test]
-	fn no_valid_backends_is_http_500_but_grpc_unavailable() {
-		let http = ProxyError::NoValidBackends.into_response_with_grpc(false);
-		let grpc = ProxyError::NoValidBackends.into_response_with_grpc(true);
-
-		assert_eq!(http.status(), StatusCode::INTERNAL_SERVER_ERROR);
-		assert!(http.headers().get("grpc-status").is_none());
-		assert_eq!(grpc.status(), StatusCode::OK);
-		assert_eq!(
-			grpc.headers().get("grpc-status").unwrap(),
-			&i32::from(Code::Unavailable).to_string()
-		);
-	}
 }

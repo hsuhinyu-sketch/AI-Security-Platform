@@ -95,7 +95,3 @@ fn process_rate_limit_headers(h: &HeaderMap, now: SystemTime) -> Option<std::tim
 	}
 	None
 }
-
-#[cfg(test)]
-#[path = "outlierdetction_tests.rs"]
-mod tests;

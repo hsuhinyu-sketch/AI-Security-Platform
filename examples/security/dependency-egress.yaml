@@ -1,0 +1,17 @@
+# Deployment configuration fragment. Replace targets with actual infrastructure endpoints.
+# Missing categories deny; this list is independent of model/Agent/Tool dataEgress.
+config:
+  dependencyEgress:
+    requireTls: true
+    destinations:
+      pdp: [pdp.internal:443]
+      agentDirectory: [directory.internal:443]
+      approval: [approval.internal:443]
+      revocation: [revocation.internal:443]
+      capabilityBroker: [capability.internal:443]
+      qdrant: [qdrant.internal:6334]
+      embedding: [embedding.internal:443]
+      trustedSource: [kb.internal:443]
+      extAuthz: [authz.internal:443]
+      extProc: [picker.internal:443]
+      guardrail: [guard.internal:443]

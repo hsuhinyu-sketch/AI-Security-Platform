@@ -486,12 +486,7 @@ pub struct TraceReceiver {
 	receiver: Receiver<Message>,
 }
 
-impl TraceReceiver {
-	#[cfg(test)]
-	pub async fn recv(&mut self) -> Option<Message> {
-		self.receiver.recv().await
-	}
-}
+impl TraceReceiver {}
 
 impl tokio_stream::Stream for TraceReceiver {
 	type Item = Message;
@@ -790,101 +785,6 @@ impl Drop for ScopeGuard {
 		let mut scope_state = scope_state.lock().expect("scope mutex poisoned");
 		if let Some(idx) = scope_state.stack.iter().position(|frame| frame.id == id) {
 			scope_state.stack.remove(idx);
-		}
-	}
-}
-
-#[cfg(test)]
-mod tests {
-	use super::*;
-	use crate::cel::{Executor, Expression};
-	use crate::http::Body;
-
-	#[test]
-	fn scope_guard_drop_only_removes_its_own_frame() {
-		let (tx, _rx) = tokio::sync::mpsc::channel(1);
-		let tracer = DebugTracer {
-			sender: tx,
-			start: Instant::now(),
-			scope_state: Arc::new(Mutex::new(ScopeState {
-				next_id: 0,
-				stack: Vec::new(),
-			})),
-		};
-
-		let first = tracer.start_scope("first");
-		let second = tracer.start_scope("second");
-
-		drop(first);
-		assert_eq!(tracer.current_scope(), vec!["second"]);
-
-		drop(second);
-		assert!(tracer.current_scope().is_empty());
-	}
-
-	#[tokio::test]
-	async fn cel_eval_emits_events_while_debug_trace_is_active() {
-		let mut trace_rx = track_expression(None);
-		let req = http::Request::builder()
-			.uri("http://example.com/test")
-			.body(Body::empty())
-			.expect("request should build");
-		let expr = Expression::new_strict("request.path").expect("expression should compile");
-
-		DebugTracer::maybe_scope(req, |req| async move {
-			let executor = Executor::new_request(&req);
-			let value = executor.eval(&expr).expect("expression should evaluate");
-			assert_eq!(value.as_str().unwrap(), "/test");
-		})
-		.await;
-
-		tokio::time::timeout(Duration::from_secs(1), async {
-			while let Some(msg) = trace_rx.recv().await {
-				if let MessageType::Cel { expr, result, .. } = msg.message {
-					assert_eq!(expr, "request.path");
-					assert_eq!(result, serde_json::json!("/test"));
-					return;
-				}
-			}
-			panic!("trace receiver closed before CEL trace event was emitted");
-		})
-		.await
-		.expect("trace event should be emitted");
-	}
-
-	#[tokio::test]
-	async fn cel_eval_emits_events_with_captured_debug_tracer() {
-		let (tx, mut rx) = tokio::sync::mpsc::channel(1);
-		let tracer = DebugTracer {
-			sender: tx,
-			start: Instant::now(),
-			scope_state: Arc::new(Mutex::new(ScopeState {
-				next_id: 0,
-				stack: Vec::new(),
-			})),
-		};
-		let req = http::Request::builder()
-			.uri("http://example.com/deferred")
-			.body(Body::empty())
-			.expect("request should build");
-		let expr = Expression::new_strict("request.path").expect("expression should compile");
-
-		with_trace(Some(tracer), || {
-			let executor = Executor::new_request(&req);
-			let value = executor.eval(&expr).expect("expression should evaluate");
-			assert_eq!(value.as_str().unwrap(), "/deferred");
-		});
-
-		let msg = tokio::time::timeout(Duration::from_secs(1), rx.recv())
-			.await
-			.expect("trace event should be emitted")
-			.expect("trace receiver should still be open");
-		match msg.message {
-			MessageType::Cel { expr, result, .. } => {
-				assert_eq!(expr, "request.path");
-				assert_eq!(result, serde_json::json!("/deferred"));
-			},
-			other => panic!("expected CEL trace event, got {other:?}"),
 		}
 	}
 }

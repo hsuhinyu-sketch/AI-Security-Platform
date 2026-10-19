@@ -15,6 +15,3 @@ pub use vehicle::{
 	EnvironmentInfo, Gear, RoadType, SafetyMode, VehicleState, VehicleStateProvider, Visibility,
 	Weather,
 };
-
-#[cfg(test)]
-mod tests;

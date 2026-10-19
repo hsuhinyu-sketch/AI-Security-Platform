@@ -3,9 +3,7 @@ use ::http::header::{ACCEPT, CONTENT_TYPE};
 use anyhow::anyhow;
 use futures::StreamExt;
 use headers::HeaderMapExt;
-use rmcp::model::{
-	ClientJsonRpcMessage, ClientNotification, ClientRequest, JsonRpcRequest, ServerJsonRpcMessage,
-};
+use rmcp::model::{ClientJsonRpcMessage, ClientNotification, ClientRequest, JsonRpcRequest};
 use rmcp::transport::common::http_header::{
 	EVENT_STREAM_MIME_TYPE, HEADER_SESSION_ID, JSON_MIME_TYPE,
 };
@@ -74,7 +72,7 @@ impl Client {
 		let message = ClientJsonRpcMessage::notification(req);
 		self.send_message(message, ctx).await
 	}
-	async fn send_message(
+	pub(super) async fn send_message(
 		&self,
 		message: ClientJsonRpcMessage,
 
@@ -95,7 +93,8 @@ impl Client {
 		ctx.apply(&mut req).map_err(ClientError::new)?;
 		emit_standard_headers(req.headers_mut(), &message);
 
-		let resp = self.http_client.call(req).await?;
+		let mut resp = self.http_client.call(req).await?;
+		crate::mcp::session_security::bound_upstream(&mut resp, ctx)?;
 
 		// MCP spec has 202 only but some servers in the wild return 204. This is close enough for us to massage it.
 		if resp.status() == http::StatusCode::ACCEPTED || resp.status() == http::StatusCode::NO_CONTENT
@@ -124,7 +123,18 @@ impl Client {
 				Ok(StreamableHttpPostResponse::Sse(event_stream, session_id))
 			},
 			Some(ct) if ct.as_bytes().starts_with(JSON_MIME_TYPE.as_bytes()) => {
-				let lim = crate::http::response_buffer_limit(&resp);
+				let lim = ctx
+					.as_request()
+					.extensions()
+					.get::<crate::mcp::session_security::SessionAccess>()
+					.map_or_else(
+						|| crate::http::response_buffer_limit(&resp),
+						|a| {
+							a.limits
+								.max_message_bytes
+								.min(crate::http::response_buffer_limit(&resp))
+						},
+					);
 				let content_encoding = resp.headers().typed_get::<headers::ContentEncoding>();
 				let body_bytes = crate::http::compression::to_bytes_with_decompression(
 					resp.into_body(),
@@ -134,8 +144,12 @@ impl Client {
 				.await
 				.map_err(ClientError::new)?
 				.1;
-				let message: Option<ServerJsonRpcMessage> =
+				let message: Option<serde_json::Value> =
 					serde_json::from_slice(&body_bytes).map_err(ClientError::new)?;
+				let message = message
+					.map(crate::mcp::wire::decode_server)
+					.transpose()
+					.map_err(ClientError::new)?;
 				match message {
 					Some(msg) => Ok(StreamableHttpPostResponse::Json(msg, session_id)),
 					None => Ok(StreamableHttpPostResponse::Accepted),
@@ -162,7 +176,8 @@ impl Client {
 
 		ctx.apply(&mut req).map_err(ClientError::new)?;
 
-		let resp = self.http_client.call(req).await?;
+		let mut resp = self.http_client.call(req).await?;
+		crate::mcp::session_security::bound_upstream(&mut resp, ctx)?;
 
 		if !resp.status().is_success() {
 			return Err(ClientError::Status(Box::new(resp)));
@@ -184,7 +199,8 @@ impl Client {
 
 		ctx.apply(&mut req).map_err(ClientError::new)?;
 
-		let resp = self.http_client.call(req).await?;
+		let mut resp = self.http_client.call(req).await?;
+		crate::mcp::session_security::bound_upstream(&mut resp, ctx)?;
 
 		if !resp.status().is_success() {
 			return Err(ClientError::Status(Box::new(resp)));

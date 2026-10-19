@@ -1,0 +1,5 @@
+# Local observation; no configuration editing or debugging endpoints.
+config:
+  adminAddr: localhost:15000
+  management:
+    mode: diagnostic

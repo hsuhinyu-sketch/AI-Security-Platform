@@ -1,5 +1,8 @@
 # Path 1 — a minimal, tenant-isolated knowledge assistant.
 # Deliberately excludes A2A and MCP: the deployment exposes only LLM and RAG surfaces.
+config:
+  management:
+    mode: demo
 aiSystems:
   - id: trusted-knowledge-assistant
     security:

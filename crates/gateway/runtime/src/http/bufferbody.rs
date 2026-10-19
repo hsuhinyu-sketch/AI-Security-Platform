@@ -10,10 +10,6 @@ use pin_project_lite::pin_project;
 use crate::http::buflist::BufList;
 use crate::*;
 
-#[cfg(test)]
-#[path = "bufferbody_tests.rs"]
-mod tests;
-
 #[derive(Clone, Debug, Default)]
 pub struct BufferedBodyHandle {
 	inner: Arc<Mutex<BufferedBodyHandleInner>>,

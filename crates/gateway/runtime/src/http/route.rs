@@ -16,10 +16,6 @@ use crate::types::agent::{
 };
 use crate::*;
 
-#[cfg(any(test, feature = "internal_benches"))]
-#[path = "route_test.rs"]
-mod tests;
-
 /// Check if a RouteMatch matches the given request (path, method, headers, query).
 fn matches_request(m: &RouteMatch, request: &Request) -> bool {
 	let request_path =

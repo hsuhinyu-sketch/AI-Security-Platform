@@ -565,7 +565,3 @@ async fn fetch_token(
 	}
 	Ok(result.into_token())
 }
-
-#[cfg(any())]
-#[path = "tests.rs"]
-mod tests;

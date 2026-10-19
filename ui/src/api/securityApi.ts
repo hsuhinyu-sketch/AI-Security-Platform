@@ -4,7 +4,7 @@ export type SecurityDecision = 'allow' | 'deny' | null;
 
 export interface SecurityTimelineEvent {
 	sequence: number;
-	kind: 'authorization' | 'ragIngestion' | 'ragRetrieval' | 'ragContextAssembly';
+	kind: 'authorization' | 'ragIngestion' | 'ragRetrieval' | 'ragContextAssembly' | 'managementChange';
 	requestId: string;
 	timestamp: string;
 	userId?: string;
@@ -21,6 +21,9 @@ export interface SecurityTimelineEvent {
 }
 
 export interface SecurityOverview {
+	persistenceEnabled: boolean;
+	persistenceHealthy: boolean;
+	persistenceFailures: number;
 	capacity: number;
 	retainedEvents: number;
 	totalRecorded: number;

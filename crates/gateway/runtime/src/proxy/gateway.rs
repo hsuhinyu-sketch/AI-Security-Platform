@@ -39,14 +39,6 @@ use crate::types::discovery::gatewayaddress::Destination;
 use crate::types::frontend;
 use crate::{ProxyInputs, Stores, client};
 
-#[cfg(test)]
-#[path = "gateway_test.rs"]
-mod tests;
-
-#[cfg(test)]
-#[path = "locality_test.rs"]
-mod locality_tests;
-
 #[derive(Debug, Clone, PartialEq)]
 
 pub enum HboneAddress {

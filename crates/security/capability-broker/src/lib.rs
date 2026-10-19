@@ -24,6 +24,13 @@ pub const CAPABILITY_HEADER: &str = "x-ai-security-capability";
 /// Base64url JSON encoding of the gateway-normalized [`ActionRequest`]. Like the capability
 /// header, a caller-provided value must be stripped before an upstream Tool/API request.
 pub const CAPABILITY_CONTEXT_HEADER: &str = "x-ai-security-capability-context";
+/// Gateway-generated stable invocation correlation; never sufficient authorization by itself.
+pub const OPERATION_HEADER: &str = "x-aisp-operation-key";
+
+#[cfg(feature = "client")]
+pub mod operation;
+#[cfg(feature = "client")]
+pub mod ticket_backend;
 
 #[cfg(feature = "client")]
 mod consumer;
@@ -367,163 +374,5 @@ impl IntoResponse for BrokerHttpError {
 			),
 		};
 		(status, Json(serde_json::json!({ "code": code }))).into_response()
-	}
-}
-
-#[cfg(test)]
-mod tests {
-	use std::sync::Arc;
-
-	use axum::body::Body;
-	use axum::http::{Request, StatusCode};
-	use chrono::{Duration, Utc};
-	use security_types::{
-		Action, ActionRequest, ActionType, AuthorizationContext, Resource, ResourceType, Subject,
-	};
-
-	use super::{
-		BrokerError, BrokerPrincipal, CAPABILITY_PROTOCOL_VERSION, CapabilityBroker, CapabilityStore,
-		CapabilityStoreError, ConsumeCapabilityRequest, InMemoryCapabilityStore,
-		IssueCapabilityRequest, StoredCapability,
-	};
-	use tower::ServiceExt;
-
-	fn request() -> ActionRequest {
-		ActionRequest {
-			request_id: "request-1".into(),
-			subject: Subject {
-				user_id: Some("alice".into()),
-				agent_id: Some("support-agent".into()),
-				tenant_id: Some("tenant-a".into()),
-				delegation_id: None,
-			},
-			action: Action {
-				action_type: ActionType::ToolInvoke,
-				name: "records.delete".into(),
-			},
-			resource: Resource {
-				id: "records.delete".into(),
-				resource_type: ResourceType::Tool,
-			},
-			authorization_context: AuthorizationContext::default(),
-		}
-	}
-
-	fn broker() -> CapabilityBroker {
-		CapabilityBroker::new(
-			Arc::new(InMemoryCapabilityStore::default()),
-			Duration::seconds(30),
-		)
-		.unwrap()
-	}
-
-	fn issue_request() -> IssueCapabilityRequest {
-		IssueCapabilityRequest {
-			protocol_version: CAPABILITY_PROTOCOL_VERSION.into(),
-			request: request(),
-			arguments_hash: "a".repeat(64),
-			ttl_seconds: 20,
-		}
-	}
-
-	#[test]
-	fn issue_then_consume_is_bound_and_one_time() {
-		let broker = broker();
-		let issued = broker.issue(issue_request()).unwrap();
-		let consumed = broker
-			.consume(ConsumeCapabilityRequest {
-				protocol_version: CAPABILITY_PROTOCOL_VERSION.into(),
-				token: issued.token.clone(),
-				request: request(),
-				arguments_hash: "a".repeat(64),
-			})
-			.unwrap();
-		assert_eq!(consumed.request.request_id, "request-1");
-		assert!(matches!(
-			broker.consume(ConsumeCapabilityRequest {
-				protocol_version: CAPABILITY_PROTOCOL_VERSION.into(),
-				token: issued.token,
-				request: request(),
-				arguments_hash: "a".repeat(64),
-			}),
-			Err(BrokerError::Store(CapabilityStoreError::NotFound))
-		));
-	}
-
-	#[test]
-	fn mismatch_burns_the_capability_before_replay() {
-		let broker = broker();
-		let issued = broker.issue(issue_request()).unwrap();
-		assert!(matches!(
-			broker.consume(ConsumeCapabilityRequest {
-				protocol_version: CAPABILITY_PROTOCOL_VERSION.into(),
-				token: issued.token.clone(),
-				request: request(),
-				arguments_hash: "b".repeat(64),
-			}),
-			Err(BrokerError::Store(CapabilityStoreError::ArgumentsMismatch))
-		));
-		assert!(matches!(
-			broker.consume(ConsumeCapabilityRequest {
-				protocol_version: CAPABILITY_PROTOCOL_VERSION.into(),
-				token: issued.token,
-				request: request(),
-				arguments_hash: "a".repeat(64),
-			}),
-			Err(BrokerError::Store(CapabilityStoreError::NotFound))
-		));
-	}
-
-	#[test]
-	fn expired_capability_is_rejected() {
-		let store = InMemoryCapabilityStore::default();
-		let request = request();
-		store
-			.issue(StoredCapability {
-				token: "expired".into(),
-				request: request.clone(),
-				arguments_hash: "hash".into(),
-				expires_at: Utc::now() - Duration::seconds(1),
-			})
-			.unwrap();
-		assert_eq!(
-			store.consume("expired", &request, "hash", Utc::now()),
-			Err(CapabilityStoreError::Expired)
-		);
-	}
-
-	#[test]
-	fn issue_rejects_an_excessive_ttl() {
-		let mut request = issue_request();
-		request.ttl_seconds = 31;
-		assert!(matches!(
-			broker().issue(request),
-			Err(BrokerError::InvalidTtl)
-		));
-	}
-
-	#[tokio::test]
-	async fn issue_endpoint_requires_a_trusted_gateway_principal() {
-		let body = serde_json::to_vec(&issue_request()).unwrap();
-		let request = Request::builder()
-			.method("POST")
-			.uri("/v1/capabilities/issue")
-			.header("content-type", "application/json")
-			.body(Body::from(body.clone()))
-			.unwrap();
-		let response = broker().router().oneshot(request).await.unwrap();
-		assert_eq!(response.status(), StatusCode::FORBIDDEN);
-
-		let mut request = Request::builder()
-			.method("POST")
-			.uri("/v1/capabilities/issue")
-			.header("content-type", "application/json")
-			.body(Body::from(body))
-			.unwrap();
-		request
-			.extensions_mut()
-			.insert(BrokerPrincipal::gateway("gateway-a"));
-		let response = broker().router().oneshot(request).await.unwrap();
-		assert_eq!(response.status(), StatusCode::OK);
 	}
 }

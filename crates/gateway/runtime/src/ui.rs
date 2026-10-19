@@ -43,7 +43,7 @@ impl App {
 }
 
 lazy_static::lazy_static! {
-	static ref ASSETS_DIR: Dir<'static> = include_dir!("$CARGO_MANIFEST_DIR/../../ui/out");
+	static ref ASSETS_DIR: Dir<'static> = include_dir!("$CARGO_MANIFEST_DIR/../../../ui/out");
 }
 
 pub fn router(
@@ -55,7 +55,15 @@ pub fn router(
 	Router::new()
 		// Redirect to the UI
 		.route("/api/runtime", get(get_runtime))
-		.route("/api/config", get(get_config).post(write_config))
+		.route(
+			"/api/config",
+			get(get_config)
+				.post(write_config)
+				.layer(axum::middleware::from_fn_with_state(
+					crate::security_events::store(),
+					crate::management_audit::audit_config_write,
+				)),
+		)
 		// The upstream UI reads the resolved view separately. This compatibility runtime has one
 		// local configuration source, so the persisted and effective views are identical.
 		.route("/api/config/effective", get(get_effective_config))
@@ -70,6 +78,7 @@ pub fn router(
 		.route("/api/costs/refresh-base", post(refresh_base_costs))
 		.route("/api/security/overview", get(security_overview))
 		.route("/api/security/events", get(security_events))
+		.route("/api/security/events/history", get(security_event_history))
 		.route(
 			"/api/security/events/{request_id}",
 			get(security_events_for_request),
@@ -105,6 +114,8 @@ struct RuntimeBuildInfo {
 #[serde(rename_all = "camelCase")]
 struct RuntimeUiInfo {
 	gateway_mode: GatewayRuntimeMode,
+	management_mode: crate::management::access::Mode,
+	config_store_mode: &'static str,
 }
 
 #[derive(Serialize)]
@@ -113,7 +124,7 @@ enum GatewayRuntimeMode {
 	Standalone,
 }
 
-async fn get_runtime(State(_app): State<App>) -> Json<RuntimeInfo> {
+async fn get_runtime(State(app): State<App>) -> Json<RuntimeInfo> {
 	let build = BuildInfo::new();
 	Json(RuntimeInfo {
 		build: RuntimeBuildInfo {
@@ -125,6 +136,14 @@ async fn get_runtime(State(_app): State<App>) -> Json<RuntimeInfo> {
 		},
 		ui: RuntimeUiInfo {
 			gateway_mode: GatewayRuntimeMode::Standalone,
+			management_mode: app.state.management.mode,
+			config_store_mode: if app.state.management.mode == crate::management::access::Mode::Demo
+				&& matches!(app.state.local_config, Some(ConfigSource::File(_)))
+			{
+				"file"
+			} else {
+				"readOnly"
+			},
 		},
 	})
 }
@@ -282,6 +301,25 @@ async fn cost_models(
 struct SecurityEventsQuery {
 	request_id: Option<String>,
 	limit: Option<usize>,
+}
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct AuditHistoryQuery {
+	before_sequence: Option<u64>,
+	limit: Option<usize>,
+}
+async fn security_event_history(Query(query): Query<AuditHistoryQuery>) -> impl IntoResponse {
+	if query.limit.is_some_and(|v| !(1..=1000).contains(&v)) {
+		return StatusCode::BAD_REQUEST.into_response();
+	}
+	match crate::security_events::store().history(query.before_sequence, query.limit.unwrap_or(100)) {
+		Ok(events) => (
+			[(http::header::CACHE_CONTROL, "private, no-store")],
+			Json(events),
+		)
+			.into_response(),
+		Err(_) => StatusCode::SERVICE_UNAVAILABLE.into_response(),
+	}
 }
 
 async fn security_overview() -> Json<crate::security_events::SecurityOverview> {

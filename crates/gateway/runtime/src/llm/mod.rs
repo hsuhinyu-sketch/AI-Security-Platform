@@ -22,7 +22,7 @@ use crate::proxy::httpproxy::PolicyClient;
 use crate::store::{BackendPolicies, LLMResponsePolicies};
 use crate::telemetry::log::{AsyncLog, RequestLog};
 use crate::types::agent::{BackendTrafficPolicy, SimpleBackendReference, Target};
-use crate::types::loadbalancer::{ActiveHandle, EndpointWithInfo};
+use crate::types::loadbalancer::ActiveHandle;
 use crate::*;
 
 pub mod anthropic;
@@ -48,9 +48,6 @@ use crate::guardrails::{ResponseContext, VehicleStreamingResponseEvaluator};
 use crate::proxy::dtrace;
 use crate::store;
 
-#[cfg(test)]
-mod tests;
-
 fn normalize_sse_response_headers(mut resp: Response) -> Response {
 	resp.headers_mut().insert(
 		header::CONTENT_TYPE,
@@ -68,20 +65,24 @@ pub struct AIBackend {
 
 impl AIBackend {
 	pub fn select_provider(&self) -> Option<(Arc<NamedAIProvider>, ActiveHandle)> {
-		let iter = self.providers.iter();
-		let index = iter.index();
-		if index.is_empty() {
+		self.select_provider_where(|_| true)
+	}
+	pub fn select_provider_where(
+		&self,
+		permits: impl FnMut(&NamedAIProvider) -> bool,
+	) -> Option<(Arc<NamedAIProvider>, ActiveHandle)> {
+		let candidates = self.providers.eligible_active(permits);
+		if candidates.is_empty() {
 			return None;
 		}
 		// Intentionally allow `rand::seq::index::sample` so we can pick the same element twice
 		// This avoids starvation where the worst endpoint gets 0 traffic
-		let a = rand::rng().random_range(0..index.len());
-		let b = rand::rng().random_range(0..index.len());
+		let a = rand::rng().random_range(0..candidates.len());
+		let b = rand::rng().random_range(0..candidates.len());
 		let best = [a, b]
 			.into_iter()
 			.map(|idx| {
-				let (_, EndpointWithInfo { endpoint, info, .. }) =
-					index.get_index(idx).expect("index already checked");
+				let (endpoint, info) = &candidates[idx];
 				(endpoint.clone(), info)
 			})
 			.max_by(|(_, a), (_, b)| a.score().total_cmp(&b.score()));
@@ -1783,7 +1784,6 @@ impl AIProvider {
 		// wire format differs from SSE. Detect paths are raw pass-throughs; skip them.
 		let mut evaluators = if response_policies.streaming_prompt_guard_enabled
 			&& !response_policies.prompt_guard.is_empty()
-			&& !matches!(input_format, InputFormat::Detect)
 		{
 			use policy::PromptGuard;
 			let temp_guard = PromptGuard {
@@ -1803,6 +1803,18 @@ impl AIProvider {
 				client.inputs.vehicle_state.clone(),
 			)));
 		}
+		if !evaluators.is_empty() && matches!(input_format, InputFormat::Detect) {
+			return Err(AIError::UnsupportedConversion(strng::literal!(
+				"guarded streaming requires an explicit output format"
+			)));
+		}
+		let resp = if !evaluators.is_empty() {
+			resp.map(|body| {
+				policy::streaming_wire::validated(body, buffer, matches!(self, AIProvider::Bedrock(_)))
+			})
+		} else {
+			resp
+		};
 
 		let logger = AmendOnDrop::new(log, response_policies, req_snapshot, model_catalog);
 		let stream_format = match self {

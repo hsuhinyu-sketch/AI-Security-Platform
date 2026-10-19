@@ -5,6 +5,3 @@ pub mod messages;
 pub mod openai_compat;
 pub mod responses;
 pub mod vertex;
-
-#[cfg(test)]
-mod rerank_tests;

@@ -1,0 +1,34 @@
+# SecurityConfig fragment; configure strict JWT, one stateful MCP backend and actual server name.
+mode: enforce
+mcpSessions:
+  tasks:
+    tools: [slow-report]
+    maxTasks: 32
+    maxTaskSeconds: 300
+executionBudget:
+  namespace: reports-workflow
+  maxModelCalls: 1
+  maxToolCalls: 4
+  maxAgentCalls: 1
+  maxAttempts: 32
+  maxConcurrent: 2
+  maxDurationSeconds: 300
+  taskCleanup:
+    graceSeconds: 120
+    timeoutSeconds: 5
+    maxTasks: 8
+    maxAttempts: 8
+    maxConcurrent: 2
+policies:
+  - { id: session, actionType: mcpSessionOperation, userId: alice, effect: allow, enabled: true }
+  - { id: discover, actionType: toolList, userId: alice, effect: allow, enabled: true }
+  - { id: report, actionType: toolInvoke, resourceId: slow-report, userId: alice, effect: allow, enabled: true }
+  - { id: tasks, actionType: mcpTaskOperation, resourceType: mcpTask, userId: alice, effect: allow, enabled: true }
+  - { id: source, actionType: mcpOperation, resourceId: reports, userId: alice, effect: allow, enabled: true }
+  - { id: create, actionType: executionOperation, actionName: execution/create, userId: alice, effect: allow, enabled: true }
+  - { id: issue, actionType: executionOperation, actionName: execution/invocation/create, userId: alice, effect: allow, enabled: true }
+  - { id: status, actionType: executionOperation, actionName: execution/invocation/read, userId: alice, effect: allow, enabled: true }
+  - { id: cancel, actionType: executionOperation, actionName: execution/cancel, userId: alice, effect: allow, enabled: true }
+  - { id: cleanup, actionType: executionOperation, actionName: execution/mcp-task/cancel, resourceId: reports-workflow, userId: alice, effect: allow, enabled: true }
+# For durable workflow receipts, configure executionBudget.storage in a private directory.
+# This does not persist MCP sessions or allow automatic Task resubmission after restart.

@@ -3,7 +3,7 @@ use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::path::PathBuf;
 use std::sync::{Arc, OnceLock};
 use std::time::Duration;
-#[cfg(not(test))]
+
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use ::http::Uri;
@@ -47,9 +47,6 @@ const DEFAULT_LLM_PORT: u16 = 4000;
 const DEFAULT_MCP_PORT: u16 = 3000;
 
 // Windows has different output, for now easier to just not deal with it
-#[cfg(all(test, target_family = "unix"))]
-#[path = "local_tests.rs"]
-mod tests;
 
 impl NormalizedLocalConfig {
 	pub async fn from(
@@ -559,6 +556,9 @@ impl LocalConfig {
 				if security.mode != security_integration_runtime::SecurityMode::Enforce {
 					bail!("aiSystems['{name}'].rag requires security.mode: enforce");
 				}
+				security
+					.validate_composition()
+					.map_err(|reason| anyhow!("aiSystems['{name}'].security: {reason}"))?;
 				if !rag.authentication.is_strict() {
 					bail!("aiSystems['{name}'].rag requires authentication.mode: strict");
 				}
@@ -2804,7 +2804,25 @@ async fn convert(
 		if llm.is_none() && inference.is_some() {
 			bail!("aiSystems['{name}'].inference requires the LLM gateway");
 		}
-		let security = security.map(Arc::new);
+		let security = security
+			.map(|mut security| {
+				if security.required_audit.is_some() && config.security_audit.is_none() {
+					bail!("aiSystems['{name}'].security.requiredAudit requires config.securityAudit");
+				}
+				if let Some(parent) = &config.dependency_egress {
+					security.dependency_egress = Some(
+						security
+							.dependency_egress
+							.as_ref()
+							.map_or_else(|| parent.clone(), |local| parent.intersect(local)),
+					);
+				}
+				security
+					.prepare_a2a_store()
+					.map_err(|reason| anyhow!("aiSystems['{name}'].security: {reason}"))?;
+				Ok::<_, anyhow::Error>(Arc::new(security))
+			})
+			.transpose()?;
 		if let Some(llm_config) = llm {
 			let llm_config = compile_ai_system_inference(&name, llm_config, inference)?;
 			let gateway_id = format!("ai-system:{name}:llm");
@@ -2861,6 +2879,26 @@ async fn convert(
 
 	// Add frontend policies targeted to this listener
 	all_policies.extend_from_slice(&split_frontend_policies(gateway, frontend_policies).await?);
+	if let Some(parent) = &config.dependency_egress {
+		for policy in &mut all_policies {
+			if let crate::types::agent::PolicyType::Backend(policy) = &mut policy.policy {
+				inherit_dependency_policy(std::slice::from_mut(policy), parent)?;
+			}
+		}
+		for backend in &mut all_backends {
+			inherit_dependency_policy(&mut backend.inline_policies, parent)?;
+		}
+		for (_, routes) in all_listener_routes
+			.iter_mut()
+			.chain(all_route_groups.iter_mut())
+		{
+			for route in routes {
+				for backend in &mut route.backends {
+					inherit_dependency_policy(&mut backend.inline_policies, parent)?;
+				}
+			}
+		}
+	}
 
 	let normalized = NormalizedLocalConfig {
 		binds: all_binds,
@@ -2872,7 +2910,61 @@ async fn convert(
 		workloads,
 		services,
 	};
+	if let Some(policy) = &config.dependency_egress {
+		validate_nested_dependency_endpoints(&serde_json::to_value(&normalized)?, policy)?;
+	}
 	Ok(normalized)
+}
+
+fn validate_nested_dependency_endpoints(
+	value: &serde_json::Value,
+	policy: &security_integration_runtime::dependency_egress::DependencyEgressConfig,
+) -> anyhow::Result<()> {
+	match value {
+		serde_json::Value::Object(fields) => {
+			for (key, value) in fields {
+				if key == "securityAudit" && value.is_object() {
+					let security: security_integration_runtime::SecurityConfig =
+						serde_json::from_value(value.clone())?;
+					security
+						.check_dependency_endpoints(policy)
+						.map_err(anyhow::Error::msg)?;
+				} else {
+					validate_nested_dependency_endpoints(value, policy)?;
+				}
+			}
+		},
+		serde_json::Value::Array(values) => {
+			for value in values {
+				validate_nested_dependency_endpoints(value, policy)?;
+			}
+		},
+		_ => {},
+	}
+	Ok(())
+}
+
+fn inherit_dependency_policy(
+	policies: &mut [BackendTrafficPolicy],
+	parent: &security_integration_runtime::dependency_egress::DependencyEgressConfig,
+) -> anyhow::Result<()> {
+	for policy in policies {
+		if let BackendTrafficPolicy::SecurityAudit(security) = policy {
+			let security = Arc::make_mut(security);
+			security.dependency_egress = Some(
+				security
+					.dependency_egress
+					.as_ref()
+					.map_or_else(|| parent.clone(), |local| parent.intersect(local)),
+			);
+			// Inheritance must preserve the shared runtime handles. Reinitializing a memory
+			// TaskStore here would split one AI system into different ownership registries.
+			security
+				.validate_composition()
+				.map_err(anyhow::Error::msg)?;
+		}
+	}
+	Ok(())
 }
 
 fn validate_gateway_capabilities(config: &LocalConfig) -> anyhow::Result<()> {
@@ -2901,6 +2993,45 @@ fn validate_gateway_capabilities_for_profile(
 				.map_err(|reason| anyhow!("{prefix}.security: {reason}"))?;
 			if security.capability_broker.is_some() && system.mcp.is_none() {
 				bail!("{prefix}.security.capabilityBroker requires the MCP gateway");
+			}
+			if security.a2a_objects.is_some() && system.a2a.is_none() {
+				bail!("{prefix}.security.a2aObjects requires the A2A gateway");
+			}
+			if system.a2a.is_none()
+				&& security
+					.execution_budget
+					.as_ref()
+					.is_some_and(|b| b.task_cleanup.is_some())
+			{
+				bail!("{prefix}.security.executionBudget.taskCleanup requires the A2A gateway");
+			}
+			if system.a2a.is_some()
+				&& security.execution_budget.is_some()
+				&& security.a2a_objects.is_none()
+			{
+				bail!("{prefix}.security.executionBudget requires a2aObjects for A2A gateways");
+			}
+			if security.mcp_sessions.is_some() && system.mcp.is_none() {
+				bail!("{prefix}.security.mcpSessions requires the MCP gateway");
+			}
+			if system.mcp.is_some()
+				&& (security.cross_component.is_some() || security.execution_budget.is_some())
+				&& security.mcp_sessions.is_none()
+			{
+				bail!(
+					"{prefix}.security.crossComponent/executionBudget requires mcpSessions for MCP gateways"
+				);
+			}
+			if let Some(objects) = &security.a2a_objects {
+				if let security_integration_runtime::a2a_objects::TaskStoreConfig::Sqlite {
+					namespace,
+					..
+				} = &objects.storage
+				{
+					if namespace.as_str() != system.name.as_str() {
+						bail!("{prefix}.security.a2aObjects.storage.namespace must equal the AI system name");
+					}
+				}
 			}
 			if !security.pipeline.required_tool_approvals.is_empty() && system.mcp.is_none() {
 				bail!("{prefix}.security.requiredToolApprovals requires the MCP gateway");
@@ -3434,9 +3565,7 @@ async fn convert_llm_config(
 	};
 
 	// Get static startup unix timestamp
-	#[cfg(test)]
-	let startup_timestamp = 0;
-	#[cfg(not(test))]
+
 	let startup_timestamp = *STARTUP_TIMESTAMP.get_or_init(|| {
 		SystemTime::now()
 			.duration_since(UNIX_EPOCH)

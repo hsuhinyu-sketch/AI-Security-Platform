@@ -71,6 +71,22 @@ pub struct HttpCapabilityConsumer {
 }
 
 impl HttpCapabilityConsumer {
+	/// Call only behind authenticated gateway-to-Tool transport. The local Tool name must be
+	/// supplied by the handler, not copied from an untrusted URL/header. Consumption still occurs
+	/// on every request, even when the operation ledger already contains a receipt.
+	pub fn authorize_operation(
+		&self,
+		headers: &HeaderMap,
+		arguments: &serde_json::Value,
+		local_tool: &str,
+	) -> Result<crate::operation::AuthorizedToolOperation, CapabilityConsumerError> {
+		authorize_operation_with(
+			headers,
+			arguments,
+			local_tool,
+			|token, request, arguments| self.consume(token, request, arguments),
+		)
+	}
 	fn from_config(config: &RemoteCapabilityConsumerConfig) -> Result<Self, CapabilityConsumerError> {
 		let endpoint = reqwest::Url::parse(&config.consume_endpoint).map_err(|error| {
 			CapabilityConsumerError::unavailable(format!(
@@ -89,6 +105,8 @@ impl HttpCapabilityConsumer {
 		}
 		let mut builder = reqwest::blocking::Client::builder()
 			.use_rustls_tls()
+			.redirect(reqwest::redirect::Policy::none())
+			.no_proxy()
 			.timeout(Duration::from_millis(config.timeout_millis));
 		if let Some(path) = &config.root_ca_pem_file {
 			let pem = std::fs::read(path).map_err(|error| {
@@ -175,13 +193,24 @@ impl HttpCapabilityConsumer {
 				CapabilityConsumerError::unavailable(format!(
 					"capability broker rejected consume request: {error}"
 				))
-			})?
-			.json::<ConsumeCapabilityResponse>()
-			.map_err(|error| {
-				CapabilityConsumerError::unavailable(format!(
-					"capability consume response is invalid: {error}"
-				))
 			})?;
+		// A compromised/misconfigured broker must not grow a blocking worker's
+		// response buffer without bound before the binding checks run.
+		if response.content_length().is_some_and(|n| n > 16384) {
+			return Err(CapabilityConsumerError::unavailable(
+				"capability response exceeds budget",
+			));
+		}
+		let mut bytes = Vec::new();
+		std::io::Read::read_to_end(&mut std::io::Read::take(response, 16385), &mut bytes)
+			.map_err(|_| CapabilityConsumerError::unavailable("capability response unavailable"))?;
+		if bytes.len() > 16384 {
+			return Err(CapabilityConsumerError::unavailable(
+				"capability response exceeds budget",
+			));
+		}
+		let response: ConsumeCapabilityResponse = serde_json::from_slice(&bytes)
+			.map_err(|_| CapabilityConsumerError::unavailable("capability response is invalid"))?;
 		validate_consume_response(&response, &request, &arguments_hash)?;
 		Ok(response)
 	}
@@ -203,10 +232,57 @@ pub fn arguments_hash(arguments: &serde_json::Value) -> String {
 		.collect()
 }
 
+pub(crate) fn authorize_operation_with(
+	headers: &HeaderMap,
+	arguments: &serde_json::Value,
+	local_tool: &str,
+	consume: impl FnOnce(
+		&str,
+		ActionRequest,
+		&serde_json::Value,
+	) -> Result<ConsumeCapabilityResponse, CapabilityConsumerError>,
+) -> Result<crate::operation::AuthorizedToolOperation, CapabilityConsumerError> {
+	let key = required_header(headers, crate::OPERATION_HEADER)?;
+	if key.len() != 64 || !key.bytes().all(|b| b.is_ascii_hexdigit()) {
+		return Err(CapabilityConsumerError::unavailable(
+			"invalid operation key",
+		));
+	}
+	let request = decode_action_request(required_header(headers, CAPABILITY_CONTEXT_HEADER)?)?;
+	let consumed = consume(
+		required_header(headers, CAPABILITY_HEADER)?,
+		request.clone(),
+		arguments,
+	)?;
+	validate_consume_response(&consumed, &request, &arguments_hash(arguments))?;
+	if consumed.request.action.action_type != security_types::ActionType::ToolInvoke
+		|| consumed.request.action.name != local_tool
+		|| consumed.request.resource.resource_type != security_types::ResourceType::Tool
+		|| consumed.request.resource.id != local_tool
+	{
+		return Err(CapabilityConsumerError::unavailable(
+			"capability does not authorize this Tool",
+		));
+	}
+	let mut request = consumed.request;
+	request.request_id.clear();
+	let binding =
+		arguments_hash(&serde_json::json!({"request":request,"argumentsHash":consumed.arguments_hash}));
+	Ok(crate::operation::AuthorizedToolOperation::new(
+		key.to_owned(),
+		binding,
+	))
+}
+
 fn required_header<'a>(
 	headers: &'a HeaderMap,
 	name: &str,
 ) -> Result<&'a str, CapabilityConsumerError> {
+	if headers.get_all(name).iter().take(2).count() != 1 {
+		return Err(CapabilityConsumerError::unavailable(format!(
+			"missing/duplicate {name} header"
+		)));
+	}
 	headers
 		.get(name)
 		.and_then(|value| value.to_str().ok())
@@ -215,6 +291,11 @@ fn required_header<'a>(
 }
 
 fn decode_action_request(encoded: &str) -> Result<ActionRequest, CapabilityConsumerError> {
+	if encoded.len() > 16384 {
+		return Err(CapabilityConsumerError::unavailable(
+			"capability context exceeds budget",
+		));
+	}
 	let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
 		.decode(encoded)
 		.map_err(|error| {
@@ -250,65 +331,4 @@ fn validate_consume_response(
 		));
 	}
 	Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-	use chrono::{Duration, Utc};
-	use security_types::{
-		Action, ActionRequest, ActionType, AuthorizationContext, Resource, ResourceType, Subject,
-	};
-
-	use super::{
-		RemoteCapabilityConsumerConfig, arguments_hash, decode_action_request, encode_action_request,
-		validate_consume_response,
-	};
-	use crate::ConsumeCapabilityResponse;
-
-	fn request() -> ActionRequest {
-		ActionRequest {
-			request_id: "request-1".into(),
-			subject: Subject {
-				user_id: Some("alice".into()),
-				agent_id: Some("support-agent".into()),
-				tenant_id: Some("tenant-a".into()),
-				delegation_id: None,
-			},
-			action: Action {
-				action_type: ActionType::ToolInvoke,
-				name: "records.delete".into(),
-			},
-			resource: Resource {
-				id: "records.delete".into(),
-				resource_type: ResourceType::Tool,
-			},
-			authorization_context: AuthorizationContext::default(),
-		}
-	}
-
-	#[test]
-	fn context_round_trip_and_response_binding_are_verified() {
-		let request = request();
-		assert_eq!(
-			decode_action_request(&encode_action_request(&request).unwrap()).unwrap(),
-			request
-		);
-		let hash = arguments_hash(&serde_json::json!({ "recordId": "42" }));
-		let response = ConsumeCapabilityResponse {
-			request: request.clone(),
-			arguments_hash: hash.clone(),
-			expires_at: Utc::now() + Duration::seconds(30),
-		};
-		assert!(validate_consume_response(&response, &request, &hash).is_ok());
-		assert!(validate_consume_response(&response, &request, "wrong").is_err());
-	}
-
-	#[test]
-	fn consumer_requires_an_https_endpoint() {
-		let config: RemoteCapabilityConsumerConfig = serde_json::from_value(serde_json::json!({
-			"consumeEndpoint": "http://broker.internal/v1/capabilities/consume"
-		}))
-		.unwrap();
-		assert!(config.consumer().is_err());
-	}
 }

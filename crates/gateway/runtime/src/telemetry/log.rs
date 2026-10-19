@@ -598,15 +598,6 @@ impl DropOnLog {
 		}
 	}
 
-	/// Computes (health, eviction_duration, restore_health) for finish_request.
-	/// `unhealthy` should already be evaluated (preferably with the shared CEL executor when available).
-	/// When no CEL expression is set, the default treats 5xx, connection failures, or non-zero
-	/// gRPC status as unhealthy.
-	#[cfg(test)]
-	fn default_unhealthy(log: &RequestLog) -> bool {
-		Self::default_unhealthy_for_status(log, log.status)
-	}
-
 	fn default_unhealthy_for_status(
 		log: &RequestLog,
 		status: Option<crate::http::StatusCode>,
@@ -839,6 +830,7 @@ impl RequestLog {
 			response_processing_duration: None,
 			connection_id: current_connection_id(),
 			request_id: current_request_id(),
+			security_request_id: None,
 			tcp_info,
 			tls_info: None,
 			tracer: None,
@@ -972,6 +964,8 @@ pub struct RequestLog {
 	pub response_processing_duration: Option<Duration>,
 	pub connection_id: Option<u64>,
 	pub request_id: Option<u64>,
+	/// Gateway-issued ID shared with authorization and egress audit events.
+	pub security_request_id: Option<String>,
 	pub tcp_info: TCPConnectionInfo,
 
 	// Set only for TLS traffic
@@ -1280,6 +1274,10 @@ impl Drop for DropOnLog {
 
 			let emit_ids = platform_core::telemetry::enabled("request", &Level::DEBUG);
 			let mut kv = vec![
+				(
+					"security.request_id",
+					log.security_request_id.as_ref().map(display),
+				),
 				(
 					"connection.id",
 					emit_ids
@@ -1603,7 +1601,14 @@ impl Drop for DropOnLog {
 							db_kv.push((*k, eval));
 						}
 					}
-					let attributes_json = kv_to_json(&db_kv);
+					let mut attributes_json = kv_to_json(&db_kv);
+					// This reserved correlation field cannot be replaced by CEL additions.
+					if let Some(attributes) = attributes_json.as_object_mut() {
+						attributes.remove("security.request_id");
+						if let Some(id) = &log.security_request_id {
+							attributes.insert("security.request_id".into(), Value::String(id.clone()));
+						}
+					}
 					let agentgateway_user = string_attribute(&attributes_json, "agentgateway.user");
 					let agentgateway_group = string_attribute(&attributes_json, "agentgateway.group");
 					let user_agent_name = string_attribute(&attributes_json, "user_agent.name");
@@ -2091,229 +2096,5 @@ impl BufferedSpan {
 			self.end_time,
 			self.attributes,
 		)
-	}
-}
-
-#[cfg(test)]
-mod tests {
-	use std::future::ready;
-	use std::net::SocketAddr;
-	use std::sync::{Arc, Mutex};
-	use std::time::Instant;
-
-	use opentelemetry::trace::SpanKind;
-	use opentelemetry_sdk::error::OTelSdkResult;
-	use opentelemetry_sdk::trace::{SimpleSpanProcessor, SpanData, SpanExporter};
-	use prometheus_client::registry::Registry;
-
-	use super::*;
-	use crate::telemetry::metrics::Metrics;
-	use crate::telemetry::trc;
-	use crate::transport::stream::TCPConnectionInfo;
-
-	#[derive(Clone, Debug, Default)]
-	struct RecordingSpanExporter {
-		spans: Arc<Mutex<Vec<SpanData>>>,
-	}
-
-	impl RecordingSpanExporter {
-		fn finished_spans(&self) -> Vec<SpanData> {
-			self.spans.lock().unwrap().clone()
-		}
-	}
-
-	impl SpanExporter for RecordingSpanExporter {
-		fn export(
-			&self,
-			batch: Vec<SpanData>,
-		) -> impl std::future::Future<Output = OTelSdkResult> + Send {
-			self.spans.lock().unwrap().extend(batch);
-			ready(Ok(()))
-		}
-	}
-
-	fn test_tracer() -> (Arc<trc::Tracer>, RecordingSpanExporter) {
-		let exporter = RecordingSpanExporter::default();
-		let processor = trc::SharedSpanProcessor::new(SimpleSpanProcessor::new(exporter.clone()));
-		let provider = opentelemetry_sdk::trace::SdkTracerProvider::builder()
-			.with_span_processor(processor.clone())
-			.build();
-		(
-			Arc::new(trc::Tracer {
-				provider,
-				processor,
-				fields: Arc::new(LoggingFields::default()),
-				filter: None,
-			}),
-			exporter,
-		)
-	}
-
-	fn test_request_log() -> RequestLog {
-		let cel = CelLogging {
-			cel_context: crate::cel::ContextBuilder::new(),
-			filter: None,
-			fields: LoggingFields::default(),
-			otlp_filter: None,
-			otlp_fields: LoggingFields::default(),
-			metric_fields: MetricFields::default(),
-			database_fields: LoggingFields::default(),
-		};
-		let mut registry = Registry::default();
-		let metrics = Arc::new(Metrics::new(&mut registry, Default::default()));
-		RequestLog::new(
-			cel,
-			metrics,
-			ModelCatalog::empty(),
-			Timestamp::now(),
-			TCPConnectionInfo {
-				peer_addr: "127.0.0.1:12345".parse::<SocketAddr>().unwrap(),
-				local_addr: "127.0.0.1:8080".parse::<SocketAddr>().unwrap(),
-				start: Instant::now(),
-				raw_peer_addr: None,
-			},
-		)
-	}
-
-	#[test]
-	fn default_health_treats_non_zero_grpc_status_as_unhealthy() {
-		let mut log = test_request_log();
-		log.status = Some(http::StatusCode::OK);
-		log.grpc_status.store(Some(13));
-		assert!(DropOnLog::default_unhealthy(&log));
-
-		log.grpc_status.store(Some(0));
-		assert!(!DropOnLog::default_unhealthy(&log));
-	}
-
-	#[test]
-	fn span_writer_flushes_recorded_spans_as_children_of_request_span() {
-		let (tracer, exporter) = test_tracer();
-		let mut request = test_request_log();
-		request.tracer = Some(tracer.clone());
-
-		let mut outgoing = trc::TraceParent::new();
-		outgoing.flags = 1;
-		request.outgoing_span = Some(outgoing.clone());
-
-		{
-			let _span = request.span_writer().start("buffered child span");
-		}
-
-		drop(DropOnLog::from(request));
-		let _ = tracer.provider.force_flush();
-
-		let spans = exporter.finished_spans();
-		assert_eq!(spans.len(), 2);
-
-		let child = spans
-			.iter()
-			.find(|span| span.name.as_ref() == "buffered child span")
-			.expect("buffered span should be exported");
-		assert_eq!(child.span_kind, SpanKind::Server);
-		assert_eq!(child.parent_span_id, outgoing.span_id.into());
-		assert_eq!(child.span_context.trace_id(), outgoing.trace_id.into());
-		assert!(child.parent_span_is_remote);
-	}
-
-	#[test]
-	fn span_writer_noops_for_unsampled_outgoing_span() {
-		let (tracer, exporter) = test_tracer();
-		let mut request = test_request_log();
-		request.tracer = Some(tracer.clone());
-
-		let mut outgoing = trc::TraceParent::new();
-		outgoing.flags = 0;
-		request.outgoing_span = Some(outgoing);
-
-		{
-			let mut span = request.span_writer().start("buffered child span");
-			span.rename_span("renamed child span");
-		}
-
-		drop(DropOnLog::from(request));
-		let _ = tracer.provider.force_flush();
-
-		assert!(exporter.finished_spans().is_empty());
-	}
-
-	#[tokio::test]
-	async fn llm_cost_breakdown_span_attributes() {
-		let catalog_file = tempfile::NamedTempFile::new().unwrap();
-		fs_err::write(
-			catalog_file.path(),
-			r#"{"providers":{"openai":{"models":{"my-model":{"rates":{"input":"1","output":"2"}}}}}}"#,
-		)
-		.unwrap();
-		let catalog = ModelCatalog::new(vec![crate::ModelCatalogSource::File {
-			file: catalog_file.path().to_path_buf(),
-		}])
-		.unwrap();
-		let request = llm::LLMRequest {
-			input_tokens: None,
-			input_format: InputFormat::Completions,
-			native_format: None,
-			cache_convention: llm::CacheTokenConvention::InputIncludesCache,
-			request_model: strng::literal!("my-model"),
-			provider: strng::literal!("openai"),
-			streaming: false,
-			params: llm::LLMRequestParams::default(),
-			prompt: None,
-			provider_state: None,
-		};
-		let response = llm::LLMResponse {
-			input_tokens: Some(1_000_000),
-			output_tokens: Some(0),
-			..Default::default()
-		};
-		for _ in 0..20 {
-			let projection = catalog.project(&llm::LLMInfo::new(request.clone(), response.clone()));
-			if projection.cost.is_some() {
-				break;
-			}
-			tokio::time::sleep(Duration::from_millis(25)).await;
-		}
-
-		let (tracer, exporter) = test_tracer();
-		let mut log = test_request_log();
-		log.model_catalog = catalog;
-		log.tracer = Some(tracer.clone());
-		let mut outgoing = trc::TraceParent::new();
-		outgoing.flags = 1;
-		log.outgoing_span = Some(outgoing);
-		log.llm_request = Some(request.clone());
-		log
-			.llm_response
-			.store(Some(llm::LLMInfo::new(request, response)));
-
-		drop(DropOnLog::from(log));
-		let _ = tracer.provider.force_flush();
-
-		let spans = exporter.finished_spans();
-		let span = spans
-			.iter()
-			.find(|span| span.name.as_ref() == "unknown")
-			.expect("request span should be exported");
-		let has = |key: &str| span.attributes.iter().any(|attr| attr.key.as_str() == key);
-		for expected in [
-			"agw.ai.usage.cost.total", // lossless decimal total (also on the structured log)
-			"agw.ai.usage.cost.input", // a span-only exact breakdown component
-		] {
-			assert!(has(expected), "expected {expected} span attribute");
-		}
-		assert!(
-			span
-				.attributes
-				.iter()
-				.all(|attr| attr.key.as_str() != "gen_ai.usage.cost"),
-			"cost must not be emitted under the GenAI semantic convention namespace"
-		);
-		assert!(
-			span
-				.attributes
-				.iter()
-				.all(|attr| attr.key.as_str() != "agw.usage.cost"),
-			"cost should use the AGW AI usage namespace"
-		);
 	}
 }

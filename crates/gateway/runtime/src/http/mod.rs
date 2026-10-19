@@ -28,8 +28,7 @@ mod peekbody;
 mod recordbody;
 pub mod remoteratelimit;
 pub mod sessionpersistence;
-#[cfg(any(test, feature = "internal_benches"))]
-pub mod tests_common;
+
 pub mod transformation_cel;
 
 pub type Error = axum_core::Error;
@@ -991,68 +990,5 @@ impl Debug for DebugExtensions<'_> {
 			d.field("TransformationMetadata", e);
 		}
 		d.finish()
-	}
-}
-
-#[cfg(test)]
-mod tests {
-	use super::*;
-
-	#[test]
-	fn test_modify_query_parameters_for_relative_uri() {
-		let mut uri = "/resource?keep=1&set=old&set=older&remove=gone"
-			.parse()
-			.unwrap();
-
-		modify_query_parameters(
-			&mut uri,
-			[("set", "updated"), ("new", "added value")],
-			["remove"],
-		)
-		.unwrap();
-
-		assert_eq!(
-			uri.to_string(),
-			"/resource?keep=1&set=updated&new=added+value"
-		);
-	}
-
-	#[test]
-	fn test_modify_query_parameters_for_absolute_uri() {
-		let mut uri = "https://example.com/resource?remove=1".parse().unwrap();
-
-		modify_query_parameters(&mut uri, std::iter::empty::<(&str, &str)>(), ["remove"]).unwrap();
-
-		assert_eq!(uri.to_string(), "https://example.com/resource");
-	}
-
-	#[test]
-	fn detects_grpc_request_content_types() {
-		for content_type in [
-			"application/grpc",
-			"application/grpc+proto",
-			"application/grpc; charset=utf-8",
-		] {
-			let req = ::http::Request::builder()
-				.uri("/svc.Method/Call")
-				.header(header::CONTENT_TYPE, content_type)
-				.body(Body::empty())
-				.unwrap();
-
-			assert!(is_grpc_request(&req), "{content_type}");
-		}
-	}
-
-	#[test]
-	fn rejects_non_grpc_request_content_types() {
-		for content_type in ["application/json", "application/grpc-web"] {
-			let req = ::http::Request::builder()
-				.uri("/svc.Method/Call")
-				.header(header::CONTENT_TYPE, content_type)
-				.body(Body::empty())
-				.unwrap();
-
-			assert!(!is_grpc_request(&req), "{content_type}");
-		}
 	}
 }

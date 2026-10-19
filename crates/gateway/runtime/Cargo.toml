@@ -12,6 +12,7 @@ path = "src/lib.rs"
 default = [
 	"gateway-full",
 	"runtime-base",
+	"security-a2a-sqlite",
 	"jemalloc",
 	"mimalloc",
 	"tls-aws-lc",
@@ -56,6 +57,8 @@ providers-azure = ["dep:azure_core", "dep:azure_identity", "dep:typespec_client_
 providers-gcp = ["dep:google-cloud-auth"]
 # Request log persistence (SQLite/PostgreSQL).
 database = ["dep:sqlx"]
+# Durable A2A ownership metadata, independent of request log persistence.
+security-a2a-sqlite = ["security-integration-runtime/a2a-sqlite"]
 # OpenTelemetry trace/log export.
 telemetry-otlp = [
     "dep:opentelemetry",
@@ -66,7 +69,6 @@ telemetry-otlp = [
 ]
 ui = []
 schema = ["schemars"]
-internal_benches = ["divan"]
 assert_size_runtime = ["platform-core/assert_size_runtime"]
 
 [dependencies]
@@ -110,7 +112,6 @@ chrono.workspace = true
 clocksource.workspace = true
 core_affinity.workspace = true
 crossbeam.workspace = true
-divan = { workspace = true, optional = true }
 frozen-collections.workspace = true
 fs-err = { workspace = true }
 futures-core.workspace = true
@@ -215,7 +216,6 @@ reqwest.workspace = true
 websocket-sans-io.workspace = true
 vector-map.workspace = true
 flagset.workspace = true
-wiremock.workspace = true
 
 # Linux only dependencies
 [target.'cfg(target_family = "unix")'.dependencies]
@@ -240,42 +240,6 @@ pprof-alloc.workspace = true
 pprof-alloc.workspace = true
 tokio = { workspace = true }
 
-[dev-dependencies]
-assert_matches.workspace = true
-divan.workspace = true
-insta.workspace = true
-rstest.workspace = true
-tempfile.workspace = true
-tokio = { workspace = true, features = ["test-util"] }
-which.workspace = true
-rmcp = { version = "2.0", features = [
-    "client",
-    "server",
-    "base64",
-    "transport-child-process",
-    "transport-streamable-http-client-reqwest",
-    "transport-streamable-http-client",
-    "transport-streamable-http-server",
-    "reqwest",
-    "auth",
-] }
-# We need SSE client for testing but they removed it for some reason :-(
-# https://github.com/modelcontextprotocol/rust-sdk/pull/562
-legacy-rmcp = { package = "rmcp", version = "0.10.0", features = ["transport-sse-server",
-    "transport-sse-client",
-    "transport-sse-client-reqwest",
-    "client",
-    "reqwest"
-] }
-reqwest.workspace = true
-# TODO(https://github.com/modelcontextprotocol/rust-sdk/pull/667)
-legacyreqwest = { package = "reqwest", version = "0.12", default-features = false, features = [
-    "http2",
-    "charset",
-    "macos-system-configuration",
-    "rustls-tls",
-] }
-
 [lints.clippy]
 # This rule makes code more confusing
 assigning_clones = "allow"
@@ -288,7 +252,3 @@ declare_interior_mutable_const = "allow"
 mismatched_lifetime_syntaxes = "allow"
 # ossl350 is set by the openssl-sys crate when OpenSSL >= 3.5.0 is detected.
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(ossl350)'] }
-
-[[bench]]
-name = "bench_tests"
-harness = false

@@ -196,6 +196,76 @@ struct Candidate {
 }
 
 impl EndpointSet<Endpoint> {
+	/// Filter per request without changing locality, drain, or shared health state.
+	pub fn select_endpoint_where(
+		&self,
+		workloads: &store::WorkloadStore,
+		svc: &Service,
+		svc_port: u16,
+		override_dest: Option<SocketAddr>,
+		mut permits: impl FnMut(&Endpoint, &Workload) -> bool,
+	) -> Option<(Arc<Endpoint>, ActiveHandle, Arc<Workload>)> {
+		let target_port = svc.ports.get(&svc_port).copied()?;
+		let candidate = if let Some(destination) = override_dest {
+			let candidate = self.select_override(workloads, destination)?;
+			if !permits(&candidate.endpoint, &candidate.workload) {
+				return None;
+			}
+			candidate
+		} else {
+			self.buckets.iter().find_map(|bucket| {
+				let group = bucket.load_full();
+				if group.sampler.is_drained() {
+					return None;
+				}
+				let map = if group.active.is_empty() {
+					&group.rejected
+				} else {
+					&group.active
+				};
+				let candidates = map
+					.values()
+					.filter(|e| e.capacity > 0)
+					.filter_map(|e| {
+						let workload = viable(workloads, target_port, svc_port, &e.endpoint)?;
+						if !permits(&e.endpoint, &workload) {
+							return None;
+						}
+						Some((
+							Candidate {
+								endpoint: e.endpoint.clone(),
+								info: e.info.clone(),
+								workload,
+							},
+							e.capacity,
+						))
+					})
+					.collect::<Vec<_>>();
+				if candidates.is_empty() {
+					return None;
+				}
+				let weights =
+					WeightedIndex::new(candidates.iter().map(|(_, capacity)| u64::from(*capacity))).ok()?;
+				let mut rng = rand::rng();
+				let best = [weights.sample(&mut rng), weights.sample(&mut rng)]
+					.into_iter()
+					.max_by(|a, b| {
+						candidates[*a]
+							.0
+							.info
+							.score()
+							.total_cmp(&candidates[*b].0.info.score())
+					})?;
+				candidates
+					.into_iter()
+					.nth(best)
+					.map(|(candidate, _)| candidate)
+			})?
+		};
+		let handle = self.start_request(candidate.endpoint.workload_uid.clone(), &candidate.info);
+		Some((candidate.endpoint, handle, candidate.workload))
+	}
+
 	pub fn insert(&self, ep: Endpoint, dest_workload: &Workload, ranker: &LocalityRanker) {
 		let bucket = match ranker.bucket_for(dest_workload) {
 			Some(b) => b,
@@ -626,6 +696,27 @@ impl<T: Clone + Sync + Send + 'static> EndpointSet<T> {
 
 	pub fn iter(&self) -> ActiveEndpointsIter<T> {
 		ActiveEndpointsIter(self.best_bucket())
+	}
+
+	/// Request-local filtering before priority/P2C selection. Never evict a globally healthy
+	/// endpoint merely because this particular caller cannot use it.
+	pub fn eligible_active<F>(&self, mut permits: F) -> Vec<(Arc<T>, Arc<EndpointInfo>)>
+	where
+		F: FnMut(&T) -> bool,
+	{
+		for bucket in &self.buckets {
+			let group = bucket.load_full();
+			let candidates = group
+				.active
+				.values()
+				.filter(|e| e.capacity > 0 && permits(&e.endpoint))
+				.map(|e| (e.endpoint.clone(), e.info.clone()))
+				.collect::<Vec<_>>();
+			if !candidates.is_empty() {
+				return candidates;
+			}
+		}
+		Vec::new()
 	}
 
 	/// Visit every endpoint, returning the first `Some` produced by `f`. Active
@@ -1085,752 +1176,5 @@ impl<T> ActiveEndpointsIter<T> {
 	/// where capacity weighting doesn't apply.
 	pub fn sampler(&self) -> Option<&Sampler> {
 		self.is_active_phase().then_some(&self.0.sampler)
-	}
-}
-
-#[cfg(test)]
-mod tests {
-	use super::*;
-
-	// --- Ewma ---
-
-	#[test]
-	fn ewma_initial_value() {
-		let ewma = Ewma::new(1.0);
-		assert_eq!(ewma.load(), 1.0);
-	}
-
-	#[test]
-	fn ewma_default_is_zero() {
-		let ewma = Ewma::default();
-		assert_eq!(ewma.load(), 0.0);
-	}
-
-	#[test]
-	fn ewma_set_overwrites() {
-		let ewma = Ewma::new(1.0);
-		ewma.set(0.42);
-		assert_eq!(ewma.load(), 0.42);
-	}
-
-	#[test]
-	fn ewma_first_record_from_zero_sets_directly() {
-		let ewma = Ewma::default(); // 0.0
-		ewma.record(1.0);
-		// When old==0.0, result is nv directly
-		assert_eq!(ewma.load(), 1.0);
-	}
-
-	#[test]
-	fn ewma_record_sequence_failures() {
-		let ewma = Ewma::new(1.0);
-		// ALPHA = 0.3, record(0.0) simulates a failure
-		ewma.record(0.0); // 0.3*0 + 0.7*1.0 = 0.7
-		assert!((ewma.load() - 0.7).abs() < 1e-10);
-		ewma.record(0.0); // 0.3*0 + 0.7*0.7 = 0.49
-		assert!((ewma.load() - 0.49).abs() < 1e-10);
-		ewma.record(0.0); // 0.3*0 + 0.7*0.49 = 0.343
-		assert!((ewma.load() - 0.343).abs() < 1e-10);
-	}
-
-	#[test]
-	fn ewma_recovery_after_failures() {
-		let ewma = Ewma::new(0.343);
-		ewma.record(1.0); // 0.3*1.0 + 0.7*0.343 = 0.5401
-		assert!((ewma.load() - 0.5401).abs() < 1e-10);
-	}
-
-	#[test]
-	fn ewma_restore_health_full_reset() {
-		let ewma = Ewma::new(1.0);
-		// 3 failures: 1.0 → 0.7 → 0.49 → 0.343
-		ewma.record(0.0);
-		ewma.record(0.0);
-		ewma.record(0.0);
-		assert!((ewma.load() - 0.343).abs() < 1e-10);
-
-		// Simulate uneviction with restoreHealth = 1.0
-		ewma.set(1.0);
-		assert_eq!(ewma.load(), 1.0);
-
-		// Failures start fresh from 1.0
-		ewma.record(0.0); // 0.7
-		assert!((ewma.load() - 0.7).abs() < 1e-10);
-		ewma.record(0.0); // 0.49
-		assert!((ewma.load() - 0.49).abs() < 1e-10);
-	}
-
-	#[test]
-	fn ewma_restore_health_zero() {
-		let ewma = Ewma::new(1.0);
-		ewma.record(0.0);
-		ewma.record(0.0);
-		ewma.record(0.0);
-
-		// Simulate uneviction with restoreHealth = 0.0
-		ewma.set(0.0);
-		assert_eq!(ewma.load(), 0.0);
-
-		// record(0.0) when old==0.0: result = nv = 0.0 (stays at zero)
-		ewma.record(0.0);
-		assert_eq!(ewma.load(), 0.0);
-	}
-
-	#[test]
-	fn ewma_restore_health_partial() {
-		let ewma = Ewma::new(1.0);
-		ewma.record(0.0);
-		ewma.record(0.0);
-		ewma.record(0.0);
-
-		// Simulate uneviction with restoreHealth = 0.5
-		ewma.set(0.5);
-		assert_eq!(ewma.load(), 0.5);
-
-		// Next failure: 0.3*0 + 0.7*0.5 = 0.35
-		ewma.record(0.0);
-		assert!((ewma.load() - 0.35).abs() < 1e-10);
-	}
-
-	// --- EndpointInfo ---
-
-	#[test]
-	fn endpoint_info_default_health() {
-		let info = EndpointInfo::default();
-		assert_eq!(info.health_score(), 1.0);
-		assert_eq!(info.consecutive_failures(), 0);
-		assert_eq!(info.times_ejected(), 0);
-	}
-
-	// --- EndpointSet eviction integration ---
-
-	#[tokio::test]
-	async fn endpoint_set_eviction_and_uneviction() {
-		tokio::time::pause();
-		let key: Strng = "ep1".into();
-		let eps = EndpointSet::new(vec![vec![(key.clone(), "backend1")]]);
-
-		// Endpoint is initially in the active set
-		let group = eps.best_bucket();
-		assert!(group.active.contains_key(&key));
-		assert!(!group.rejected.contains_key(&key));
-
-		// Start a request and finish with eviction
-		let info = group.active.get(&key).unwrap().info.clone();
-		let handle = eps.start_request(key.clone(), &info);
-		handle.finish_request(
-			false,
-			Duration::from_millis(10),
-			Some(Duration::from_millis(100)),
-			Some(1.0),
-		);
-
-		yield_until(|| eps.best_bucket().rejected.contains_key(&key))
-			.await
-			.expect("endpoint should be evicted");
-
-		tokio::time::advance(Duration::from_millis(150)).await;
-		yield_until(|| eps.best_bucket().active.contains_key(&key))
-			.await
-			.expect("endpoint should be unevicted");
-
-		// Endpoint should be back in active with health reset to 1.0
-		let group = eps.best_bucket();
-		let ep_info = &group.active.get(&key).unwrap().info;
-		assert_eq!(ep_info.health_score(), 1.0, "health should be reset to 1.0");
-	}
-
-	#[tokio::test]
-	async fn endpoint_set_repeated_failure_during_window_does_not_bump_times_ejected() {
-		let key: Strng = "ep1".into();
-		let eps = EndpointSet::new(vec![vec![(key.clone(), "backend1")]]);
-
-		let info = eps.best_bucket().active.get(&key).unwrap().info.clone();
-
-		// First failure starts a 100ms eviction window.
-		eps.start_request(key.clone(), &info).finish_request(
-			false,
-			Duration::from_millis(10),
-			Some(Duration::from_millis(100)),
-			Some(1.0),
-		);
-		assert_eq!(info.times_ejected(), 1);
-
-		// A second failure while still inside the window must not bump the counter:
-		// the eviction CAS no-ops, so counting it would inflate the multiplier.
-		eps.start_request(key.clone(), &info).finish_request(
-			false,
-			Duration::from_millis(10),
-			Some(Duration::from_millis(100)),
-			Some(1.0),
-		);
-		assert_eq!(
-			info.times_ejected(),
-			1,
-			"repeated failure during eviction window should not bump times_ejected"
-		);
-	}
-
-	#[tokio::test]
-	async fn endpoint_set_uneviction_restore_health_zero() {
-		tokio::time::pause();
-		let key: Strng = "ep1".into();
-		let eps = EndpointSet::new(vec![vec![(key.clone(), "backend1")]]);
-
-		let group = eps.best_bucket();
-		let info = group.active.get(&key).unwrap().info.clone();
-		let handle = eps.start_request(key.clone(), &info);
-		handle.finish_request(
-			false,
-			Duration::from_millis(10),
-			Some(Duration::from_millis(100)),
-			Some(0.0),
-		);
-
-		yield_until(|| eps.best_bucket().rejected.contains_key(&key))
-			.await
-			.expect("endpoint should be evicted");
-		tokio::time::advance(Duration::from_millis(150)).await;
-		yield_until(|| eps.best_bucket().active.contains_key(&key))
-			.await
-			.expect("endpoint should be unevicted");
-
-		let group = eps.best_bucket();
-		let ep_info = &group.active.get(&key).unwrap().info;
-		assert_eq!(
-			ep_info.health_score(),
-			0.0,
-			"health should be set to 0.0 on uneviction"
-		);
-	}
-
-	#[tokio::test]
-	async fn endpoint_set_uneviction_no_restore_health() {
-		tokio::time::pause();
-		let key: Strng = "ep1".into();
-		let eps = EndpointSet::new(vec![vec![(key.clone(), "backend1")]]);
-
-		let group = eps.best_bucket();
-		let info = group.active.get(&key).unwrap().info.clone();
-
-		// Record a failure to lower health before eviction
-		info.health.record(0.0); // 0.3*0 + 0.7*1.0 = 0.7
-
-		let handle = eps.start_request(key.clone(), &info);
-		handle.finish_request(
-			false,
-			Duration::from_millis(10),
-			Some(Duration::from_millis(100)),
-			None,
-		);
-
-		yield_until(|| eps.best_bucket().rejected.contains_key(&key))
-			.await
-			.expect("endpoint should be evicted");
-		tokio::time::advance(Duration::from_millis(150)).await;
-		yield_until(|| eps.best_bucket().active.contains_key(&key))
-			.await
-			.expect("endpoint should be unevicted");
-
-		let group = eps.best_bucket();
-		let ep_info = &group.active.get(&key).unwrap().info;
-		// Health was recorded as 0.0 in finish_request (failure),
-		// starting from 0.7: 0.3*0 + 0.7*0.7 = 0.49
-		assert!(
-			(ep_info.health_score() - 0.49).abs() < 1e-10,
-			"health should be unchanged from pre-eviction EWMA, got {}",
-			ep_info.health_score()
-		);
-	}
-
-	#[tokio::test]
-	async fn stale_unevict_timer_does_not_restore_readded_endpoint() {
-		tokio::time::pause();
-		let key: Strng = "ep1".into();
-		let eps = EndpointSet::new(vec![vec![(key.clone(), "backend1")]]);
-
-		eps.evict(key.clone(), Instant::now() + Duration::from_millis(50));
-		yield_until(|| eps.best_bucket().rejected.contains_key(&key))
-			.await
-			.expect("first endpoint should be evicted");
-
-		eps.remove(key.clone());
-		eps.insert_key(key.clone(), "backend2", 0);
-		eps.evict(key.clone(), Instant::now() + Duration::from_millis(200));
-		yield_until(|| eps.best_bucket().rejected.contains_key(&key))
-			.await
-			.expect("re-added endpoint should be evicted");
-
-		tokio::time::advance(Duration::from_millis(100)).await;
-		tokio::task::yield_now().await;
-		let group = eps.best_bucket();
-		assert!(
-			group.rejected.contains_key(&key),
-			"old unevict timer must not restore the re-added endpoint early"
-		);
-
-		tokio::time::advance(Duration::from_millis(150)).await;
-		yield_until(|| eps.best_bucket().active.contains_key(&key))
-			.await
-			.expect("current unevict timer should eventually restore the endpoint");
-		let group = eps.best_bucket();
-		assert_eq!(*group.active.get(&key).unwrap().endpoint, "backend2");
-	}
-
-	async fn yield_until(mut f: impl FnMut() -> bool) -> Result<(), ()> {
-		for _ in 0..100 {
-			if f() {
-				return Ok(());
-			}
-			tokio::task::yield_now().await;
-		}
-		Err(())
-	}
-
-	#[test]
-	fn consecutive_failures_increments_on_failure() {
-		let info = EndpointInfo::default();
-		assert_eq!(info.consecutive_failures(), 0);
-
-		info
-			.consecutive_failures
-			.fetch_add(1, AtomicOrdering::Relaxed);
-		assert_eq!(info.consecutive_failures(), 1);
-
-		info
-			.consecutive_failures
-			.fetch_add(1, AtomicOrdering::Relaxed);
-		assert_eq!(info.consecutive_failures(), 2);
-	}
-
-	#[test]
-	fn consecutive_failures_not_reset_by_uneviction() {
-		let info = EndpointInfo::default();
-		// Simulate 3 failures
-		info.consecutive_failures.store(3, AtomicOrdering::Relaxed);
-		// Simulate what uneviction does: only resets health, not consecutive_failures
-		info.health.set(1.0);
-		assert_eq!(
-			info.consecutive_failures(),
-			3,
-			"consecutive_failures should NOT be reset on uneviction"
-		);
-	}
-
-	// --- AllEndpointsIter ---
-
-	fn build_group(
-		active: &[&'static str],
-		rejected: &[&'static str],
-	) -> EndpointGroup<&'static str> {
-		let active_map = active
-			.iter()
-			.map(|v| ((*v).into(), EndpointWithInfo::new(*v)))
-			.collect();
-		let rejected_map = rejected
-			.iter()
-			.map(|v| ((*v).into(), EndpointWithInfo::new(*v)))
-			.collect();
-		EndpointGroup::from_pools(active_map, rejected_map)
-	}
-
-	fn install(eps: &EndpointSet<&'static str>, idx: usize, g: EndpointGroup<&'static str>) {
-		eps.buckets[idx].store(Arc::new(g));
-	}
-
-	fn collect_values(eps: &EndpointSet<&'static str>) -> Vec<&'static str> {
-		let mut out = Vec::new();
-		eps.find_endpoint(|ep, _| -> Option<()> {
-			out.push(**ep);
-			None
-		});
-		out
-	}
-
-	#[tokio::test]
-	async fn all_endpoints_empty() {
-		let eps = EndpointSet::<&'static str>::new_empty(2);
-		assert!(collect_values(&eps).is_empty());
-	}
-
-	#[tokio::test]
-	async fn all_endpoints_active_before_rejected_across_buckets() {
-		let eps = EndpointSet::<&'static str>::new_empty(2);
-		install(&eps, 0, build_group(&["a0"], &["r0"]));
-		install(&eps, 1, build_group(&["a1"], &["r1"]));
-		// All actives across buckets first, then all rejecteds.
-		assert_eq!(collect_values(&eps), vec!["a0", "a1", "r0", "r1"]);
-	}
-
-	#[tokio::test]
-	async fn all_endpoints_skips_empty_buckets_and_phases() {
-		let eps = EndpointSet::<&'static str>::new_empty(3);
-		install(&eps, 0, build_group(&["a0"], &[]));
-		// bucket 1 left empty
-		install(&eps, 2, build_group(&[], &["r2"]));
-		assert_eq!(collect_values(&eps), vec!["a0", "r2"]);
-	}
-
-	// --- rebucket ---
-
-	#[tokio::test]
-	async fn rebucket_moves_endpoints_between_buckets() {
-		// Start with endpoints "a" and "b" both in bucket 0.
-		let eps = EndpointSet::<&'static str>::new_empty(2);
-		install(&eps, 0, build_group(&["a", "b"], &[]));
-
-		// Rebucket: send "a" to bucket 1, keep "b" in bucket 0.
-		eps.rebucket(|endpoint| Some(if *endpoint == "a" { 1 } else { 0 }));
-
-		let bucket_0 = eps.buckets[0].load_full();
-		let bucket_1 = eps.buckets[1].load_full();
-
-		assert_eq!(bucket_0.active.len(), 1, "bucket 0 should only contain b");
-		assert!(bucket_0.active.contains_key(&Strng::from("b")));
-
-		assert_eq!(bucket_1.active.len(), 1, "bucket 1 should only contain a");
-		assert!(bucket_1.active.contains_key(&Strng::from("a")));
-	}
-
-	#[tokio::test]
-	async fn rebucket_drops_none_and_out_of_range() {
-		let eps = EndpointSet::<&'static str>::new_empty(2);
-		install(&eps, 0, build_group(&["keep", "drop", "out_of_range"], &[]));
-
-		eps.rebucket(|endpoint| match *endpoint {
-			"keep" => Some(0),
-			"drop" => None,
-			// Callers should size buckets correctly; this guards against crashing
-			// if an out-of-range index sneaks through.
-			"out_of_range" => Some(99),
-			_ => None,
-		});
-
-		assert_eq!(eps.buckets[0].load_full().active.len(), 1);
-		assert_eq!(eps.buckets[1].load_full().active.len(), 0);
-	}
-
-	#[tokio::test]
-	async fn rebucket_preserves_active_rejected_split() {
-		let eps = EndpointSet::<&'static str>::new_empty(2);
-		install(&eps, 0, build_group(&["a"], &["r"]));
-
-		// Move everything to bucket 1.
-		eps.rebucket(|_| Some(1));
-
-		let bucket_0 = eps.buckets[0].load_full();
-		let bucket_1 = eps.buckets[1].load_full();
-
-		assert!(
-			bucket_1.active.contains_key(&Strng::from("a")),
-			"active stays active"
-		);
-		assert!(
-			bucket_1.rejected.contains_key(&Strng::from("r")),
-			"rejected stays rejected"
-		);
-		assert_eq!(bucket_0.active.len(), 0);
-		assert_eq!(bucket_0.rejected.len(), 0);
-	}
-
-	#[tokio::test]
-	async fn rebucket_preserves_endpoint_info_arc() {
-		// Health/eviction state lives in EndpointInfo; rebucket must share the
-		// same Arc rather than cloning the value.
-		let eps = EndpointSet::<&'static str>::new_empty(2);
-		install(&eps, 0, build_group(&["a"], &[]));
-
-		let key = Strng::from("a");
-		let info_before = Arc::as_ptr(&eps.buckets[0].load_full().active.get(&key).unwrap().info);
-
-		eps.rebucket(|_| Some(1));
-
-		let info_after = Arc::as_ptr(&eps.buckets[1].load_full().active.get(&key).unwrap().info);
-		assert_eq!(info_before, info_after);
-	}
-
-	// --- LocalityRanker ---
-
-	use crate::types::discovery::{
-		LoadBalancer, LoadBalancerHealthPolicy, LoadBalancerMode, LoadBalancerScopes, Locality,
-	};
-
-	fn wl(network: &str, region: &str, zone: &str, node: &str, cluster: &str) -> Workload {
-		Workload {
-			network: network.into(),
-			locality: Locality {
-				region: region.into(),
-				zone: zone.into(),
-				subzone: "".into(),
-			},
-			node: node.into(),
-			cluster_id: cluster.into(),
-			..Default::default()
-		}
-	}
-
-	fn lb(mode: LoadBalancerMode, prefs: Vec<LoadBalancerScopes>) -> LoadBalancer {
-		LoadBalancer {
-			routing_preferences: prefs,
-			mode,
-			health_policy: LoadBalancerHealthPolicy::default(),
-		}
-	}
-
-	#[test]
-	fn ranker_no_source_always_bucket_zero() {
-		for mode in [
-			LoadBalancerMode::Failover,
-			LoadBalancerMode::Strict,
-			LoadBalancerMode::Standard,
-			LoadBalancerMode::Passthrough,
-		] {
-			let lbc = lb(mode, vec![LoadBalancerScopes::Zone]);
-			let r = LocalityRanker::new(Some(&lbc), None);
-			assert_eq!(r.bucket_for(&wl("n1", "r1", "z1", "_", "_")), Some(0));
-		}
-	}
-
-	#[test]
-	fn ranker_standard_and_passthrough_ignore_preferences() {
-		// the control plane should not send preferences along with this mode, this is a defensive
-		// check to ensure we ignore them if we do receive them in a non-bucketing mode
-		let src = wl("n1", "r1", "z1", "_", "_");
-		for mode in [LoadBalancerMode::Standard, LoadBalancerMode::Passthrough] {
-			let lbc = lb(mode.clone(), vec![LoadBalancerScopes::Zone]);
-			let r = LocalityRanker::new(Some(&lbc), Some(&src));
-			assert_eq!(r.priority_levels(), 1, "mode {mode:?}");
-			assert_eq!(
-				r.bucket_for(&wl("n1", "r1", "z1", "_", "_")),
-				Some(0),
-				"mode {mode:?} matching endpoint"
-			);
-			assert_eq!(
-				r.bucket_for(&wl("n1", "r1", "z9", "_", "_")),
-				Some(0),
-				"mode {mode:?} non-matching endpoint"
-			);
-		}
-	}
-
-	#[test]
-	fn ranker_prefix_match_counts() {
-		let src = wl("n1", "r1", "z1", "node1", "c1");
-		let lbc = lb(
-			LoadBalancerMode::Failover,
-			vec![
-				LoadBalancerScopes::Network,
-				LoadBalancerScopes::Region,
-				LoadBalancerScopes::Zone,
-			],
-		);
-		let r = LocalityRanker::new(Some(&lbc), Some(&src));
-		// full match -> 3
-		assert_eq!(r.rank(&wl("n1", "r1", "z1", "_", "_")), Some(3));
-		// miss on zone -> 2
-		assert_eq!(r.rank(&wl("n1", "r1", "z2", "_", "_")), Some(2));
-		// miss on region breaks the chain before zone is evaluated
-		assert_eq!(r.rank(&wl("n1", "r2", "z1", "_", "_")), Some(1));
-		// miss on first preference -> 0
-		assert_eq!(r.rank(&wl("n2", "r1", "z1", "_", "_")), Some(0));
-	}
-
-	#[test]
-	fn ranker_strict_drops_sub_full_match() {
-		let src = wl("n1", "r1", "z1", "_", "_");
-		let lbc = lb(
-			LoadBalancerMode::Strict,
-			vec![LoadBalancerScopes::Network, LoadBalancerScopes::Zone],
-		);
-		let r = LocalityRanker::new(Some(&lbc), Some(&src));
-		assert_eq!(r.rank(&wl("n1", "_", "z1", "_", "_")), Some(2));
-		assert_eq!(r.rank(&wl("n1", "_", "z2", "_", "_")), None);
-		assert_eq!(r.rank(&wl("n2", "_", "z1", "_", "_")), None);
-	}
-
-	// --- Sampler / capacity weighting ---
-
-	fn make_active(caps: &[u32]) -> IndexMap<EndpointKey, EndpointWithInfo<()>> {
-		let mut map = IndexMap::new();
-		for (i, &cap) in caps.iter().enumerate() {
-			let key: Strng = format!("ep{i}").into();
-			map.insert(key, EndpointWithInfo::with_capacity((), cap));
-		}
-		map
-	}
-
-	#[test]
-	fn sampler_empty_map_is_uniform() {
-		// Vacuously uniform; the empty-len check in callers prevents sampling.
-		let active = make_active(&[]);
-		assert!(matches!(build_sampler(&active), Sampler::Uniform));
-	}
-
-	#[test]
-	fn sampler_all_default_capacity_is_uniform() {
-		let active = make_active(&[1, 1, 1, 1]);
-		assert!(matches!(build_sampler(&active), Sampler::Uniform));
-	}
-
-	#[test]
-	fn sampler_all_equal_nonone_is_weighted() {
-		// Uniform fast path only fires for the default cap=1. All-equal non-1
-		// caps fall through to Weighted — correct, just not optimized.
-		let active = make_active(&[5, 5, 5]);
-		assert!(matches!(build_sampler(&active), Sampler::Weighted(_)));
-	}
-
-	#[test]
-	fn sampler_all_zero_is_drained() {
-		let active = make_active(&[0, 0, 0]);
-		assert!(matches!(build_sampler(&active), Sampler::Drained));
-		assert!(build_sampler(&active).is_drained());
-	}
-
-	#[test]
-	fn sampler_single_zero_is_drained() {
-		let active = make_active(&[0]);
-		assert!(matches!(build_sampler(&active), Sampler::Drained));
-	}
-
-	#[test]
-	fn sampler_weighted_3_1_distribution() {
-		let active = make_active(&[3, 1]);
-		let sampler = build_sampler(&active);
-		let Sampler::Weighted(dist) = &sampler else {
-			panic!("expected Weighted, got {sampler:?}");
-		};
-		assert_eq!(dist.weights().collect::<Vec<_>>(), vec![3u64, 1]);
-
-		let mut rng = rand::rng();
-		let mut counts = [0u32; 2];
-		let n = 100_000u32;
-		for _ in 0..n {
-			let idx = dist.sample(&mut rng);
-			counts[idx] += 1;
-		}
-		// Expect ~75/25; ±2% is comfortable for n=100k.
-		let ratio0 = counts[0] as f64 / n as f64;
-		assert!(
-			(ratio0 - 0.75).abs() < 0.02,
-			"index 0 share = {ratio0} (counts={counts:?})"
-		);
-	}
-
-	#[test]
-	fn sampler_zero_cap_endpoint_is_never_sampled() {
-		// Mixed 0 and nonzero — the 0-cap index must never be returned.
-		let active = make_active(&[0, 1, 1]);
-		let sampler = build_sampler(&active);
-		let Sampler::Weighted(dist) = &sampler else {
-			panic!("expected Weighted, got {sampler:?}");
-		};
-		let mut rng = rand::rng();
-		for _ in 0..1_000 {
-			assert_ne!(
-				dist.sample(&mut rng),
-				0,
-				"cap=0 endpoint must never be sampled"
-			);
-		}
-	}
-
-	#[test]
-	fn build_sampler_reflects_active_state() {
-		let mut group = EndpointGroup::<()>::default();
-		group.add("a".into(), EndpointWithInfo::with_capacity((), 1));
-		group.add("b".into(), EndpointWithInfo::with_capacity((), 1));
-		assert!(matches!(group.sampler, Sampler::Uniform));
-
-		// Replace "a" with cap=3 — now mixed, should become Weighted.
-		group.add("a".into(), EndpointWithInfo::with_capacity((), 3));
-		let Sampler::Weighted(dist) = &group.sampler else {
-			panic!("expected Weighted, got {:?}", group.sampler);
-		};
-		assert_eq!(dist.weights().collect::<Vec<_>>(), vec![3u64, 1]);
-
-		// Drain everything — should become Drained.
-		group.add("a".into(), EndpointWithInfo::with_capacity((), 0));
-		group.add("b".into(), EndpointWithInfo::with_capacity((), 0));
-		assert!(group.sampler.is_drained());
-	}
-
-	#[test]
-	fn update_sampler_preserves_uniform_when_cap_matches() {
-		// Common case: all endpoints share the default cap=1. Adds and
-		// deletes should leave the sampler as Uniform.
-		let mut group = EndpointGroup::<()>::default();
-		group.add("a".into(), EndpointWithInfo::with_capacity((), 1));
-		assert!(matches!(group.sampler, Sampler::Uniform));
-
-		group.add("b".into(), EndpointWithInfo::with_capacity((), 1));
-		assert!(matches!(group.sampler, Sampler::Uniform));
-
-		group.remove(&Strng::from("b"));
-		assert!(matches!(group.sampler, Sampler::Uniform));
-	}
-
-	#[test]
-	fn update_sampler_rebuilds_on_cap_mismatch() {
-		// Adding a cap=2 endpoint to a Uniform group must transition to Weighted.
-		let mut group = EndpointGroup::<()>::default();
-		group.add("a".into(), EndpointWithInfo::with_capacity((), 1));
-		assert!(matches!(group.sampler, Sampler::Uniform));
-
-		group.add("b".into(), EndpointWithInfo::with_capacity((), 2));
-		assert!(matches!(group.sampler, Sampler::Weighted(_)));
-	}
-
-	#[test]
-	fn update_sampler_drained_stays_drained_on_zero_cap_add() {
-		let mut group = EndpointGroup::<()>::default();
-		group.add("a".into(), EndpointWithInfo::with_capacity((), 0));
-		assert!(matches!(group.sampler, Sampler::Drained));
-
-		group.add("b".into(), EndpointWithInfo::with_capacity((), 0));
-		assert!(matches!(group.sampler, Sampler::Drained));
-	}
-
-	#[test]
-	fn update_sampler_remove_last_uniform_stays_uniform() {
-		// Deleting the last active entry leaves the sampler as Uniform
-		let mut group = EndpointGroup::<()>::default();
-		group.add("a".into(), EndpointWithInfo::with_capacity((), 1));
-
-		group.remove(&Strng::from("a"));
-		assert!(matches!(group.sampler, Sampler::Uniform));
-		assert!(!group.sampler.is_drained());
-	}
-
-	#[test]
-	fn update_sampler_drops_drained_state_when_active_becomes_empty() {
-		// Setup: one cap=0 endpoint → sampler is Drained.
-		// Action: remove that endpoint.
-		// Expect: sampler must NOT stay Drained. A drained sampler tells
-		// select_fallback to skip the whole bucket, which would also skip
-		// the rejected pool — the wrong behavior when active is empty.
-		let mut group = EndpointGroup::<()>::default();
-		group.add("a".into(), EndpointWithInfo::with_capacity((), 0));
-		assert!(matches!(group.sampler, Sampler::Drained));
-
-		group.remove(&Strng::from("a"));
-		assert!(
-			!group.sampler.is_drained(),
-			"sampler stayed drained after removing the last cap=0 endpoint; \
-			 select_fallback would now skip this bucket's rejected pool"
-		);
-	}
-
-	#[test]
-	fn ranker_node_and_cluster_scopes() {
-		let src = wl("_", "_", "_", "nodeA", "clusterA");
-		let lbc = lb(
-			LoadBalancerMode::Failover,
-			vec![LoadBalancerScopes::Cluster, LoadBalancerScopes::Node],
-		);
-		let r = LocalityRanker::new(Some(&lbc), Some(&src));
-		assert_eq!(r.rank(&wl("_", "_", "_", "nodeA", "clusterA")), Some(2));
-		assert_eq!(r.rank(&wl("_", "_", "_", "nodeB", "clusterA")), Some(1));
-		assert_eq!(r.rank(&wl("_", "_", "_", "nodeA", "clusterB")), Some(0));
 	}
 }

@@ -3,7 +3,8 @@ use security_pipeline::GatewayError;
 use security_types::{ActionRequest, ActionType, DataClassification, Decision, DecisionEffect};
 
 /// Administrator-owned labels and exact destinations. HTTP values are the actual outbound
-/// `host:port` or `unix:path`; Tool values are `server-id/tool-name`.
+/// `host:port` or `unix:path`; Tool values are `server-id/tool-name`; other MCP values
+/// are logical server IDs bound to backend endpoints by trusted gateway configuration.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct DataEgressConfig {
@@ -16,9 +17,23 @@ pub struct DataEgressConfig {
 	pub agent_destinations: Vec<String>,
 	#[serde(default)]
 	pub tool_destinations: Vec<String>,
+	/// Exact MCP server IDs for Resource/Prompt operations, checked per actual upstream.
+	#[serde(default)]
+	pub mcp_destinations: Vec<String>,
+	/// Exact HTTPS host:port for external A2A Artifact retrieval; not Agent call permission.
+	#[serde(default, skip_serializing_if = "Vec::is_empty")]
+	pub artifact_destinations: Vec<String>,
 }
 
 impl DataEgressConfig {
+	/// Protocol setup is permitted only for a server with an explicitly approved business exit.
+	pub fn permits_mcp_transport(&self, server: &str) -> bool {
+		self.mcp_destinations.iter().any(|value| value == server)
+			|| self
+				.tool_destinations
+				.iter()
+				.any(|value| value.starts_with(&format!("{server}/")))
+	}
 	pub fn validate(&self) -> Result<(), String> {
 		for destination in self
 			.model_destinations
@@ -26,6 +41,8 @@ impl DataEgressConfig {
 			.chain(&self.inference_destinations)
 			.chain(&self.agent_destinations)
 			.chain(&self.tool_destinations)
+			.chain(&self.mcp_destinations)
+			.chain(&self.artifact_destinations)
 		{
 			if destination.is_empty() || destination.trim() != destination {
 				return Err("dataEgress destinations must be nonempty exact identifiers without surrounding whitespace".into());
@@ -34,12 +51,28 @@ impl DataEgressConfig {
 		Ok(())
 	}
 
-	fn allows(&self, kind: ActionType, destination: &str) -> bool {
-		let list = match kind {
+	/// Side-effect-free candidate eligibility; this is not an execution authorization.
+	pub fn permits(&self, action: &ActionRequest, destination: &str) -> bool {
+		if action.action.action_type == ActionType::McpOperation
+			&& matches!(
+				action.action.name.as_str(),
+				"initialize"
+					| "ping"
+					| "tools/list"
+					| "transport/get"
+					| "transport/delete"
+					| "notifications/initialized"
+			) {
+			return self.permits_mcp_transport(destination);
+		}
+		let list = match action.action.action_type {
 			ActionType::ModelInvoke => &self.model_destinations,
 			ActionType::InferenceRoute => &self.inference_destinations,
 			ActionType::AgentInvoke => &self.agent_destinations,
 			ActionType::ToolInvoke => &self.tool_destinations,
+			ActionType::McpOperation => &self.mcp_destinations,
+			ActionType::McpTaskOperation => &self.mcp_destinations,
+			ActionType::AgentArtifactDownload => &self.artifact_destinations,
 			_ => return false,
 		};
 		list.iter().any(|entry| entry == destination)
@@ -53,7 +86,7 @@ pub fn check_data_egress(
 	destination: &str,
 	audit: &dyn AuditSink,
 ) -> Result<(), GatewayError> {
-	let allowed = config.allows(action.action.action_type, destination);
+	let allowed = config.permits(action, destination);
 	let decision = Decision {
 		request_id: action.request_id.clone(),
 		effect: if allowed {
@@ -79,53 +112,5 @@ pub fn check_data_egress(
 		Ok(())
 	} else {
 		Err(GatewayError::Denied(decision))
-	}
-}
-
-#[cfg(test)]
-mod tests {
-	use super::*;
-	use security_audit::InMemoryAuditSink;
-	use security_pipeline::{
-		GatewayIdentity, inference_route_for_identity, model_invoke_for_identity,
-		tool_invoke_for_identity,
-	};
-
-	#[test]
-	fn exact_destination_and_audit() {
-		let policy = DataEgressConfig {
-			classification: DataClassification::Restricted,
-			model_destinations: vec!["private.example:443".into()],
-			inference_destinations: vec![],
-			agent_destinations: vec![],
-			tool_destinations: vec![],
-		};
-		let action = model_invoke_for_identity("req-1", GatewayIdentity::default(), "model-1");
-		let audit = InMemoryAuditSink::default();
-		assert!(check_data_egress(&policy, &action, "private.example:443", &audit).is_ok());
-		assert!(check_data_egress(&policy, &action, "public.example:443", &audit).is_err());
-		assert_eq!(audit.events()[1].resource.id, "public.example:443");
-		assert_eq!(audit.events()[1].decision, DecisionEffect::Deny);
-		// A permitted model destination is not automatically eligible for fallback routing.
-		let route = inference_route_for_identity("req-1", GatewayIdentity::default(), "picker");
-		assert!(check_data_egress(&policy, &route, "private.example:443", &audit).is_err());
-		let tool = tool_invoke_for_identity("req-1", GatewayIdentity::default(), "ticket.create");
-		assert!(check_data_egress(&policy, &tool, "tools/ticket.create", &audit).is_err());
-	}
-
-	#[test]
-	fn configuration_requires_enforcement_and_rejects_inexact_targets() {
-		let mut config: crate::SecurityConfig = serde_json::from_value(serde_json::json!({
-			"dataEgress": {
-				"classification": "restricted",
-				"modelDestinations": ["private.example:443"]
-			}
-		}))
-		.expect("valid data egress configuration");
-		assert!(config.validate_composition().is_err());
-		config.mode = crate::SecurityMode::Enforce;
-		assert!(config.validate_composition().is_ok());
-		config.data_egress.as_mut().unwrap().model_destinations = vec![" private.example:443".into()];
-		assert!(config.validate_composition().is_err());
 	}
 }

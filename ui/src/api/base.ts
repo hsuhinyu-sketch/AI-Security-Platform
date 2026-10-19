@@ -4,9 +4,12 @@ let redirecting = false;
 let hasSuccessfulRequest = false;
 
 export async function requestApi(path: string, init?: RequestInit): Promise<Response> {
+	const headers = new Headers(init?.headers);
+	headers.set('X-Requested-With', 'AI-Security-Platform');
 	// Authentication must use document navigation; fetch cannot follow cross-origin login redirects.
 	const response = await fetch(`${apiBase}${path}`, {
 		...init,
+		headers,
 		credentials: 'include',
 		redirect: 'manual'
 	});

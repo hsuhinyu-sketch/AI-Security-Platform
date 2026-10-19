@@ -6,8 +6,12 @@ rust-version.workspace = true
 license.workspace = true
 publish.workspace = true
 
+[[example]]
+name = "protected_ticket_tool"
+required-features = ["client"]
+
 [features]
-client = ["dep:base64", "dep:reqwest", "dep:sha2"]
+client = ["dep:base64", "dep:reqwest", "dep:sha2", "dep:subtle"]
 
 [dependencies]
 axum.workspace = true
@@ -17,12 +21,10 @@ reqwest = { workspace = true, features = ["blocking", "json"], optional = true }
 serde.workspace = true
 serde_json.workspace = true
 security-types = { path = "../types" }
+security-audit = { path = "../audit" }
 sha2 = { workspace = true, optional = true }
+subtle = { workspace = true, optional = true }
 thiserror.workspace = true
 tracing.workspace = true
-uuid.workspace = true
-
-[dev-dependencies]
-base64.workspace = true
 tokio.workspace = true
-tower = { workspace = true, features = ["util"] }
+uuid.workspace = true

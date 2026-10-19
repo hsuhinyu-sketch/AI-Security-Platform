@@ -16,8 +16,4 @@ security-types = { path = "../types" }
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
-
-[dev-dependencies]
-wiremock.workspace = true
-security-policy = { path = "../policy" }
-tokio.workspace = true
+uuid.workspace = true

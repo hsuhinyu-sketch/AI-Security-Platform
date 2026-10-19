@@ -1,0 +1,33 @@
+# SecurityConfig fragment for an A2A aiSystems[] entry, not a standalone listener config.
+# Keep the normal JWT authentication on the A2A route. sub=local-orchestrator is a workload principal.
+security:
+  mode: enforce
+  requiredIdentity: {user: true, agent: false, tenant: true}
+  executionBudget:
+    namespace: local-agent-workflows
+    maxDurationSeconds: 300
+    maxModelCalls: 0
+    maxToolCalls: 0
+    maxAgentCalls: 4
+    maxAttempts: 8
+    maxConcurrent: 2
+    # Opt-in, independent cleanup budget. No resets/refunds of the ordinary budget.
+    taskCleanup:
+      graceSeconds: 300
+      timeoutSeconds: 5
+      maxTasks: 32
+      maxAttempts: 8
+      maxConcurrent: 2
+  a2aObjects: {}
+  policies:
+    - {id: create-execution, actionType: executionOperation, actionName: execution/create, resourceType: execution, resourceId: local-agent-workflows, userId: local-orchestrator, tenantId: tenant-a, effect: allow, enabled: true}
+    - {id: stop-local-execution, actionType: executionOperation, actionName: execution/cancel, resourceType: execution, resourceId: local-agent-workflows, userId: local-orchestrator, tenantId: tenant-a, effect: allow, enabled: true}
+    # Local stop permission does not imply this permission or the two Agent permissions below.
+    - {id: cleanup-execution-task, actionType: executionOperation, actionName: execution/task/cancel, resourceType: execution, resourceId: local-agent-workflows, userId: local-orchestrator, tenantId: tenant-a, effect: allow, enabled: true}
+    - {id: send-agent-message, actionType: agentInvoke, actionName: message/send, userId: local-orchestrator, tenantId: tenant-a, effect: allow, enabled: true}
+    - {id: cancel-agent-method, actionType: agentInvoke, actionName: tasks/cancel, userId: local-orchestrator, tenantId: tenant-a, effect: allow, enabled: true}
+    - {id: create-task, actionType: agentTaskOperation, actionName: create, userId: local-orchestrator, tenantId: tenant-a, effect: allow, enabled: true}
+    - {id: disclose-created-task, actionType: agentTaskOperation, actionName: read, userId: local-orchestrator, tenantId: tenant-a, effect: allow, enabled: true}
+    - {id: cancel-task, actionType: agentTaskOperation, actionName: cancel, userId: local-orchestrator, tenantId: tenant-a, effect: allow, enabled: true}
+    # No artifact grants in this minimal example. Owner, endpoint/path, workflow and generation
+    # bindings are still enforced even when an action policy omits an exact Task resourceId.

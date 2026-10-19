@@ -1,0 +1,66 @@
+# Deployment template, not runnable as-is: replace endpoints, credentials and BOTH public JWKS.
+# Provision /var/lib/ai-security-platform and audit/ as private (0700) directories first.
+# Export AISP_RAG_MAC_KEY as >=32 random bytes encoded as hex. Never commit the key.
+config:
+  management: {mode: edge}
+  securityAudit:
+    directory: /var/lib/ai-security-platform/audit
+    maxSegmentBytes: 16777216
+    maxSegments: 8
+    retentionSeconds: 604800
+aiSystems:
+  - id: managed-knowledge
+    security:
+      mode: enforce
+      requiredIdentity: {user: true, agent: false, tenant: true}
+      requiredAudit:
+        actionTypes: [knowledgeIngest, knowledgeDocumentOperation, contextOperation, modelInvoke]
+      crossComponent:
+        namespace: managed-knowledge
+        ttlSeconds: 900
+        maxContexts: 1024
+        storage: {path: /var/lib/ai-security-platform/contexts.jsonl, maxBytes: 67108864}
+        destinations:
+          - {classification: public, modelDestinations: ["model.internal:443"]}
+          - {classification: internal, modelDestinations: ["model.internal:443"]}
+          - {classification: restricted, modelDestinations: ["model.internal:443"]}
+      policies:
+        - {id: ingest, tenantId: tenant-a, userId: operator-a, actionType: knowledgeIngest, effect: allow, enabled: true}
+        - {id: retrieve, tenantId: tenant-a, actionType: knowledgeRetrieve, effect: allow, enabled: true}
+        - {id: assemble, tenantId: tenant-a, actionType: contextAssemble, effect: allow, enabled: true}
+        - {id: model, tenantId: tenant-a, actionType: modelInvoke, effect: allow, enabled: true}
+        - {id: metadata, tenantId: tenant-a, userId: operator-a, actionType: knowledgeDocumentOperation, actionName: document/read-metadata, resourceType: document, resourceId: '["support","guide"]', effect: allow, enabled: true}
+        - {id: acl, tenantId: tenant-a, userId: operator-a, actionType: knowledgeDocumentOperation, actionName: document/update-acl, resourceType: document, resourceId: '["support","guide"]', effect: allow, enabled: true}
+        - {id: revoke, tenantId: tenant-a, userId: operator-a, actionType: knowledgeDocumentOperation, actionName: document/revoke, resourceType: document, resourceId: '["support","guide"]', effect: allow, enabled: true}
+        - {id: delete, tenantId: tenant-a, userId: operator-a, actionType: knowledgeDocumentOperation, actionName: document/delete, resourceType: document, resourceId: '["support","guide"]', effect: allow, enabled: true}
+    llm:
+      port: 14100
+      policies:
+        jwtAuth:
+          mode: strict
+          issuer: https://issuer.invalid
+          audiences: [managed-knowledge]
+          jwks: '{"keys":[]}'
+      models:
+        - name: knowledge-chat
+          provider: openAI
+          params: {baseUrl: "https://model.internal"}
+    rag:
+      port: 14103
+      lifecycle:
+        namespace: managed-knowledge
+        storage: {path: /var/lib/ai-security-platform/documents.jsonl, maxBytes: 67108864}
+        maxDocuments: 4096
+      qdrant:
+        endpoint: https://qdrant.internal
+        collection: knowledge
+        quarantineCollection: quarantine
+        integrity: {keyId: rag-v1, keyEnvVar: AISP_RAG_MAC_KEY}
+        defaultChunkAccess: {allowedUsers: [alice], allowedAgents: [], allowTenantAuthenticated: false}
+      embedding: {endpoint: "https://embedding.internal/v1/embeddings", model: local-embedding}
+      retrieval: {maxChunks: 8, maxContextTokens: 6000}
+      authentication:
+        mode: strict
+        issuer: https://issuer.invalid
+        audiences: [managed-knowledge]
+        jwks: '{"keys":[]}'

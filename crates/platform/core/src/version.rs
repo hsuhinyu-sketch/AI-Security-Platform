@@ -1,11 +1,11 @@
 use std::fmt::{Display, Formatter};
 use std::{env, fmt};
 
-const BUILD_VERSION: &str = env!("AGENTGATEWAY_BUILD_buildVersion");
-const BUILD_GIT_REVISION: &str = env!("AGENTGATEWAY_BUILD_buildGitRevision");
-const BUILD_RUST_VERSION: &str = env!("AGENTGATEWAY_BUILD_RUSTC_VERSION");
-const BUILD_RUST_PROFILE: &str = env!("AGENTGATEWAY_BUILD_PROFILE_NAME");
-const BUILD_RUST_TARGET: &str = env!("AGENTGATEWAY_BUILD_TARGET");
+const BUILD_VERSION: &str = env!("AISP_BUILD_VERSION");
+const BUILD_GIT_REVISION: &str = env!("AISP_BUILD_GIT_REVISION");
+const BUILD_RUST_VERSION: &str = env!("AISP_BUILD_RUSTC_VERSION");
+const BUILD_RUST_PROFILE: &str = env!("AISP_BUILD_PROFILE_NAME");
+const BUILD_RUST_TARGET: &str = env!("AISP_BUILD_TARGET");
 
 #[derive(serde::Serialize, Clone, Debug, Default)]
 pub struct BuildInfo {

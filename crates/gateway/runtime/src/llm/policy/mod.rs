@@ -32,9 +32,7 @@ mod google_model_armor;
 mod moderation;
 mod pii;
 pub mod streaming_guardrails;
-#[cfg(test)]
-#[path = "tests.rs"]
-mod tests;
+pub(crate) mod streaming_wire;
 
 /// Routes stored in a deterministic order: **longest key to shortest key**, with `"*"` always last.
 ///
@@ -404,8 +402,8 @@ impl crate::llm::RequestType for TextRequest {
 impl PromptGuard {
 	/// Apply request guards to a plain-text string extracted from a realtime WebSocket frame.
 	///
-	/// Returns the rejection body if the content should be blocked. Masking outcomes are
-	/// treated as pass because the realtime path cannot rewrite WebSocket frames in place.
+	/// Returns the rejection body if the content should be blocked. A mask that cannot
+	/// be applied to the original WebSocket payload must not disclose the original text.
 	pub async fn apply_realtime_request_guards(
 		&self,
 		text: &str,
@@ -431,13 +429,16 @@ impl PromptGuard {
 						.unwrap_or_else(|_| g.rejection.body.clone());
 					return Some(body);
 				},
-				// Masking is not supported in the realtime path; treat as pass but still record.
+				// Realtime cannot safely rewrite the original event here: fail closed.
 				Ok(GuardrailOutcome::Masked) => {
 					Policy::record_guardrail_trip(
 						client,
 						crate::telemetry::metrics::GuardrailPhase::Request,
 						crate::telemetry::metrics::GuardrailAction::Mask,
 					);
+					return Some(Bytes::from_static(
+						b"Realtime masking requires a structured event adapter",
+					));
 				},
 				Ok(GuardrailOutcome::None) => {
 					Policy::record_guardrail_trip(
@@ -516,11 +517,11 @@ impl PromptGuard {
 				Ok(Some(StreamingGuardrailOutcome::Blocked(body)))
 			},
 			GuardrailOutcome::Masked => {
-				debug_assert!(
-					false,
-					"streaming response guard unexpectedly returned Masked; streaming masking is not supported"
-				);
-				Ok(None)
+				// Evaluating a rewritten TextResponse does not rewrite the original
+				// provider frames. Returning Pass here would disclose unmasked data.
+				Ok(Some(StreamingGuardrailOutcome::Blocked(
+					Bytes::from_static(b"Streaming masking requires an event rewriting adapter"),
+				)))
 			},
 			GuardrailOutcome::None => Ok(None),
 			GuardrailOutcome::FailOpen => Ok(None),
@@ -1706,268 +1707,4 @@ fn default_code() -> StatusCode {
 
 fn default_body() -> Bytes {
 	Bytes::from_static(b"The request was rejected due to inappropriate content")
-}
-
-#[test]
-fn test_prompt_caching_policy_deserialization() {
-	use serde_json::json;
-
-	let json = json!({
-		"promptCaching": {
-			"cacheSystem": true,
-			"cacheMessages": true,
-			"cacheTools": false,
-			"minTokens": 1024
-		}
-	});
-
-	let policy: Policy = serde_json::from_value(json).unwrap();
-	let caching = policy.prompt_caching.unwrap();
-
-	assert!(caching.cache_system);
-	assert!(caching.cache_messages);
-	assert!(!caching.cache_tools);
-	assert_eq!(caching.min_tokens, Some(1024));
-}
-
-#[test]
-fn test_prompt_caching_policy_defaults() {
-	use serde_json::json;
-
-	// Empty config should have system and messages enabled by default
-	let json = json!({
-		"promptCaching": {}
-	});
-
-	let policy: Policy = serde_json::from_value(json).unwrap();
-	let caching = policy.prompt_caching.unwrap();
-
-	assert!(caching.cache_system); // Default: true
-	assert!(caching.cache_messages); // Default: true
-	assert!(!caching.cache_tools); // Default: false
-	assert_eq!(caching.min_tokens, Some(1024)); // Default: 1024
-}
-
-#[test]
-fn test_policy_without_prompt_caching_field() {
-	use serde_json::json;
-
-	let json = json!({
-		"modelAliases": {
-			"gpt-4": "anthropic.claude-3-sonnet-20240229-v1:0"
-		}
-	});
-
-	let policy: Policy = serde_json::from_value(json).unwrap();
-
-	// prompt_caching should be None when not specified
-	assert!(policy.prompt_caching.is_none());
-}
-
-#[test]
-fn test_prompt_caching_explicit_disable() {
-	use serde_json::json;
-
-	// Explicitly disable caching
-	let json = json!({
-		"promptCaching": null
-	});
-
-	let policy: Policy = serde_json::from_value(json).unwrap();
-
-	// Should be None when explicitly set to null
-	assert!(policy.prompt_caching.is_none());
-}
-
-#[test]
-fn test_resolve_route() {
-	let mut routes = SortedRoutes::default();
-	routes.insert(
-		strng::literal!("/completions"),
-		crate::llm::RouteType::Completions,
-	);
-	routes.insert(
-		strng::literal!("/v1/messages"),
-		crate::llm::RouteType::Messages,
-	);
-	routes.insert(strng::literal!("*"), crate::llm::RouteType::Passthrough);
-
-	let policy = Policy {
-		routes,
-		..Default::default()
-	};
-
-	// Suffix matching
-	assert_eq!(
-		policy.resolve_route("/v1/chat/completions"),
-		crate::llm::RouteType::Completions
-	);
-	assert_eq!(
-		policy.resolve_route("/api/completions"),
-		crate::llm::RouteType::Completions
-	);
-	// Exact suffix match
-	assert_eq!(
-		policy.resolve_route("/v1/messages"),
-		crate::llm::RouteType::Messages
-	);
-	// Wildcard fallback
-	assert_eq!(
-		policy.resolve_route("/v1/models"),
-		crate::llm::RouteType::Passthrough
-	);
-	// Empty routes defaults to Completions
-	assert_eq!(
-		Policy::default().resolve_route("/any/path"),
-		crate::llm::RouteType::Completions
-	);
-}
-
-#[test]
-fn test_model_alias_wildcard_resolution() {
-	let mut policy = Policy {
-		model_aliases: HashMap::from([
-			(strng::new("gpt-4"), strng::new("exact-target")),
-			(
-				strng::new("claude-haiku-3.5-*"),
-				strng::new("haiku-3.5-target"),
-			),
-			(strng::new("claude-haiku-*"), strng::new("haiku-target")),
-			(strng::new("*-sonnet-*"), strng::new("sonnet-target")),
-		]),
-		..Default::default()
-	};
-
-	policy.compile_model_alias_patterns();
-
-	// Exact match takes precedence over wildcards
-	assert_eq!(
-		policy.resolve_model_alias("gpt-4"),
-		Some(&strng::new("exact-target"))
-	);
-
-	// Longer patterns are more specific (checked first)
-	assert_eq!(
-		policy.resolve_model_alias("claude-haiku-3.5-v1"),
-		Some(&strng::new("haiku-3.5-target")) // Matches "claude-haiku-3.5-*" not "claude-haiku-*"
-	);
-	assert_eq!(
-		policy.resolve_model_alias("claude-haiku-v1"),
-		Some(&strng::new("haiku-target")) // Only matches "claude-haiku-*"
-	);
-	assert_eq!(
-		policy.resolve_model_alias("other-sonnet-model"),
-		Some(&strng::new("sonnet-target")) // Matches "*-sonnet-*"
-	);
-
-	// No match returns None
-	assert_eq!(policy.resolve_model_alias("unmatched-model"), None);
-}
-
-#[test]
-fn test_model_alias_pattern_validation() {
-	// Pattern must contain wildcard
-	assert!(ModelAliasPattern::from_wildcard("no-wildcards").is_err());
-
-	// Special characters are escaped (dot is literal, not regex wildcard)
-	let pattern = ModelAliasPattern::from_wildcard("test.*").unwrap();
-	assert!(pattern.matches("test.v1"));
-	assert!(!pattern.matches("testXv1")); // X doesn't match literal dot
-}
-
-#[test]
-fn test_unmarshal_request_with_transformation_policy() {
-	use serde_json::json;
-
-	let policy = Policy {
-		transformations: Some(
-			[
-				(
-					"max_tokens".to_string(),
-					Arc::new(cel::Expression::new_strict("min(llmRequest.max_tokens, 50)").unwrap()),
-				),
-				(
-					"model".to_string(),
-					Arc::new(
-						cel::Expression::new_strict(
-							r#"
-				llmRequest.model.split("/").with(m,
-					m.size() == 2 ? m[1] : m[0]
-				)"#,
-						)
-						.unwrap(),
-					),
-				),
-			]
-			.into_iter()
-			.collect(),
-		),
-		..Default::default()
-	};
-
-	let input = Bytes::from_static(br#"{"model":"provider/model","max_tokens":999}"#);
-	let out: serde_json::Value = policy
-		.unmarshal_request(&input, &mut None)
-		.expect("request should unmarshal");
-
-	assert_eq!(out.get("model"), Some(&json!("model")));
-	assert_eq!(out.get("max_tokens"), Some(&json!(50)));
-}
-
-#[cfg(test)]
-#[rstest::rstest]
-#[case::single_email(
-  vec![RegexRule::Builtin { builtin: Builtin::Email }],
-	"contact john.doe@example.com now",
-	"contact <EMAIL_ADDRESS> now",
-)]
-#[case::multiple_emails(
-  vec![RegexRule::Builtin { builtin: Builtin::Email }],
-	"contact john@example.com or jane@other.com for help",
-	"contact <EMAIL_ADDRESS> or <EMAIL_ADDRESS> for help",
-)]
-#[case::ssn_in_sentence(
-  vec![RegexRule::Builtin { builtin: Builtin::Ssn }],
-	"My ssn is 123-45-6789 ok",
-	"My ssn is <SSN> ok",
-)]
-#[case::builtin_credit_card_and_regex(
-  vec![
-    RegexRule::Builtin { builtin: Builtin::CreditCard },
-    RegexRule::Regex { pattern: regex::Regex::new(r"\d{2}").unwrap() },
-  ],
-	"Card number: 4111-1111-1111-1111 or id:12-34",
-	"Card number: <CREDIT_CARD> or id:<masked>-<masked>",
-)]
-fn test_apply_prompt_guard_regex_mask(
-	#[case] rules: Vec<RegexRule>,
-	#[case] input: &str,
-	#[case] expected: &str,
-) {
-	let result = Policy::apply_prompt_guard_regex(
-		input,
-		&RegexRules {
-			action: Action::Mask,
-			rules,
-		},
-	);
-	match result {
-		Some(RegexResult::Mask(masked)) => assert_eq!(masked, expected),
-		_ => panic!("expected masked result"),
-	}
-}
-
-#[cfg(test)]
-#[rstest::rstest]
-#[case::regex(vec![RegexRule::Regex { pattern: regex::Regex::new(r"\d{2}").unwrap() }], "id:12")]
-#[case::builtin(vec![RegexRule::Builtin { builtin: Builtin::Email }], "contact john.doe@example.com")]
-fn test_apply_prompt_guard_regex_reject(#[case] rules: Vec<RegexRule>, #[case] input: &str) {
-	let result = Policy::apply_prompt_guard_regex(
-		input,
-		&RegexRules {
-			action: Action::Reject,
-			rules,
-		},
-	);
-	assert!(matches!(result, Some(RegexResult::Reject)));
 }

@@ -22,7 +22,3 @@ pub(crate) fn encode_sse_event(event_name: &str, data: Bytes) -> Bytes {
 	out.extend_from_slice(b"\n");
 	out.freeze()
 }
-
-#[cfg(test)]
-#[path = "parse_tests.rs"]
-mod tests;

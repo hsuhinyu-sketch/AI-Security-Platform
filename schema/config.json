@@ -77,6 +77,13 @@
           "type": "null"
         }
       ]
+    },
+    "aiSystems": {
+      "description": "aiSystems declares independently deployable AI gateway compositions. Each enabled gateway\nreceives its own listener and can therefore be combined without protocol coupling.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/LocalAiSystemConfig"
+      }
     }
   },
   "additionalProperties": false,
@@ -84,6 +91,25 @@
     "RawConfig": {
       "type": "object",
       "properties": {
+        "management": {
+          "description": "Local management exposure; defaults to edge mode. Restart required.",
+          "$ref": "#/$defs/ManagementConfig",
+          "default": {
+            "mode": "edge",
+            "unsafeDebug": false
+          }
+        },
+        "securityAuditPath": {
+          "description": "Optional single-writer security audit journal; restart required when changed.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "securityAudit": true,
+        "dependencyEgress": {
+          "description": "Infrastructure dependency destinations, separate from model/Tool dataEgress."
+        },
         "enableIpv6": {
           "type": [
             "boolean",
@@ -311,6 +337,29 @@
         }
       },
       "additionalProperties": false
+    },
+    "ManagementConfig": {
+      "type": "object",
+      "properties": {
+        "mode": {
+          "$ref": "#/$defs/Mode",
+          "default": "edge"
+        },
+        "unsafeDebug": {
+          "description": "Enables profiling, debug, logging changes and shutdown only in demo mode.",
+          "type": "boolean",
+          "default": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "Mode": {
+      "type": "string",
+      "enum": [
+        "edge",
+        "diagnostic",
+        "demo"
+      ]
     },
     "RawDnsConfig": {
       "type": "object",
@@ -1495,6 +1544,10 @@
               "type": "null"
             }
           ],
+          "default": null
+        },
+        "securityPipeline": {
+          "description": "Composable SecurityGateway controls enforced for MCP Tool calls.",
           "default": null
         },
         "authorization": {
@@ -4978,7 +5031,7 @@
           "properties": {
             "mode": {
               "description": "Controls whether requests must include a JWT and how validation failures are handled.",
-              "$ref": "#/$defs/Mode",
+              "$ref": "#/$defs/Mode2",
               "default": "optional"
             },
             "location": {
@@ -5010,7 +5063,7 @@
           "properties": {
             "mode": {
               "description": "Controls whether requests must include a JWT and how validation failures are handled.",
-              "$ref": "#/$defs/Mode",
+              "$ref": "#/$defs/Mode2",
               "default": "optional"
             },
             "location": {
@@ -5054,7 +5107,7 @@
         }
       ]
     },
-    "Mode": {
+    "Mode2": {
       "oneOf": [
         {
           "description": "Require a valid JWT from a configured issuer.",
@@ -6345,7 +6398,7 @@
       "type": "object",
       "properties": {
         "attempts": {
-          "description": "Total number of attempts, including the original request.",
+          "description": "Maximum retries after the original request (1 means at most 2 outbound attempts).",
           "type": "integer",
           "format": "uint8",
           "minimum": 1,
@@ -6970,6 +7023,10 @@
             }
           ],
           "default": null
+        },
+        "securityPipeline": {
+          "description": "Composable SecurityGateway controls enforced for MCP Tool calls.",
+          "default": null
         }
       },
       "additionalProperties": false
@@ -7561,6 +7618,10 @@
               "type": "null"
             }
           ],
+          "default": null
+        },
+        "securityPipeline": {
+          "description": "Composable SecurityGateway controls enforced for MCP Tool calls.",
           "default": null
         },
         "a2a": {
@@ -10096,6 +10157,18 @@
             }
           ],
           "default": null
+        },
+        "inferenceRouting": {
+          "description": "Select an LLM inference destination through an endpoint picker before contacting the provider.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/InferenceRouting"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         }
       },
       "additionalProperties": false
@@ -10156,6 +10229,202 @@
       "additionalProperties": false,
       "required": [
         "targets"
+      ]
+    },
+    "LocalAiSystemConfig": {
+      "description": "A named composition of the existing LLM, A2A, and MCP gateway capabilities.\n\nEvery selected gateway has a separate protocol listener. LLM and MCP reuse their existing\nconfiguration formats; A2A receives a normal HTTP backend and automatically enables the A2A\nrequest/response adapter for that route.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "description": "name is the stable identifier for this AI system. `id` is accepted as an alias so\nsystem-centric configuration can use the same terminology as deployment metadata.",
+          "type": "string"
+        },
+        "name": {
+          "description": "name is the stable identifier for this AI system. `id` is accepted as an alias so\nsystem-centric configuration can use the same terminology as deployment metadata.",
+          "type": "string"
+        },
+        "security": {
+          "description": "Common security controls applied to every enabled gateway in this AI system."
+        },
+        "inference": {
+          "description": "inference contains system-wide LLM controls. It is compiled into the selected LLM\ngateway's existing parameter, rate-limit, and routing policies.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LocalInferenceConfig"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "llm": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LocalLLMConfig"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "a2a": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LocalA2aGatewayConfig"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "mcp": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LocalSimpleMcpConfig"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "rag": {
+          "description": "RAG declares the separately mounted retrieval/ingestion HTTP gateway. Its security policy\nstays in this AI system's `security` block; RAG-specific source, context, and backend values\nare validated here and used when the RAG router is mounted by the host application."
+        }
+      },
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "anyOf": [
+            {
+              "required": [
+                "id"
+              ]
+            },
+            {
+              "required": [
+                "name"
+              ]
+            }
+          ]
+        },
+        {
+          "not": {
+            "required": [
+              "id",
+              "name"
+            ]
+          }
+        }
+      ]
+    },
+    "LocalInferenceConfig": {
+      "description": "System-level inference controls. This is intentionally an input model, not a second runtime\npolicy engine: during configuration normalization it is compiled into the LLM gateway's\nestablished parameter, local-rate-limit, and endpoint-picker policies.",
+      "type": "object",
+      "properties": {
+        "parameters": {
+          "description": "parameters are applied to every model in this AI system. Model-level settings remain more\nspecific and take precedence over `defaults`; `overrides` always replaces client input.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LocalInferenceParameters"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "quota": {
+          "description": "quota declares local request and LLM-token buckets without exposing the lower-level\n`localRateLimit` location or requiring callers to repeat the bucket type.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LocalInferenceQuota"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "routing": {
+          "description": "routing is the system-level endpoint-picker policy for every model backend.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/InferenceRouting"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "LocalInferenceParameters": {
+      "type": "object",
+      "properties": {
+        "defaults": {
+          "description": "defaults are inserted only when the client did not set the request parameter.",
+          "type": [
+            "object",
+            "null"
+          ],
+          "additionalProperties": true
+        },
+        "overrides": {
+          "description": "overrides replace client-provided values and are appropriate for enforced ceilings or\ndeployment-specific model settings.",
+          "type": [
+            "object",
+            "null"
+          ],
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": false
+    },
+    "LocalInferenceQuota": {
+      "type": "object",
+      "properties": {
+        "requests": {
+          "description": "requests configures a local request-count token bucket for every LLM route.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RateLimitSpec"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "tokens": {
+          "description": "tokens configures a local LLM-token token bucket for every LLM route. Input tokens are\ncharged before forwarding and response tokens are reconciled after the response.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RateLimitSpec"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "LocalA2aGatewayConfig": {
+      "type": "object",
+      "properties": {
+        "port": {
+          "description": "A2A uses an independent HTTP listener so it can coexist with LLM and MCP endpoints.",
+          "type": "integer",
+          "format": "uint16",
+          "minimum": 0,
+          "maximum": 65535
+        },
+        "backend": {
+          "$ref": "#/$defs/LocalRouteBackend"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "port",
+        "backend"
       ]
     }
   }

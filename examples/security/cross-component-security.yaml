@@ -1,0 +1,52 @@
+# SecurityConfig fragment: place security under one aiSystems[] entry.
+# Configure strict JWT on each gateway and the RAG listener; replace destinations and issuer/JWKS.
+# RAG query returns x-aisp-context-id. Supply it with the normal JWT on downstream requests.
+security:
+  mode: enforce
+  crossComponent:
+    namespace: knowledge-agent
+    ttlSeconds: 900
+    maxContexts: 1024
+    # Optional single-writer recovery; provision a private directory first (Unix 0700).
+    # storage:
+    #   path: /var/lib/ai-security-platform/contexts.jsonl
+    #   maxBytes: 67108864
+    destinations:
+      - classification: public
+        modelDestinations: ["127.0.0.1:18100", "cloud.example:443"]
+        inferenceDestinations: ["127.0.0.1:18100", "cloud.example:443"]
+        agentDestinations: ["127.0.0.1:18300"]
+        toolDestinations: ["local-tools/lookup", "local-tools/publish"]
+        mcpDestinations: [local-tools]
+      - classification: internal
+        modelDestinations: ["127.0.0.1:18100"]
+        inferenceDestinations: ["127.0.0.1:18100"]
+        agentDestinations: ["127.0.0.1:18300"]
+        toolDestinations: ["local-tools/lookup"]
+        mcpDestinations: [local-tools]
+      - classification: restricted
+        modelDestinations: ["127.0.0.1:18100"]
+        inferenceDestinations: ["127.0.0.1:18100"]
+        agentDestinations: []
+        toolDestinations: ["local-tools/lookup"]
+        mcpDestinations: [local-tools]
+  mcpSessions:
+    maxSubscriptions: 128
+  requiredIdentity:
+    user: true
+    agent: false
+    tenant: true
+  # These PoC grants are tenant-scoped; tighten by actionName/resourceId in deployments.
+  policies:
+    - {id: ingest, tenantId: tenant-a, actionType: knowledgeIngest, effect: allow, enabled: true}
+    - {id: retrieve, tenantId: tenant-a, actionType: knowledgeRetrieve, effect: allow, enabled: true}
+    - {id: assemble, tenantId: tenant-a, actionType: contextAssemble, effect: allow, enabled: true}
+    # Optional lifecycle permission. Exact original Owner/config binding still applies.
+    # - {id: revoke-context, tenantId: tenant-a, userId: operator-a, actionType: contextOperation, actionName: context/revoke, resourceType: securityContext, resourceId: knowledge-agent, effect: allow, enabled: true}
+    - {id: model, tenantId: tenant-a, actionType: modelInvoke, effect: allow, enabled: true}
+    - {id: route, tenantId: tenant-a, actionType: inferenceRoute, effect: allow, enabled: true}
+    - {id: agent, tenantId: tenant-a, actionType: agentInvoke, effect: allow, enabled: true}
+    - {id: session, tenantId: tenant-a, actionType: mcpSessionOperation, effect: allow, enabled: true}
+    - {id: list, tenantId: tenant-a, actionType: toolList, effect: allow, enabled: true}
+    - {id: tool, tenantId: tenant-a, actionType: toolInvoke, effect: allow, enabled: true}
+    - {id: resource, tenantId: tenant-a, actionType: mcpOperation, effect: allow, enabled: true}

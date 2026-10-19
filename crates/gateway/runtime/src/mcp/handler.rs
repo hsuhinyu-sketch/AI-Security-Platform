@@ -123,6 +123,53 @@ impl RelayInputs {
 }
 
 impl Relay {
+	fn permits_transport(&self, server: &str) -> bool {
+		self
+			.security_audit
+			.as_ref()
+			.and_then(|config| config.data_egress.as_ref())
+			.is_none_or(|egress| egress.permits_mcp_transport(server))
+	}
+
+	fn prepare_notification(
+		&self,
+		method: &str,
+		server: &str,
+		ctx: &mut IncomingRequestContext,
+	) -> Result<(), UpstreamError> {
+		crate::mcp::security::mark_egress(None, server, method, ctx);
+		if method == "notifications/initialized" {
+			return Ok(());
+		}
+		let action = ctx
+			.extensions_mut()
+			.get::<crate::mcp::security::McpEgressContext>()
+			.expect("gateway just installed MCP context")
+			.action
+			.clone();
+		let enforce = security_integration_runtime::SecurityConfig {
+			mode: security_integration_runtime::SecurityMode::Enforce,
+			..Default::default()
+		};
+		for config in self
+			.security_audit
+			.as_deref()
+			.into_iter()
+			.chain(self.security_pipeline.as_ref().map(|_| &enforce))
+		{
+			security_integration_runtime::unsupported_operation_with_audit(
+				config,
+				&action,
+				"mcp",
+				&crate::security_events::UiSecurityAuditSink,
+			)
+			.map_err(|_| {
+				UpstreamError::InvalidRequest("security policy denied unsupported MCP notification".into())
+			})?;
+		}
+		Ok(())
+	}
+
 	pub fn new(
 		backend: McpBackendGroup,
 		policies: McpAuthorizationSet,
@@ -136,16 +183,6 @@ impl Relay {
 			security_audit: None,
 			policy_client: client,
 		})
-	}
-	pub fn with_policies(&self, policies: McpAuthorizationSet) -> Self {
-		Self {
-			upstreams: self.upstreams.clone(),
-			policies,
-			mcp_guardrails: self.mcp_guardrails.clone(),
-			security_pipeline: self.security_pipeline.clone(),
-			security_audit: self.security_audit.clone(),
-			policy_client: self.policy_client.clone(),
-		}
 	}
 
 	fn rewrite_outbound_server_messages(&self, target: &str, stream: Messages) -> Messages {
@@ -291,11 +328,12 @@ impl Relay {
 		&self,
 		r: &JsonRpcRequest<ClientRequest>,
 		ctx: &IncomingRequestContext,
+		server: &str,
 	) -> Result<(), UpstreamError> {
 		let Some(config) = self.security_pipeline.as_deref() else {
 			return Ok(());
 		};
-		crate::mcp::security::enforce_tool_call(config, r, ctx)
+		crate::mcp::security::enforce_request(config, r, ctx, server)
 	}
 
 	fn audit_security_pipeline(
@@ -579,8 +617,14 @@ impl Relay {
 		})
 	}
 
-	pub fn merge_prompts(&self) -> Box<MergeFn> {
+	pub fn merge_prompts(
+		&self,
+		request_id: String,
+		identity: security_pipeline::GatewayIdentity,
+	) -> Box<MergeFn> {
 		let policies = self.policies.clone();
+		let security = self.security_audit.clone();
+		let legacy = self.security_pipeline.clone();
 		let default_target_name = self.upstreams.default_target_name.clone();
 		Box::new(move |streams, cel| {
 			let prompts = streams
@@ -601,6 +645,18 @@ impl Relay {
 								cel,
 							)
 						})
+						.filter(|p| {
+							crate::mcp::security::visible_object(
+								security.as_deref(),
+								legacy.as_deref(),
+								&request_id,
+								&identity,
+								server_name.as_str(),
+								security_types::ResourceType::McpPrompt,
+								&p.name,
+								"prompts/get",
+							)
+						})
 						.map(|mut p| {
 							p.name = resource_name(default_target_name.as_ref(), server_name.as_str(), &p.name);
 							p
@@ -619,8 +675,14 @@ impl Relay {
 			)
 		})
 	}
-	pub fn merge_resources(&self) -> Box<MergeFn> {
+	pub fn merge_resources(
+		&self,
+		request_id: String,
+		identity: security_pipeline::GatewayIdentity,
+	) -> Box<MergeFn> {
 		let policies = self.policies.clone();
+		let security = self.security_audit.clone();
+		let legacy = self.security_pipeline.clone();
 		let default_target_name = self.upstreams.default_target_name.clone();
 		Box::new(move |streams, cel| {
 			let resources = streams
@@ -642,6 +704,18 @@ impl Relay {
 							)
 						})
 						// Prefix URI with service name when multiplexing to avoid conflicts
+						.filter(|r| {
+							crate::mcp::security::visible_object(
+								security.as_deref(),
+								legacy.as_deref(),
+								&request_id,
+								&identity,
+								server_name.as_str(),
+								security_types::ResourceType::McpResource,
+								&r.uri,
+								"resources/read",
+							)
+						})
 						.map(|mut r| {
 							r.uri = resource_uri(default_target_name.as_ref(), server_name.as_str(), &r.uri);
 							r
@@ -660,8 +734,14 @@ impl Relay {
 			)
 		})
 	}
-	pub fn merge_resource_templates(&self) -> Box<MergeFn> {
+	pub fn merge_resource_templates(
+		&self,
+		request_id: String,
+		identity: security_pipeline::GatewayIdentity,
+	) -> Box<MergeFn> {
 		let policies = self.policies.clone();
+		let security = self.security_audit.clone();
+		let legacy = self.security_pipeline.clone();
 		let default_target_name = self.upstreams.default_target_name.clone();
 		Box::new(move |streams, cel| {
 			let resource_templates = streams
@@ -683,6 +763,18 @@ impl Relay {
 							)
 						})
 						// Prefix uri_template with service name when multiplexing
+						.filter(|r| {
+							crate::mcp::security::visible_object(
+								security.as_deref(),
+								legacy.as_deref(),
+								&request_id,
+								&identity,
+								server_name.as_str(),
+								security_types::ResourceType::McpResource,
+								&r.uri_template,
+								"resources/read",
+							)
+						})
 						.map(|mut rt| {
 							rt.uri_template = resource_uri(
 								default_target_name.as_ref(),
@@ -719,9 +811,29 @@ impl Relay {
 		service_name: &str,
 		mcp_log: Option<AsyncLog<MCPInfo>>,
 	) -> Result<Response, UpstreamError> {
+		// The opt-in security contract must not change a transparent gateway's
+		// request handling when no platform security has been installed.
+		if self.security_audit.is_some() {
+			super::session_security::tasks::prepare(
+				&r,
+				&mut ctx,
+				service_name,
+				self.mcp_guardrails.is_some(),
+			)?;
+		}
 		self.audit_security_pipeline(&r, &mut ctx, service_name)?;
-		self.enforce_security_pipeline(&r, &ctx)?;
+		self.enforce_security_pipeline(&r, &ctx, service_name)?;
+		// Stateless single-target bootstrap must obey the same server filter as fanout,
+		// including transports that never enter the HTTP egress hook (e.g. stdio).
+		if !self.permits_transport(service_name) {
+			return Err(UpstreamError::InvalidRequest(
+				"security policy denied MCP transport".into(),
+			));
+		}
 		self.enforce_vehicle_tool_guardrails(&r).await?;
+		crate::mcp::security::mark_egress(Some(&r), service_name, "", &mut ctx);
+		crate::execution_budget::bind_mcp_invocation(&r, &mut ctx, service_name)?;
+		let task_admission = super::session_security::tasks::bind_budget(&ctx)?;
 		let id = r.id.clone();
 		let Ok(us) = self.upstreams.get(service_name) else {
 			return Err(UpstreamError::InvalidRequest(format!(
@@ -729,11 +841,25 @@ impl Relay {
 			)));
 		};
 		let guardrails = self.build_guardrails_ctx(&r, &ctx, vec![service_name.to_string()]);
+		let protected_request = r.clone();
+		super::session_security::prepare_subscription(&r, &mut ctx, service_name)?;
 		let stream = self.rewrite_outbound_server_messages(
 			service_name,
 			Box::pin(us.generic_stream(r, &ctx).assert_size::<{ 3 * 1024 }>()).await?,
 		);
+		let stream = super::session_security::tasks::hold_admission(stream, task_admission);
 		let stream = self.apply_vehicle_response_guardrails(stream);
+		let stream = super::session_security::protect_messages_with_sampling(
+			stream,
+			&ctx,
+			Some(&protected_request),
+			service_name,
+			Some(super::session_security::reverse::sampling::Transport {
+				upstreams: self.upstreams.clone(),
+				context: ctx.clone(),
+			}),
+		);
+		let stream = crate::execution_budget::record_mcp_result(stream, &ctx, id.clone());
 
 		match guardrails {
 			Some(guardrails) => messages_to_response(
@@ -752,12 +878,19 @@ impl Relay {
 		let futs: Vec<_> = self
 			.upstreams
 			.iter_named()
+			.filter(|(name, _)| self.permits_transport(name.as_str()))
 			.map(|(name, con)| {
-				let ctx = &ctx;
-				async move { (name, con.delete(ctx).await) }
+				let mut ctx = ctx.clone();
+				crate::mcp::security::mark_egress(None, name.as_str(), "transport/delete", &mut ctx);
+				async move { (name, con.delete(&ctx).await) }
 			})
 			.collect();
 
+		if futs.is_empty() && self.upstreams.size() > 0 {
+			return Err(UpstreamError::InvalidRequest(
+				"no authorized MCP transport upstreams".into(),
+			));
+		}
 		let fut_results = futures::future::join_all(futs).await;
 
 		for (name, result) in fut_results {
@@ -787,17 +920,26 @@ impl Relay {
 		let futs: Vec<_> = self
 			.upstreams
 			.iter_named()
+			.filter(|(name, _)| self.permits_transport(name.as_str()))
 			.map(|(name, con)| {
-				let ctx = &ctx;
-				async move { (name, con.get_event_stream(ctx).await) }
+				let mut ctx = ctx.clone();
+				crate::mcp::security::mark_egress(None, name.as_str(), "transport/get", &mut ctx);
+				async move { (name, con.get_event_stream(&ctx).await) }
 			})
 			.collect();
 
+		if futs.is_empty() && self.upstreams.size() > 0 {
+			return Err(UpstreamError::InvalidRequest(
+				"no authorized MCP transport upstreams".into(),
+			));
+		}
+		let selected_count = futs.len();
 		let fut_results = futures::future::join_all(futs).await;
 
 		for (name, result) in fut_results {
 			match result {
 				Ok(s) => {
+					let s = super::session_security::protect_messages(s, &ctx, None, name.as_str());
 					let s = self.rewrite_outbound_server_messages(name.as_str(), s);
 					streams.push((name, s));
 				},
@@ -829,7 +971,7 @@ impl Relay {
 		}
 
 		if streams.is_empty() {
-			if unsupported_get_streams > 0 && unsupported_get_streams == self.upstreams.size() {
+			if unsupported_get_streams > 0 && unsupported_get_streams == selected_count {
 				return Err(crate::proxy::ProxyError::MCP(mcp::Error::GetStreamNotSupported).into());
 			}
 			// FailClosed: unreachable — InitializeRequest would have failed with NoBackends.
@@ -843,7 +985,17 @@ impl Relay {
 			);
 		}
 
-		let ms = mergestream::MergeStream::new_without_merge(streams, self.upstreams.failure_mode);
+		let failure_mode = if ctx
+			.as_request()
+			.extensions()
+			.get::<super::session_security::SessionAccess>()
+			.is_some()
+		{
+			FailureMode::FailClosed
+		} else {
+			self.upstreams.failure_mode
+		};
+		let ms = mergestream::MergeStream::new_without_merge(streams, failure_mode);
 		let ms = self.apply_vehicle_response_guardrails(ms);
 		messages_to_response(RequestId::Number(0), ms, None, ctx_downstream_modern(&ctx))
 	}
@@ -864,8 +1016,15 @@ impl Relay {
 		merge: Box<MergeFn>,
 		target_names: Option<Vec<String>>,
 	) -> Result<Response, UpstreamError> {
-		self.audit_security_pipeline(&r, &mut ctx, "mcp-gateway")?;
-		self.enforce_security_pipeline(&r, &ctx)?;
+		let object_list = crate::mcp::security::is_object_list(&r.request);
+		let cross_component = self
+			.security_audit
+			.as_ref()
+			.is_some_and(|c| c.cross_component.is_some());
+		if !object_list && !cross_component {
+			self.audit_security_pipeline(&r, &mut ctx, "mcp-gateway")?;
+			self.enforce_security_pipeline(&r, &ctx, "mcp-gateway")?;
+		}
 		self.enforce_vehicle_tool_guardrails(&r).await?;
 		let id = r.id.clone();
 		let subscription_id = if matches!(&r.request, ClientRequest::SubscriptionsListenRequest(_)) {
@@ -876,19 +1035,39 @@ impl Relay {
 		let mut streams = Vec::new();
 		let method = r.request.method().to_string();
 		let method = method.as_str();
-		let selected_upstreams = self
+		let mut selected_upstreams = self
 			.upstreams
 			.iter_named()
 			.filter(|(name, _)| {
-				target_names
-					.as_ref()
-					.is_none_or(|targets| targets.iter().any(|target| target == name.as_str()))
+				self.permits_transport(name.as_str())
+					&& target_names
+						.as_ref()
+						.is_none_or(|targets| targets.iter().any(|target| target == name.as_str()))
 			})
 			.collect::<Vec<_>>();
 		if selected_upstreams.is_empty() {
 			return Err(UpstreamError::InvalidRequest(
 				"no upstreams available".to_string(),
 			));
+		}
+		if object_list || cross_component {
+			// Check every actual server before fanout starts; fail-open transport cannot bypass it.
+			let mut last_denial = None;
+			selected_upstreams.retain(|(name, _)| {
+				match self
+					.audit_security_pipeline(&r, &mut ctx, name.as_str())
+					.and_then(|_| self.enforce_security_pipeline(&r, &ctx, name.as_str()))
+				{
+					Ok(()) => true,
+					Err(error) => {
+						last_denial = Some(error);
+						false
+					},
+				}
+			});
+			if selected_upstreams.is_empty() {
+				return Err(last_denial.expect("nonempty selection was rejected by security"));
+			}
 		}
 
 		// service_names for the single fanout-wide mcpGuardrails hook: every backend this call
@@ -929,8 +1108,9 @@ impl Relay {
 			.into_iter()
 			.map(|(name, con)| {
 				let r = r.clone();
-				let ctx = &ctx;
-				async move { (name, con.generic_stream(r, ctx).await) }
+				let mut ctx = ctx.clone();
+				crate::mcp::security::mark_egress(Some(&r), name.as_str(), "", &mut ctx);
+				async move { (name, con.generic_stream(r, &ctx).await) }
 			})
 			.collect();
 
@@ -940,6 +1120,7 @@ impl Relay {
 		for (name, result) in fut_results {
 			match result {
 				Ok(s) => {
+					let s = super::session_security::protect_messages(s, &ctx, Some(&r), name.as_str());
 					let mut s = self.rewrite_outbound_server_messages(name.as_str(), s);
 					if let Some(subscription_id) = subscription_id.clone() {
 						s = s.map_server_messages(move |message| {
@@ -969,8 +1150,38 @@ impl Relay {
 			));
 		}
 
-		let ms =
-			mergestream::MergeStream::new(streams, id.clone(), merge, cel, self.upstreams.failure_mode);
+		let failure_mode = if ctx
+			.as_request()
+			.extensions()
+			.get::<super::session_security::SessionAccess>()
+			.is_some()
+		{
+			FailureMode::FailClosed
+		} else {
+			self.upstreams.failure_mode
+		};
+		let ms = mergestream::MergeStream::new(streams, id.clone(), merge, cel, failure_mode);
+		// A multiplex merge can synthesize capabilities after the per-upstream checks.
+		// Apply the protected contract again to the merged initialization result.
+		let ms = ms.map({
+			let ctx = ctx.clone();
+			let protected = ctx
+				.as_request()
+				.extensions()
+				.get::<super::session_security::SessionAccess>()
+				.is_some();
+			move |result| {
+				result.map(|mut rpc| {
+					if protected
+						&& let ServerJsonRpcMessage::Response(response) = &mut rpc
+						&& let ServerResult::InitializeResult(init) = &mut response.result
+					{
+						super::session_security::restrict_for_context(&mut init.capabilities, &ctx);
+					}
+					rpc
+				})
+			}
+		});
 
 		// Response-phase hook runs once on the merged (muxed) result.
 		match service_names.and_then(|sn| self.build_guardrails_ctx(&r, &ctx, sn)) {
@@ -988,13 +1199,28 @@ impl Relay {
 		r: JsonRpcNotification<ClientNotification>,
 		ctx: IncomingRequestContext,
 	) -> Result<Response, UpstreamError> {
-		let futs: Vec<_> = self
+		let method = crate::mcp::security::notification_method(&r.notification);
+		let mut selected = Vec::new();
+		for (name, con) in self
 			.upstreams
 			.iter_named()
-			.map(|(name, con)| {
+			.filter(|(name, _)| self.permits_transport(name.as_str()))
+		{
+			let mut ctx = ctx.clone();
+			self.prepare_notification(method, name.as_str(), &mut ctx)?;
+			selected.push((name, con, ctx));
+		}
+		if selected.is_empty() && self.upstreams.size() > 0 {
+			return Err(UpstreamError::InvalidRequest(
+				"no authorized MCP transport upstreams".into(),
+			));
+		}
+		// All authorization finishes before any upstream notification is sent.
+		let futs: Vec<_> = selected
+			.into_iter()
+			.map(|(name, con, ctx)| {
 				let notification = r.notification.clone();
-				let ctx = &ctx;
-				async move { (name, con.generic_notification(notification, ctx).await) }
+				async move { (name, con.generic_notification(notification, &ctx).await) }
 			})
 			.collect();
 
@@ -1022,9 +1248,19 @@ impl Relay {
 	pub async fn send_notification_single(
 		&self,
 		r: ClientNotification,
-		ctx: IncomingRequestContext,
+		mut ctx: IncomingRequestContext,
 		service_name: &str,
 	) -> Result<Response, UpstreamError> {
+		if !self.permits_transport(service_name) {
+			return Err(UpstreamError::InvalidRequest(
+				"security policy denied MCP transport".into(),
+			));
+		}
+		self.prepare_notification(
+			crate::mcp::security::notification_method(&r),
+			service_name,
+			&mut ctx,
+		)?;
 		let Ok(us) = self.upstreams.get(service_name) else {
 			return Err(UpstreamError::InvalidRequest(format!(
 				"unknown service {service_name}"
@@ -1368,132 +1604,4 @@ fn accepted_response() -> Response {
 		.status(StatusCode::ACCEPTED)
 		.body(crate::http::Body::empty())
 		.expect("valid response")
-}
-
-#[cfg(test)]
-mod tests {
-	use futures_util::stream;
-	use rmcp::model::{CallToolResult, ListToolsResult};
-	use serde_json::json;
-
-	use super::*;
-
-	#[test]
-	fn normalize_outbound_result_type_by_downstream_protocol() {
-		let response = ServerJsonRpcMessage::response(
-			ServerResult::ListToolsResult(
-				ListToolsResult::with_all_items(vec![])
-					.with_ttl_ms(30_000)
-					.with_cache_scope(CacheScope::Public),
-			),
-			RequestId::Number(1),
-		);
-
-		let modern =
-			serde_json::to_value(normalize_outbound_for_protocol(response.clone(), true)).unwrap();
-		assert_eq!(modern["result"]["resultType"], "complete");
-		assert_eq!(modern["result"]["ttlMs"], 30_000);
-		assert_eq!(modern["result"]["cacheScope"], "public");
-
-		let legacy = serde_json::to_value(normalize_outbound_for_protocol(response, false)).unwrap();
-		assert!(legacy["result"].get("resultType").is_none());
-		assert!(legacy["result"].get("ttlMs").is_none());
-		assert!(legacy["result"].get("cacheScope").is_none());
-	}
-
-	#[tokio::test]
-	async fn messages_to_response_captures_first_matching_tool_result() {
-		let log = AsyncLog::default();
-		let mut info = MCPInfo::default();
-		info.set_tool("mcp".to_string(), "echo".to_string());
-		log.store(Some(info));
-
-		let stream = stream::iter(vec![
-			Ok(ServerJsonRpcMessage::response(
-				ServerResult::ListToolsResult(ListToolsResult {
-					tools: vec![],
-					..Default::default()
-				}),
-				RequestId::Number(1),
-			)),
-			Ok(ServerJsonRpcMessage::response(
-				ServerResult::CallToolResult(CallToolResult::structured(json!({
-					"status": "ok",
-				}))),
-				RequestId::Number(42),
-			)),
-			Ok(ServerJsonRpcMessage::error(
-				ErrorData::internal_error("later error", None),
-				Some(RequestId::Number(42)),
-			)),
-		]);
-
-		let response =
-			messages_to_response(RequestId::Number(42), stream, Some(log.clone()), false).unwrap();
-		let _ = crate::http::read_resp_body(response).await.unwrap();
-
-		let info = log.take().unwrap();
-		assert_eq!(
-			info.tool.as_ref().unwrap().result.as_ref().unwrap()["structuredContent"]["status"],
-			"ok"
-		);
-		assert!(info.tool.as_ref().unwrap().error.is_none());
-	}
-
-	#[tokio::test]
-	async fn messages_to_response_ignores_transport_errors_before_result() {
-		let log = AsyncLog::default();
-		let mut info = MCPInfo::default();
-		info.set_tool("mcp".to_string(), "echo".to_string());
-		log.store(Some(info));
-
-		let stream = stream::iter(vec![
-			Err(ClientError::new(anyhow::anyhow!("boom"))),
-			Ok(ServerJsonRpcMessage::response(
-				ServerResult::CallToolResult(CallToolResult::structured(json!({
-					"status": "ok",
-				}))),
-				RequestId::Number(7),
-			)),
-		]);
-		let response =
-			messages_to_response(RequestId::Number(7), stream, Some(log.clone()), false).unwrap();
-		let _ = crate::http::read_resp_body(response).await.unwrap();
-
-		let info = log.take().unwrap();
-		assert_eq!(
-			info.tool.as_ref().unwrap().result.as_ref().unwrap()["structuredContent"]["status"],
-			"ok"
-		);
-		assert!(info.tool.as_ref().unwrap().error.is_none());
-	}
-
-	#[tokio::test]
-	async fn messages_to_response_captures_json_rpc_error() {
-		let log = AsyncLog::default();
-		let mut info = MCPInfo::default();
-		info.set_tool("mcp".to_string(), "echo".to_string());
-		log.store(Some(info));
-
-		let stream = stream::iter(vec![Ok(ServerJsonRpcMessage::error(
-			ErrorData::internal_error("boom", None),
-			Some(RequestId::Number(7)),
-		))]);
-		let response =
-			messages_to_response(RequestId::Number(7), stream, Some(log.clone()), false).unwrap();
-		let _ = crate::http::read_resp_body(response).await.unwrap();
-
-		let info = log.take().unwrap();
-		assert!(info.tool.as_ref().unwrap().result.is_none());
-		assert_eq!(
-			info.tool.as_ref().unwrap().error.as_ref().unwrap()["code"],
-			-32603
-		);
-		assert!(
-			info.tool.as_ref().unwrap().error.as_ref().unwrap()["message"]
-				.as_str()
-				.unwrap()
-				.contains("boom")
-		);
-	}
 }

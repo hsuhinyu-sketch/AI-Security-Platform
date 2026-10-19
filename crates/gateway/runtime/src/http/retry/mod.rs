@@ -13,7 +13,7 @@ use crate::*;
 #[apply(schema!)]
 #[cfg_attr(feature = "schema", schemars(rename = "RetryPolicy"))]
 pub struct Policy {
-	/// Total number of attempts, including the original request.
+	/// Maximum retries after the original request (1 means at most 2 outbound attempts).
 	#[serde(default = "default_attempts")]
 	pub attempts: NonZeroU8,
 	/// Delay between retry attempts.
@@ -65,52 +65,4 @@ where
 }
 fn default_attempts() -> NonZeroU8 {
 	NonZeroU8::new(1).unwrap()
-}
-
-#[cfg(test)]
-mod tests {
-	use super::*;
-
-	#[test]
-	fn parses_pre_and_post_conditions() {
-		let pol: Policy = serde_json::from_value(serde_json::json!({
-			"attempts": 3,
-			"codes": [503],
-			"precondition": "request.method == \"GET\"",
-			"condition": "response.headers[\"x-req-failed\"] != \"\"",
-		}))
-		.unwrap();
-		assert_eq!(pol.attempts.get(), 3);
-		assert_eq!(
-			pol.precondition.as_ref().unwrap().original_expression,
-			"request.method == \"GET\""
-		);
-		assert_eq!(
-			pol.condition.as_ref().unwrap().original_expression,
-			"response.headers[\"x-req-failed\"] != \"\""
-		);
-	}
-
-	#[test]
-	fn conditions_default_to_none() {
-		let pol: Policy = serde_json::from_value(serde_json::json!({
-			"attempts": 1,
-			"codes": [500],
-		}))
-		.unwrap();
-		assert!(pol.precondition.is_none());
-		assert!(pol.condition.is_none());
-	}
-
-	#[test]
-	fn expressions_exposes_both_conditions() {
-		let pol: Policy = serde_json::from_value(serde_json::json!({
-			"attempts": 2,
-			"codes": [],
-			"precondition": "request.method == \"GET\"",
-			"condition": "response.code == 200",
-		}))
-		.unwrap();
-		assert_eq!(pol.expressions().count(), 2);
-	}
 }

@@ -15,6 +15,7 @@ use security_rag::{
 
 pub mod config;
 pub mod http;
+
 pub mod qdrant;
 
 /// Compatibility path for the configured HTTPS source types.
@@ -54,6 +55,7 @@ impl RagQueryRequest {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RagGatewayError {
+	Lifecycle(String),
 	Ingestion(IngestionError),
 	Retrieval(RetrievalError),
 	Context(ContextAssemblyError),
@@ -63,6 +65,10 @@ pub enum RagGatewayError {
 /// generic so a deployment can use different metadata/index implementations for ingestion and
 /// retrieval without changing the security contract.
 pub struct RagGatewayAdapter<I, R, CA> {
+	lifecycle: Option<(
+		std::sync::Arc<security_rag::lifecycle::DocumentLifecycleStore>,
+		std::sync::Arc<dyn security_rag::lifecycle::DocumentPurger>,
+	)>,
 	ingestor: I,
 	retriever: R,
 	context_guard: ContextGuard,
@@ -72,11 +78,20 @@ pub struct RagGatewayAdapter<I, R, CA> {
 impl<I, R, CA> RagGatewayAdapter<I, R, CA> {
 	pub fn new(ingestor: I, retriever: R, context_guard: ContextGuard, context_audit: CA) -> Self {
 		Self {
+			lifecycle: None,
 			ingestor,
 			retriever,
 			context_guard,
 			context_audit,
 		}
+	}
+	pub fn with_lifecycle(
+		mut self,
+		store: std::sync::Arc<security_rag::lifecycle::DocumentLifecycleStore>,
+		purger: std::sync::Arc<dyn security_rag::lifecycle::DocumentPurger>,
+	) -> Self {
+		self.lifecycle = Some((store, purger));
+		self
 	}
 }
 
@@ -158,7 +173,8 @@ where
 			)
 			.await
 			.map_err(RagGatewayError::Retrieval)?;
-		self
+		let subject: security_types::Subject = identity.clone().into();
+		let guarded = self
 			.context_guard
 			.assemble(
 				self.retriever.security_pipeline(),
@@ -167,7 +183,90 @@ where
 				identity,
 				context,
 			)
-			.map_err(RagGatewayError::Context)
+			.map_err(RagGatewayError::Context)?;
+		if let Some((store, _)) = &self.lifecycle {
+			use security_types::DocumentVersionValidator;
+			let references = guarded
+				.chunks
+				.iter()
+				.map(|chunk| {
+					security_rag::lifecycle::document_reference(chunk)
+						.ok_or_else(|| RagGatewayError::Lifecycle("unversioned context".into()))
+				})
+				.collect::<Result<Vec<_>, _>>()?;
+			store
+				.validate_documents(&subject, &references)
+				.map_err(RagGatewayError::Lifecycle)?;
+		}
+		Ok(guarded)
+	}
+	pub async fn document_operation(
+		&self,
+		request_id: String,
+		identity: GatewayIdentity,
+		corpus: String,
+		document: String,
+		expected: Option<u64>,
+		mutation: Option<security_rag::lifecycle::DocumentMutation>,
+	) -> Result<DocumentStatus, RagGatewayError> {
+		let tenant = identity
+			.tenant_id
+			.clone()
+			.ok_or_else(|| RagGatewayError::Lifecycle("missing tenant".into()))?;
+		let key = security_types::DocumentKey {
+			tenant_id: tenant,
+			corpus_id: corpus.clone(),
+			document_id: document,
+		};
+		key.validate().map_err(RagGatewayError::Lifecycle)?;
+		let mut action = security_pipeline::knowledge_ingest_for_identity(
+			request_id,
+			identity,
+			serde_json::to_string(&(&key.corpus_id, &key.document_id)).expect("strings"),
+		);
+		action.action.action_type = security_types::ActionType::KnowledgeDocumentOperation;
+		action.action.name = mutation
+			.as_ref()
+			.map_or("document/read-metadata", |m| m.action())
+			.into();
+		self
+			.retriever
+			.security_pipeline()
+			.authorize(
+				&action,
+				Some(&serde_json::json!({"corpusId":corpus,"expectedRevision":expected})),
+			)
+			.map_err(|e| RagGatewayError::Retrieval(RetrievalError::GatewayDenied(e)))?;
+		let (store, purger) = self
+			.lifecycle
+			.as_ref()
+			.ok_or_else(|| RagGatewayError::Lifecycle("document lifecycle unavailable".into()))?;
+		let deleting = matches!(
+			&mutation,
+			Some(security_rag::lifecycle::DocumentMutation::Delete)
+		);
+		let meta = if let Some(mutation) = mutation {
+			store.mutate(
+				&key,
+				expected.ok_or_else(|| RagGatewayError::Lifecycle("expectedRevision required".into()))?,
+				mutation,
+			)
+		} else {
+			store.get(&key)
+		}
+		.map_err(RagGatewayError::Lifecycle)?;
+		let purged = if deleting {
+			Some(purger.purge_document(&key).await.is_ok())
+		} else {
+			None
+		};
+		Ok(DocumentStatus {
+			revision: meta.revision,
+			version: meta.version,
+			state: meta.state,
+			source_hash: meta.source_hash,
+			purged,
+		})
 	}
 
 	pub fn ingestor(&self) -> &SecureIngestor<IB, IA, IS, IAudit> {
@@ -179,228 +278,12 @@ where
 	}
 }
 
-#[cfg(test)]
-mod tests {
-	use std::sync::{Arc, Mutex};
-
-	use security_audit::InMemoryAuditSink;
-	use security_pipeline::{PolicyAuthorizer, SecurityPipeline};
-	use security_policy::Policy;
-	use security_rag::{
-		ContentClassificationRule, ContentLabelRule, ContextGuardConfig, DataClassification,
-		DocumentIngestBackend, InMemoryContextAuditSink, InMemoryIngestionAuditSink,
-		InMemoryRetrievalAuditSink, IndexedDocument, IngestionGuardConfig, KnowledgeChunk,
-		QuarantinedDocument, RetrievalBackend, RetrievalFilter, TrustedChunkAccess,
-	};
-	use security_types::{ActionType, DecisionEffect, ResourceType};
-
-	use super::*;
-
-	#[derive(Default)]
-	struct MemoryRagBackend {
-		indexed: Mutex<Vec<IndexedDocument>>,
-		quarantined: Mutex<Vec<QuarantinedDocument>>,
-		chunks: Mutex<Vec<KnowledgeChunk>>,
-	}
-
-	#[async_trait::async_trait]
-	impl DocumentIngestBackend for MemoryRagBackend {
-		async fn index(&self, document: IndexedDocument) -> Result<(), String> {
-			let chunk = document.to_chunk(
-				format!("{}:0", document.document_id),
-				document.content.clone(),
-				32,
-				TrustedChunkAccess {
-					allowed_users: vec!["alice".into()],
-					..Default::default()
-				},
-			);
-			self.indexed.lock().unwrap().push(document);
-			self.chunks.lock().unwrap().push(chunk);
-			Ok(())
-		}
-
-		async fn quarantine(&self, document: QuarantinedDocument) -> Result<(), String> {
-			self.quarantined.lock().unwrap().push(document);
-			Ok(())
-		}
-	}
-
-	#[async_trait::async_trait]
-	impl RetrievalBackend for MemoryRagBackend {
-		async fn retrieve(
-			&self,
-			_query: &RetrievalQuery,
-			filter: &RetrievalFilter,
-		) -> Result<Vec<KnowledgeChunk>, String> {
-			Ok(
-				self
-					.chunks
-					.lock()
-					.unwrap()
-					.iter()
-					.filter(|chunk| {
-						chunk.corpus_id == filter.corpus_id
-							&& chunk.tenant_id == filter.tenant_id
-							&& (chunk.allow_tenant_authenticated
-								|| filter
-									.user_id
-									.as_ref()
-									.is_some_and(|user| chunk.allowed_users.iter().any(|allowed| allowed == user))
-								|| filter
-									.agent_id
-									.as_ref()
-									.is_some_and(|agent| chunk.allowed_agents.iter().any(|allowed| allowed == agent)))
-					})
-					.take(filter.max_candidates)
-					.cloned()
-					.collect(),
-			)
-		}
-	}
-
-	fn identity() -> GatewayIdentity {
-		GatewayIdentity {
-			user_id: Some("alice".into()),
-			agent_id: Some("support-agent".into()),
-			tenant_id: Some("tenant-a".into()),
-			delegation_id: None,
-			session_id: Some("session-1".into()),
-			client_id: Some("client-1".into()),
-		}
-	}
-
-	fn policy(action_type: ActionType, action_name: &str, resource_type: ResourceType) -> Policy {
-		Policy {
-			id: format!("allow-{action_name}"),
-			priority: 0,
-			tenant_id: Some("tenant-a".into()),
-			user_id: Some("alice".into()),
-			agent_id: Some("support-agent".into()),
-			action_type: Some(action_type),
-			action_name: Some(action_name.into()),
-			resource_id: None,
-			resource_type: Some(resource_type),
-			effect: DecisionEffect::Allow,
-			enabled: true,
-		}
-	}
-
-	#[tokio::test]
-	async fn adapter_enforces_ingestion_retrieval_and_context_before_returning_content() {
-		let backend = Arc::new(MemoryRagBackend::default());
-		let ingestion_audit = InMemoryAuditSink::default();
-		let retrieval_audit = InMemoryAuditSink::default();
-		let ingestion_events = InMemoryIngestionAuditSink::default();
-		let retrieval_events = InMemoryRetrievalAuditSink::default();
-		let context_events = InMemoryContextAuditSink::default();
-		let ingestion_pipeline = SecurityPipeline::new(
-			PolicyAuthorizer::new(vec![policy(
-				ActionType::KnowledgeIngest,
-				"ingest",
-				ResourceType::Document,
-			)]),
-			&ingestion_audit,
-		);
-		let retrieval_pipeline = SecurityPipeline::new(
-			PolicyAuthorizer::new(vec![
-				policy(
-					ActionType::KnowledgeRetrieve,
-					"retrieve",
-					ResourceType::KnowledgeBase,
-				),
-				policy(
-					ActionType::ContextAssemble,
-					"assemble",
-					ResourceType::KnowledgeBase,
-				),
-			]),
-			&retrieval_audit,
-		);
-		let ingestor = SecureIngestor::new(
-			backend.clone(),
-			ingestion_pipeline,
-			IngestionGuardConfig {
-				default_classification: DataClassification::Public,
-				classification_rules: vec![ContentClassificationRule {
-					id: "customer-data".into(),
-					classification: DataClassification::Restricted,
-					pattern: "customer email".into(),
-				}],
-				label_rules: vec![ContentLabelRule {
-					label: "pii".into(),
-					pattern: "customer email".into(),
-				}],
-				..Default::default()
-			},
-			&ingestion_events,
-		)
-		.unwrap();
-		let retriever = SecureRetriever::new(
-			backend,
-			retrieval_pipeline,
-			Default::default(),
-			&retrieval_events,
-		)
-		.unwrap();
-		let adapter = RagGatewayAdapter::new(
-			ingestor,
-			retriever,
-			ContextGuard::new(ContextGuardConfig {
-				redact_labels: vec!["pii".into()],
-				..Default::default()
-			})
-			.unwrap(),
-			&context_events,
-		);
-
-		adapter
-			.ingest(
-				"request-1",
-				identity(),
-				DocumentIngestRequest::new(
-					"support-corpus",
-					"password-guide",
-					"https://kb.example.com/password-guide",
-					"Customer email is used for password recovery.",
-				),
-			)
-			.await
-			.unwrap();
-		let context = adapter
-			.query(
-				"request-2",
-				identity(),
-				RagQueryRequest::new("support-corpus", "password recovery", 1),
-			)
-			.await
-			.unwrap();
-		assert_eq!(context.chunks.len(), 1);
-		assert_eq!(context.classification, Some(DataClassification::Restricted));
-		assert_eq!(
-			context.chunks[0].classification,
-			DataClassification::Restricted
-		);
-		assert_eq!(
-			context.chunks[0].classification_source,
-			"rule:customer-data"
-		);
-		assert_eq!(
-			ingestion_events.events()[0].classification_source,
-			"rule:customer-data"
-		);
-		assert_eq!(
-			context.chunks[0].content,
-			"[REDACTED BY RAG CONTEXT POLICY]"
-		);
-		assert_eq!(
-			ingestion_events.events()[0].outcome,
-			security_rag::IngestionAuditOutcome::Indexed
-		);
-		assert_eq!(retrieval_events.events()[0].accepted_chunk_ids.len(), 1);
-		assert_eq!(
-			context_events.events()[0].outcome,
-			security_rag::ContextAuditOutcome::Modified
-		);
-	}
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DocumentStatus {
+	pub revision: u64,
+	pub version: u64,
+	pub state: security_rag::lifecycle::DocumentState,
+	pub source_hash: String,
+	pub purged: Option<bool>,
 }

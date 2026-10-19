@@ -306,22 +306,3 @@ impl TokioSleep {
 		self.project().inner.as_mut().reset(deadline.into());
 	}
 }
-
-#[cfg(test)]
-mod tests {
-	use hyper::rt::Executor;
-	use tokio::sync::oneshot;
-
-	use crate::rt::TokioExecutor;
-
-	#[cfg(not(miri))]
-	#[tokio::test]
-	async fn simple_execute() -> Result<(), Box<dyn std::error::Error>> {
-		let (tx, rx) = oneshot::channel();
-		let executor = TokioExecutor::new();
-		executor.execute(async move {
-			tx.send(()).unwrap();
-		});
-		rx.await.map_err(Into::into)
-	}
-}

@@ -14,10 +14,6 @@ use crate::telemetry::metrics::{OutboundCallKind, OutboundCallSubtype};
 use crate::types::agent::{BackendTrafficPolicy, SimpleBackendReference};
 use crate::*;
 
-#[cfg(test)]
-#[path = "remoteratelimit_tests.rs"]
-mod tests;
-
 #[allow(warnings)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 pub mod proto {

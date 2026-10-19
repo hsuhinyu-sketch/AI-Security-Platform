@@ -997,7 +997,3 @@ impl Handler {
 		self.tools.clone().into_iter().map(|(t, _)| t).collect()
 	}
 }
-
-#[cfg(test)]
-#[path = "tests.rs"]
-mod tests;

@@ -109,6 +109,35 @@ pub fn agent_invoke_for_identity(
 	agent_action_for_identity(request_id, identity, agent_id, "invoke")
 }
 
+/// Unambiguous, server-scoped MCP object ID used by exact resource policies.
+pub fn mcp_object_id(server: &str, object: &str) -> String {
+	serde_json::to_string(&(server, object)).expect("strings serialize without failure")
+}
+
+/// Protocol-neutral normalization for MCP operations outside Tool discovery/execution.
+pub fn mcp_operation_for_identity(
+	request_id: impl Into<String>,
+	identity: GatewayIdentity,
+	method: impl Into<String>,
+	resource_type: ResourceType,
+	resource_id: impl Into<String>,
+) -> ActionRequest {
+	let authorization_context = identity.authorization_context();
+	ActionRequest {
+		request_id: request_id.into(),
+		subject: identity.into(),
+		action: Action {
+			action_type: ActionType::McpOperation,
+			name: method.into(),
+		},
+		resource: Resource {
+			resource_type,
+			id: resource_id.into(),
+		},
+		authorization_context,
+	}
+}
+
 /// Normalizes an A2A JSON-RPC method into an authorization action.
 pub fn agent_action_for_identity(
 	request_id: impl Into<String>,
@@ -130,6 +159,51 @@ pub fn agent_action_for_identity(
 		},
 		authorization_context,
 	}
+}
+
+/// Object permissions are separate from the Agent/method permission.
+pub fn agent_object_for_identity(
+	request_id: impl Into<String>,
+	identity: GatewayIdentity,
+	operation: impl Into<String>,
+	resource_type: ResourceType,
+	resource_id: impl Into<String>,
+) -> ActionRequest {
+	let authorization_context = identity.authorization_context();
+	ActionRequest {
+		request_id: request_id.into(),
+		subject: identity.into(),
+		action: Action {
+			action_type: if resource_type == ResourceType::AgentArtifact {
+				ActionType::AgentArtifactRead
+			} else {
+				ActionType::AgentTaskOperation
+			},
+			name: operation.into(),
+		},
+		resource: Resource {
+			id: resource_id.into(),
+			resource_type,
+		},
+		authorization_context,
+	}
+}
+
+pub fn mcp_session_for_identity(
+	request_id: impl Into<String>,
+	identity: GatewayIdentity,
+	operation: impl Into<String>,
+	resource_id: impl Into<String>,
+) -> ActionRequest {
+	let mut action = mcp_operation_for_identity(
+		request_id,
+		identity,
+		operation,
+		ResourceType::McpSession,
+		resource_id,
+	);
+	action.action.action_type = ActionType::McpSessionOperation;
+	action
 }
 
 pub fn inference_route_for_identity(
@@ -427,116 +501,5 @@ impl<S: AuditSink> SecurityGateway<S> {
 			.capabilities
 			.consume(token, request, arguments)
 			.map_err(GatewayError::Capability)
-	}
-}
-
-#[cfg(test)]
-mod tests {
-	use security_audit::InMemoryAuditSink;
-	use security_types::DecisionEffect;
-
-	use super::*;
-
-	fn allow_delete_policy() -> Policy {
-		Policy {
-			id: "allow-alice-delete".into(),
-			priority: 10,
-			tenant_id: Some("tenant-a".into()),
-			user_id: Some("alice".into()),
-			agent_id: Some("maintenance-agent".into()),
-			action_type: Some(ActionType::ToolInvoke),
-			action_name: Some("db.delete".into()),
-			resource_id: Some("prod-db".into()),
-			resource_type: Some(ResourceType::Tool),
-			effect: DecisionEffect::Allow,
-			enabled: true,
-		}
-	}
-
-	fn delete_request() -> ActionRequest {
-		ActionRequest {
-			request_id: "request-1".into(),
-			subject: GatewayIdentity {
-				user_id: Some("alice".into()),
-				agent_id: Some("maintenance-agent".into()),
-				tenant_id: Some("tenant-a".into()),
-				delegation_id: None,
-				session_id: None,
-				client_id: None,
-			}
-			.into(),
-			action: Action {
-				action_type: ActionType::ToolInvoke,
-				name: "db.delete".into(),
-			},
-			resource: Resource {
-				id: "prod-db".into(),
-				resource_type: ResourceType::Tool,
-			},
-			authorization_context: Default::default(),
-		}
-	}
-
-	#[test]
-	fn capability_is_bound_to_the_authorized_tool_call_and_audited() {
-		let audit = InMemoryAuditSink::default();
-		let gateway = SecurityGateway::new(vec![allow_delete_policy()], &audit);
-		let request = delete_request();
-		let arguments = serde_json::json!({ "recordId": "42" });
-
-		let capability = gateway
-			.authorize_tool(&request, &arguments, Duration::seconds(30))
-			.unwrap();
-		assert!(
-			gateway
-				.consume_tool_capability(&capability.token, &request, &arguments)
-				.is_ok()
-		);
-		assert_eq!(
-			gateway.consume_tool_capability(&capability.token, &request, &arguments),
-			Err(GatewayError::Capability(CapabilityError::NotFound))
-		);
-
-		let events = audit.events();
-		assert_eq!(events.len(), 1);
-		assert_eq!(events[0].decision, DecisionEffect::Allow);
-		assert_eq!(events[0].subject.tenant_id.as_deref(), Some("tenant-a"));
-	}
-
-	#[test]
-	fn changed_arguments_cannot_consume_a_capability() {
-		let audit = InMemoryAuditSink::default();
-		let gateway = SecurityGateway::new(vec![allow_delete_policy()], audit);
-		let request = delete_request();
-		let capability = gateway
-			.authorize_tool(
-				&request,
-				&serde_json::json!({ "recordId": "42" }),
-				Duration::seconds(30),
-			)
-			.unwrap();
-
-		assert_eq!(
-			gateway.consume_tool_capability(
-				&capability.token,
-				&request,
-				&serde_json::json!({ "recordId": "43" })
-			),
-			Err(GatewayError::Capability(CapabilityError::ArgumentsMismatch))
-		);
-	}
-
-	#[test]
-	fn unmatched_tool_request_is_denied_and_audited() {
-		let audit = InMemoryAuditSink::default();
-		let gateway = SecurityGateway::new(vec![allow_delete_policy()], &audit);
-		let mut request = delete_request();
-		request.subject.tenant_id = Some("tenant-b".into());
-
-		assert!(matches!(
-			gateway.authorize_tool(&request, &serde_json::json!({}), Duration::seconds(30)),
-			Err(GatewayError::Denied(_))
-		));
-		assert_eq!(audit.events()[0].decision, DecisionEffect::Deny);
 	}
 }

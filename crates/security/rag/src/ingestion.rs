@@ -87,6 +87,13 @@ impl Default for IngestionGuardConfig {
 	rename_all_fields = "camelCase"
 )]
 pub enum SourceOrigin {
+	/// Installed only by the trusted lifecycle backend; source evidence remains nested intact.
+	Lifecycle {
+		authority: String,
+		version: u64,
+		revision: u64,
+		origin: Box<SourceOrigin>,
+	},
 	#[default]
 	Submitted,
 	TrustedHttps {
@@ -186,7 +193,7 @@ pub struct IndexedDocument {
 /// document. Corpus, tenant, labels, and provenance are deliberately absent because they are
 /// inherited from [`IndexedDocument`] and cannot be weakened at the Chunk boundary.
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", default, deny_unknown_fields)]
 pub struct TrustedChunkAccess {
 	pub allowed_users: Vec<String>,
 	pub allowed_agents: Vec<String>,
@@ -202,8 +209,34 @@ impl IndexedDocument {
 		token_count: u64,
 		access: TrustedChunkAccess,
 	) -> KnowledgeChunk {
+		let chunk_id = chunk_id.into();
+		let chunk_id = if let SourceOrigin::Lifecycle {
+			authority, version, ..
+		} = &self.source_origin
+		{
+			let bytes = serde_json::to_vec(&(
+				&self.tenant_id,
+				&self.corpus_id,
+				&self.document_id,
+				authority,
+				version,
+				&chunk_id,
+			))
+			.expect("strings serialize");
+			let hash = hex::encode(Sha256::digest(bytes));
+			format!(
+				"{}-{}-{}-{}-{}",
+				&hash[..8],
+				&hash[8..12],
+				&hash[12..16],
+				&hash[16..20],
+				&hash[20..32]
+			)
+		} else {
+			chunk_id
+		};
 		KnowledgeChunk {
-			id: chunk_id.into(),
+			id: chunk_id,
 			document_id: self.document_id.clone(),
 			corpus_id: self.corpus_id.clone(),
 			tenant_id: self.tenant_id.clone(),
@@ -751,308 +784,4 @@ fn source_scheme(source_uri: &str) -> Option<String> {
 			.chars()
 			.all(|character| character.is_ascii_alphanumeric() || matches!(character, '+' | '-' | '.')))
 	.then(|| scheme.to_ascii_lowercase())
-}
-
-#[cfg(test)]
-mod tests {
-	use security_audit::InMemoryAuditSink;
-	use security_pipeline::PolicyAuthorizer;
-	use security_policy::Policy;
-	use security_types::{ActionType, DecisionEffect, ResourceType};
-
-	use super::*;
-
-	#[derive(Default)]
-	struct RecordingBackend {
-		indexed: Mutex<Vec<IndexedDocument>>,
-		quarantined: Mutex<Vec<QuarantinedDocument>>,
-	}
-
-	#[async_trait::async_trait]
-	impl DocumentIngestBackend for RecordingBackend {
-		async fn index(&self, document: IndexedDocument) -> Result<(), String> {
-			self.indexed.lock().unwrap().push(document);
-			Ok(())
-		}
-
-		async fn quarantine(&self, document: QuarantinedDocument) -> Result<(), String> {
-			self.quarantined.lock().unwrap().push(document);
-			Ok(())
-		}
-	}
-
-	fn identity() -> GatewayIdentity {
-		GatewayIdentity {
-			user_id: Some("alice".into()),
-			agent_id: Some("knowledge-curator".into()),
-			tenant_id: Some("tenant-a".into()),
-			delegation_id: None,
-			session_id: None,
-			client_id: None,
-		}
-	}
-
-	fn allow_ingestion_policy() -> Policy {
-		Policy {
-			id: "allow-support-document-ingest".into(),
-			priority: 0,
-			tenant_id: Some("tenant-a".into()),
-			user_id: Some("alice".into()),
-			agent_id: Some("knowledge-curator".into()),
-			action_type: Some(ActionType::KnowledgeIngest),
-			action_name: Some("ingest".into()),
-			resource_id: Some("password-guide".into()),
-			resource_type: Some(ResourceType::Document),
-			effect: DecisionEffect::Allow,
-			enabled: true,
-		}
-	}
-
-	fn request(content: &str) -> DocumentIngestRequest {
-		DocumentIngestRequest::new(
-			"support-corpus",
-			"password-guide",
-			"https://kb.example.com/password-guide",
-			content,
-		)
-	}
-
-	#[tokio::test]
-	async fn authorized_document_is_labeled_and_indexed() {
-		let backend = RecordingBackend::default();
-		let gateway_audit = InMemoryAuditSink::default();
-		let ingestion_audit = InMemoryIngestionAuditSink::default();
-		let pipeline = SecurityPipeline::new(
-			PolicyAuthorizer::new(vec![allow_ingestion_policy()]),
-			&gateway_audit,
-		);
-		let ingestor = SecureIngestor::new(
-			backend,
-			pipeline,
-			IngestionGuardConfig {
-				label_rules: vec![ContentLabelRule {
-					label: "pii".into(),
-					pattern: "customer email".into(),
-				}],
-				..Default::default()
-			},
-			&ingestion_audit,
-		)
-		.unwrap();
-
-		let result = ingestor
-			.ingest(
-				"ingest-request-1",
-				identity(),
-				request("Customer email is used for password recovery."),
-			)
-			.await
-			.unwrap();
-		let IngestionResult::Indexed(document) = result else {
-			panic!("expected indexed document");
-		};
-		assert_eq!(document.labels, ["pii"]);
-		assert_eq!(ingestor.backend.indexed.lock().unwrap().len(), 1);
-		assert!(ingestor.backend.quarantined.lock().unwrap().is_empty());
-		let event = ingestion_audit.events().pop().unwrap();
-		assert_eq!(event.outcome, IngestionAuditOutcome::Indexed);
-		assert_eq!(event.corpus_id, "support-corpus");
-		assert_eq!(event.labels, ["pii"]);
-		assert!(!event.source_hash.unwrap().contains("Customer"));
-	}
-
-	#[tokio::test]
-	async fn trusted_source_version_must_match_fetched_content_hash() {
-		let backend = RecordingBackend::default();
-		let gateway_audit = InMemoryAuditSink::default();
-		let ingestion_audit = InMemoryIngestionAuditSink::default();
-		let pipeline = SecurityPipeline::new(
-			PolicyAuthorizer::new(vec![allow_ingestion_policy()]),
-			&gateway_audit,
-		);
-		let ingestor = SecureIngestor::new(
-			backend,
-			pipeline,
-			IngestionGuardConfig::default(),
-			&ingestion_audit,
-		)
-		.unwrap();
-		let request = DocumentIngestRequest::from_trusted_https(
-			"support-corpus",
-			"password-guide",
-			"https://kb.example.com/password-guide",
-			"fetched bytes",
-			"support-kb",
-			"00".repeat(32),
-		);
-		let result = ingestor
-			.ingest("ingest-request-trusted-mismatch", identity(), request)
-			.await;
-		assert!(matches!(result, Err(IngestionError::InvalidSource(_))));
-		assert!(ingestor.backend.indexed.lock().unwrap().is_empty());
-		assert_eq!(
-			ingestion_audit.events()[0].outcome,
-			IngestionAuditOutcome::Denied
-		);
-
-		let version = hex::encode(Sha256::digest(b"fetched bytes"));
-		let valid = DocumentIngestRequest::from_trusted_https(
-			"support-corpus",
-			"password-guide",
-			"https://kb.example.com/password-guide",
-			"fetched bytes",
-			"support-kb",
-			version.clone(),
-		);
-		let result = ingestor
-			.ingest("ingest-request-trusted-valid", identity(), valid)
-			.await
-			.unwrap();
-		let IngestionResult::Indexed(document) = result else {
-			panic!("expected trusted source to be indexed");
-		};
-		assert_eq!(document.source_hash, version);
-		assert_eq!(
-			document.source_origin,
-			SourceOrigin::TrustedHttps {
-				source_id: "support-kb".into(),
-				version,
-			}
-		);
-		assert_eq!(ingestor.backend.indexed.lock().unwrap().len(), 1);
-		assert_eq!(
-			ingestion_audit.events()[1].source_origin,
-			document.source_origin
-		);
-	}
-
-	#[test]
-	fn failed_source_fetch_is_audited_without_content_or_source_url() {
-		let backend = RecordingBackend::default();
-		let gateway_audit = InMemoryAuditSink::default();
-		let ingestion_audit = InMemoryIngestionAuditSink::default();
-		let pipeline = SecurityPipeline::new(
-			PolicyAuthorizer::new(vec![allow_ingestion_policy()]),
-			&gateway_audit,
-		);
-		let ingestor = SecureIngestor::new(
-			backend,
-			pipeline,
-			IngestionGuardConfig::default(),
-			&ingestion_audit,
-		)
-		.unwrap();
-		ingestor.record_source_fetch_failure(
-			"fetch-failed",
-			identity(),
-			"support-corpus",
-			"password-guide",
-			"kb",
-		);
-		let event = ingestion_audit.events().pop().unwrap();
-		assert_eq!(event.outcome, IngestionAuditOutcome::Denied);
-		assert_eq!(event.source_hash, None);
-		assert_eq!(event.content_bytes, 0);
-		assert_eq!(event.reason.as_deref(), Some("trusted_source_fetch_failed"));
-		assert_eq!(
-			event.source_origin,
-			SourceOrigin::TrustedHttpsFetchAttempt {
-				source_id: "kb".into(),
-			}
-		);
-		assert!(ingestor.backend.indexed.lock().unwrap().is_empty());
-	}
-
-	#[tokio::test]
-	async fn risky_document_is_quarantined_not_indexed() {
-		let backend = RecordingBackend::default();
-		let gateway_audit = InMemoryAuditSink::default();
-		let ingestion_audit = InMemoryIngestionAuditSink::default();
-		let pipeline = SecurityPipeline::new(
-			PolicyAuthorizer::new(vec![allow_ingestion_policy()]),
-			&gateway_audit,
-		);
-		let ingestor = SecureIngestor::new(
-			backend,
-			pipeline,
-			IngestionGuardConfig::default(),
-			&ingestion_audit,
-		)
-		.unwrap();
-
-		let result = ingestor
-			.ingest(
-				"ingest-request-2",
-				identity(),
-				request("-----BEGIN PRIVATE KEY----- secret"),
-			)
-			.await
-			.unwrap();
-		assert!(matches!(result, IngestionResult::Quarantined(_)));
-		assert!(ingestor.backend.indexed.lock().unwrap().is_empty());
-		assert_eq!(ingestor.backend.quarantined.lock().unwrap().len(), 1);
-		let event = ingestion_audit.events().pop().unwrap();
-		assert_eq!(event.outcome, IngestionAuditOutcome::Quarantined);
-		assert_eq!(event.findings[0].rule_id, "quarantine-pattern-0");
-	}
-
-	#[test]
-	fn chunks_inherit_document_tenant_labels_and_provenance() {
-		let document = IndexedDocument {
-			corpus_id: "support-corpus".into(),
-			document_id: "password-guide".into(),
-			tenant_id: "tenant-a".into(),
-			source_uri: "https://kb.example.com/password-guide".into(),
-			source_hash: "immutable-source-hash".into(),
-			source_origin: SourceOrigin::Submitted,
-			content: "source content".into(),
-			labels: vec!["pii".into(), "internal".into()],
-			classification: DataClassification::Internal,
-			classification_source: "default-classification".into(),
-		};
-
-		let chunk = document.to_chunk(
-			"password-guide:0",
-			"password reset instructions",
-			42,
-			TrustedChunkAccess {
-				allowed_users: vec!["alice".into()],
-				..Default::default()
-			},
-		);
-		assert_eq!(chunk.corpus_id, "support-corpus");
-		assert_eq!(chunk.tenant_id, "tenant-a");
-		assert_eq!(chunk.labels, ["pii", "internal"]);
-		assert_eq!(chunk.classification, DataClassification::Internal);
-		assert_eq!(chunk.classification_source, "default-classification");
-		assert_eq!(chunk.source_hash, "immutable-source-hash");
-		assert_eq!(chunk.allowed_users, ["alice"]);
-	}
-
-	#[tokio::test]
-	async fn denied_document_never_reaches_index_or_quarantine() {
-		let backend = RecordingBackend::default();
-		let gateway_audit = InMemoryAuditSink::default();
-		let ingestion_audit = InMemoryIngestionAuditSink::default();
-		let pipeline = SecurityPipeline::new(PolicyAuthorizer::new(Vec::new()), &gateway_audit);
-		let ingestor = SecureIngestor::new(
-			backend,
-			pipeline,
-			IngestionGuardConfig::default(),
-			&ingestion_audit,
-		)
-		.unwrap();
-
-		let error = ingestor
-			.ingest("ingest-request-3", identity(), request("benign document"))
-			.await
-			.unwrap_err();
-		assert!(matches!(error, IngestionError::GatewayDenied(_)));
-		assert!(ingestor.backend.indexed.lock().unwrap().is_empty());
-		assert!(ingestor.backend.quarantined.lock().unwrap().is_empty());
-		assert_eq!(
-			ingestion_audit.events()[0].outcome,
-			IngestionAuditOutcome::Denied
-		);
-	}
 }

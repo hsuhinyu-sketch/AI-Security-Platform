@@ -1,0 +1,40 @@
+# SecurityConfig fragment, not a complete listener/route configuration.
+# Requires strict JWT, one stateful 2025-11-25 MCP source named reports and execution control routes.
+# Roots are client workspace declarations, not access to the Gateway host filesystem.
+mode: enforce
+mcpSessions:
+  tasks:
+    tools: [workspace-report]
+    roots: true
+    maxTasks: 32
+    maxTaskSeconds: 300
+  reverse:
+    roots: ["file:///workspace/reports"]
+    maxPending: 8
+    timeoutSeconds: 30
+executionBudget:
+  namespace: reports-workflow
+  maxModelCalls: 1
+  maxToolCalls: 4
+  maxAgentCalls: 1
+  maxAttempts: 32
+  maxConcurrent: 2
+  maxDurationSeconds: 300
+policies:
+  - { id: session, actionType: mcpSessionOperation, userId: alice, effect: allow, enabled: true }
+  - { id: discover, actionType: toolList, userId: alice, effect: allow, enabled: true }
+  - { id: report, actionType: toolInvoke, resourceId: workspace-report, userId: alice, effect: allow, enabled: true }
+  - { id: source-init, actionType: mcpOperation, actionName: initialize, resourceId: reports, userId: alice, effect: allow, enabled: true }
+  - { id: source-read, actionType: mcpOperation, actionName: tasks/get, resourceId: reports, userId: alice, effect: allow, enabled: true }
+  - { id: source-result, actionType: mcpOperation, actionName: tasks/result, resourceId: reports, userId: alice, effect: allow, enabled: true }
+  - { id: source-roots-request, actionType: mcpOperation, actionName: roots/list/request, resourceId: reports, userId: alice, effect: allow, enabled: true }
+  - { id: source-roots-respond, actionType: mcpOperation, actionName: roots/list/respond, resourceId: reports, userId: alice, effect: allow, enabled: true }
+  - { id: task-create, actionType: mcpTaskOperation, actionName: tools/call, resourceType: mcpTask, userId: alice, effect: allow, enabled: true }
+  - { id: task-read, actionType: mcpTaskOperation, actionName: tasks/get, resourceType: mcpTask, userId: alice, effect: allow, enabled: true }
+  - { id: task-result, actionType: mcpTaskOperation, actionName: tasks/result, resourceType: mcpTask, userId: alice, effect: allow, enabled: true }
+  - { id: task-roots-request, actionType: mcpTaskOperation, actionName: roots/list/request, resourceType: mcpTask, userId: alice, effect: allow, enabled: true }
+  - { id: task-roots-respond, actionType: mcpTaskOperation, actionName: roots/list/respond, resourceType: mcpTask, userId: alice, effect: allow, enabled: true }
+  - { id: execution-create, actionType: executionOperation, actionName: execution/create, userId: alice, effect: allow, enabled: true }
+  - { id: invocation-create, actionType: executionOperation, actionName: execution/invocation/create, userId: alice, effect: allow, enabled: true }
+  - { id: invocation-read, actionType: executionOperation, actionName: execution/invocation/read, userId: alice, effect: allow, enabled: true }
+# Additional explicit grants are required for cancellation/independent taskCleanup.

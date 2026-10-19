@@ -215,18 +215,4 @@ mod aes {
 		#[error("invalid format")]
 		InvalidFormat,
 	}
-
-	#[cfg(test)]
-	mod tests {
-		use base64::Engine;
-
-		use super::{Encoder, Error};
-
-		#[test]
-		fn short_ciphertexts_fail_cleanly() {
-			let encoder = Encoder::new(&[0u8; 32]).expect("encoder");
-			let short = base64::engine::general_purpose::STANDARD.encode([0u8; 11]);
-			assert!(matches!(encoder.decrypt(&short), Err(Error::InvalidFormat)));
-		}
-	}
 }

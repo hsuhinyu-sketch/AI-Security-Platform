@@ -14,7 +14,11 @@ use crate::{Config, ProxyInputs, client, mcp, proxy, runtime};
 pub async fn run(config: Arc<Config>) -> anyhow::Result<Bound> {
 	crate::transport::tls::warn_if_key_log_enabled();
 	// Keep a bounded, redacted projection of security decisions for the administrative API.
-	crate::security_events::initialize(10_000);
+	if let Some(audit) = &config.security_audit {
+		crate::security_events::initialize_managed(10_000, audit.clone())?;
+	} else {
+		crate::security_events::initialize_persistent(10_000, config.security_audit_path.as_deref())?;
+	}
 	if std::env::var("SECURITY_UI_DEMO").as_deref() == Ok("1") {
 		crate::security_events::seed_demo_events();
 		info!("loaded explicitly requested Security Console demo events");

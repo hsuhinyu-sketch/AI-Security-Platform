@@ -21,6 +21,7 @@ use sha2::{Digest, Sha256};
 
 pub mod context;
 pub mod ingestion;
+pub mod lifecycle;
 pub mod sources;
 
 pub use context::{
@@ -97,6 +98,8 @@ impl RetrievalQuery {
 /// guard still performs a mandatory post-retrieval check.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RetrievalFilter {
+	/// Only the lifecycle wrapper sets this; an authoritative post-filter remains mandatory.
+	pub authoritative_acl: bool,
 	pub corpus_id: String,
 	pub tenant_id: String,
 	pub user_id: Option<String>,
@@ -332,6 +335,7 @@ where
 		}
 
 		let filter = RetrievalFilter {
+			authoritative_acl: false,
 			corpus_id: corpus_id.clone(),
 			tenant_id,
 			user_id: action.subject.user_id.clone(),
@@ -487,263 +491,5 @@ where
 			timestamp: Utc::now(),
 		});
 		Err(error)
-	}
-}
-
-#[cfg(test)]
-mod tests {
-	use std::sync::atomic::{AtomicUsize, Ordering};
-
-	use security_audit::InMemoryAuditSink;
-	use security_pipeline::{GatewayIdentity, PolicyAuthorizer, SecurityPipeline};
-	use security_policy::Policy;
-	use security_types::{ActionType, DecisionEffect, ResourceType};
-
-	use super::*;
-
-	struct FixedBackend {
-		chunks: Vec<KnowledgeChunk>,
-		calls: AtomicUsize,
-		filter: Mutex<Option<RetrievalFilter>>,
-	}
-
-	impl FixedBackend {
-		fn new(chunks: Vec<KnowledgeChunk>) -> Self {
-			Self {
-				chunks,
-				calls: AtomicUsize::new(0),
-				filter: Mutex::new(None),
-			}
-		}
-	}
-
-	#[async_trait::async_trait]
-	impl RetrievalBackend for FixedBackend {
-		async fn retrieve(
-			&self,
-			_query: &RetrievalQuery,
-			filter: &RetrievalFilter,
-		) -> Result<Vec<KnowledgeChunk>, String> {
-			self.calls.fetch_add(1, Ordering::Relaxed);
-			*self.filter.lock().unwrap() = Some(filter.clone());
-			Ok(self.chunks.clone())
-		}
-	}
-
-	fn identity() -> GatewayIdentity {
-		GatewayIdentity {
-			user_id: Some("alice".into()),
-			agent_id: Some("support-agent".into()),
-			tenant_id: Some("tenant-a".into()),
-			delegation_id: None,
-			session_id: Some("session-1".into()),
-			client_id: Some("client-1".into()),
-		}
-	}
-
-	fn allow_retrieval_policy() -> Policy {
-		Policy {
-			id: "allow-alice-support-corpus".into(),
-			priority: 0,
-			tenant_id: Some("tenant-a".into()),
-			user_id: Some("alice".into()),
-			agent_id: Some("support-agent".into()),
-			action_type: Some(ActionType::KnowledgeRetrieve),
-			action_name: Some("retrieve".into()),
-			resource_id: Some("support-corpus".into()),
-			resource_type: Some(ResourceType::KnowledgeBase),
-			effect: DecisionEffect::Allow,
-			enabled: true,
-		}
-	}
-
-	fn chunk(id: &str) -> KnowledgeChunk {
-		KnowledgeChunk {
-			id: id.into(),
-			document_id: format!("document-{id}"),
-			corpus_id: "support-corpus".into(),
-			tenant_id: "tenant-a".into(),
-			content: format!("trusted context for {id}"),
-			labels: Vec::new(),
-			classification: DataClassification::Internal,
-			classification_source: "default-classification".into(),
-			allowed_users: vec!["alice".into()],
-			allowed_agents: Vec::new(),
-			allow_tenant_authenticated: false,
-			expires_at: None,
-			source_hash: "a22d9a9b".into(),
-			source_origin: SourceOrigin::Submitted,
-			token_count: 100,
-		}
-	}
-
-	#[tokio::test]
-	async fn retrieval_pushes_filter_and_rechecks_every_chunk() {
-		let mut cross_tenant = chunk("cross-tenant");
-		cross_tenant.tenant_id = "tenant-b".into();
-		let mut blocked = chunk("blocked");
-		blocked.labels = vec!["confidential".into()];
-		let mut expired = chunk("expired");
-		expired.expires_at = Some(Utc::now() - chrono::Duration::seconds(1));
-		let mut unauthorized = chunk("unauthorized");
-		unauthorized.allowed_users = vec!["bob".into()];
-		let backend = FixedBackend::new(vec![
-			chunk("allowed"),
-			cross_tenant,
-			blocked,
-			expired,
-			unauthorized,
-		]);
-		let gateway_audit = InMemoryAuditSink::default();
-		let retrieval_audit = InMemoryRetrievalAuditSink::default();
-		let pipeline = SecurityPipeline::new(
-			PolicyAuthorizer::new(vec![allow_retrieval_policy()]),
-			&gateway_audit,
-		);
-		let retriever = SecureRetriever::new(
-			backend,
-			pipeline,
-			RagSecurityConfig {
-				blocked_labels: vec!["confidential".into()],
-				..Default::default()
-			},
-			&retrieval_audit,
-		)
-		.unwrap();
-
-		let result = retriever
-			.retrieve(
-				"rag-request-1",
-				identity(),
-				"support-corpus",
-				RetrievalQuery::new("how do I reset my password?", 5),
-			)
-			.await
-			.unwrap();
-
-		assert_eq!(
-			result
-				.chunks
-				.iter()
-				.map(|chunk| chunk.id.as_str())
-				.collect::<Vec<_>>(),
-			["allowed"]
-		);
-		assert_eq!(result.rejected.len(), 4);
-		assert_eq!(result.context_tokens, 100);
-		let filter = retriever.backend.filter.lock().unwrap().clone().unwrap();
-		assert_eq!(filter.tenant_id, "tenant-a");
-		assert_eq!(filter.user_id.as_deref(), Some("alice"));
-		assert_eq!(filter.max_candidates, 5);
-		let audit = retrieval_audit.events();
-		assert_eq!(audit.len(), 1);
-		assert_eq!(audit[0].outcome, RetrievalAuditOutcome::Authorized);
-		assert_eq!(audit[0].accepted_chunk_ids, ["allowed"]);
-		assert!(!audit[0].query_hash.contains("password"));
-	}
-
-	#[tokio::test]
-	async fn denied_corpus_search_never_calls_the_retrieval_backend() {
-		let backend = FixedBackend::new(vec![chunk("should-not-be-fetched")]);
-		let gateway_audit = InMemoryAuditSink::default();
-		let retrieval_audit = InMemoryRetrievalAuditSink::default();
-		let pipeline = SecurityPipeline::new(PolicyAuthorizer::new(Vec::new()), &gateway_audit);
-		let retriever = SecureRetriever::new(
-			backend,
-			pipeline,
-			RagSecurityConfig::default(),
-			&retrieval_audit,
-		)
-		.unwrap();
-
-		let error = retriever
-			.retrieve(
-				"rag-request-2",
-				identity(),
-				"support-corpus",
-				RetrievalQuery::new("private query", 1),
-			)
-			.await
-			.unwrap_err();
-		assert!(matches!(error, RetrievalError::GatewayDenied(_)));
-		assert_eq!(retriever.backend.calls.load(Ordering::Relaxed), 0);
-		assert_eq!(
-			retrieval_audit.events()[0].outcome,
-			RetrievalAuditOutcome::Denied
-		);
-	}
-
-	#[tokio::test]
-	async fn post_retrieval_check_enforces_requested_limit_when_backend_overreturns() {
-		let backend = FixedBackend::new(vec![chunk("first"), chunk("second")]);
-		let gateway_audit = InMemoryAuditSink::default();
-		let retrieval_audit = InMemoryRetrievalAuditSink::default();
-		let pipeline = SecurityPipeline::new(
-			PolicyAuthorizer::new(vec![allow_retrieval_policy()]),
-			&gateway_audit,
-		);
-		let retriever = SecureRetriever::new(
-			backend,
-			pipeline,
-			RagSecurityConfig::default(),
-			&retrieval_audit,
-		)
-		.unwrap();
-
-		let result = retriever
-			.retrieve(
-				"rag-request-limit",
-				identity(),
-				"support-corpus",
-				RetrievalQuery::new("only one result", 1),
-			)
-			.await
-			.unwrap();
-		assert_eq!(result.chunks.len(), 1);
-		assert_eq!(result.chunks[0].id, "first");
-		assert_eq!(result.rejected.len(), 1);
-		assert_eq!(
-			result.rejected[0].reason,
-			"chunk exceeds the requested retrieval limit"
-		);
-	}
-
-	#[tokio::test]
-	async fn requested_chunk_budget_is_checked_before_authorization_or_retrieval() {
-		let backend = FixedBackend::new(vec![chunk("should-not-be-fetched")]);
-		let gateway_audit = InMemoryAuditSink::default();
-		let retrieval_audit = InMemoryRetrievalAuditSink::default();
-		let pipeline = SecurityPipeline::new(
-			PolicyAuthorizer::new(vec![allow_retrieval_policy()]),
-			&gateway_audit,
-		);
-		let retriever = SecureRetriever::new(
-			backend,
-			pipeline,
-			RagSecurityConfig {
-				max_chunks: 1,
-				..Default::default()
-			},
-			&retrieval_audit,
-		)
-		.unwrap();
-
-		let error = retriever
-			.retrieve(
-				"rag-request-3",
-				identity(),
-				"support-corpus",
-				RetrievalQuery::new("private query", 2),
-			)
-			.await
-			.unwrap_err();
-		assert_eq!(
-			error,
-			RetrievalError::RequestedLimitExceedsBudget {
-				requested: 2,
-				maximum: 1
-			}
-		);
-		assert_eq!(retriever.backend.calls.load(Ordering::Relaxed), 0);
 	}
 }

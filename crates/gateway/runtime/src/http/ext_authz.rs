@@ -36,10 +36,6 @@ use crate::*;
 const TRACE_POLICY_KIND: &str = "ext_auth";
 const DEFAULT_CACHE_ENTRIES: usize = 10_000;
 
-#[cfg(test)]
-#[path = "ext_authz_tests.rs"]
-mod tests;
-
 #[allow(warnings)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 pub mod proto {

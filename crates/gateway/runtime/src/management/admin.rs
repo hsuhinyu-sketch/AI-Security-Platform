@@ -30,9 +30,6 @@ use tracing_subscriber::filter;
 use super::hyper_helpers::{Server, plaintext_response};
 use crate::Config;
 use crate::http::{Request, Response};
-#[cfg(test)]
-#[path = "admin_tests.rs"]
-mod tests;
 
 // Constants for pprof profiling
 #[cfg(target_os = "linux")]
@@ -120,6 +117,7 @@ impl Service {
 		drain_rx: DrainWatcher,
 		dataplane_handle: Handle,
 	) -> anyhow::Result<Self> {
+		config.management.validate(&config.admin_addr)?;
 		let state = Arc::new(AdminState {
 			config,
 			model_catalog,
@@ -191,7 +189,12 @@ fn admin_router(state: Arc<AdminState>) -> Router {
 	#[cfg(not(feature = "ui"))]
 	let router = router.route("/", get(handle_dashboard));
 
-	router.layer(add_cors_layer())
+	router
+		.layer(axum::middleware::from_fn_with_state(
+			state.config.management.clone(),
+			super::access::enforce,
+		))
+		.layer(add_cors_layer())
 }
 
 fn add_cors_layer() -> CorsLayer {

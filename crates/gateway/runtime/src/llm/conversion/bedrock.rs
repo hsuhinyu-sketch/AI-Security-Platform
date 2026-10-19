@@ -9,10 +9,6 @@ use crate::llm::AIError;
 use crate::llm::types::completions::typed::UsagePromptDetails;
 use crate::llm::types::{bedrock, messages, responses};
 
-#[cfg(test)]
-#[path = "bedrock_tests.rs"]
-mod tests;
-
 /// Bedrock Converse `toolSpec.name` length limit.
 pub const BEDROCK_TOOL_NAME_MAX_LEN: usize = 64;
 

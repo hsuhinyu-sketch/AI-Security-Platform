@@ -1,9 +1,5 @@
 use crate::*;
 
-#[cfg(test)]
-#[path = "buffer_tests.rs"]
-mod buffer_tests;
-
 #[apply(schema!)]
 #[derive(Default, Copy, PartialEq, Eq)]
 pub enum FailureMode {

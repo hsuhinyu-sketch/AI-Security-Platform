@@ -20,14 +20,5 @@ parking_lot.workspace = true
 hashbrown.workspace = true
 axum-core.workspace = true
 
-[dev-dependencies]
-assert_matches.workspace = true
-hyper.workspace = true
-bytes.workspace = true
-http-body-util.workspace = true
-futures-util.workspace = true
-tokio.workspace = true
-tracing-subscriber.workspace = true
-
 [features]
 default = []

@@ -65,16 +65,18 @@ const projectLinks = [
 export function Shell() {
 	const router = useRouterState();
 	const runtime = useRuntimeInfo();
+	const diagnostic = runtime.data?.ui.managementMode === 'diagnostic';
+	const diagnosticPathAllowed = ['/', '/security/events', '/llm/logs'].includes(router.location.pathname);
 	const mode = useConfigDumpMode();
 	const dumpMode = mode.data?.mode === 'dump';
 	const config = useEffectiveGatewayConfig({
-		enabled: Boolean(mode.data && mode.data.mode !== 'dump')
+		enabled: Boolean(runtime.data && !diagnostic && mode.data && mode.data.mode !== 'dump')
 	});
 	const mcpData = useMcpConfigData({
-		enabled: Boolean(mode.data && mode.data.mode !== 'dump')
+		enabled: Boolean(runtime.data && !diagnostic && mode.data && mode.data.mode !== 'dump')
 	});
 	const trafficData = useTrafficConfigData({
-		enabled: Boolean(mode.data && mode.data.mode !== 'dump')
+		enabled: Boolean(runtime.data && !diagnostic && mode.data && mode.data.mode !== 'dump')
 	});
 	const [theme, setTheme] = useState(
 		() =>
@@ -97,6 +99,7 @@ export function Shell() {
 			: true;
 	const hasBinds = dumpMode ? true : config.data ? Boolean(config.data.binds?.length) : false;
 	const navGroups = navigationGroups({
+		diagnostic,
 		hasLlm,
 		hasMcp,
 		hasTraffic,
@@ -207,7 +210,9 @@ export function Shell() {
 							The UI is configured as read-only. Editing is disabled.
 						</StatusBanner>
 					)}
-					<Outlet />
+					{diagnostic && !diagnosticPathAllowed ? <StatusBanner state="info" title="Local diagnostics">
+						此部署只开放日志和安全事件查看。请通过左侧菜单访问诊断页面。
+					</StatusBanner> : <Outlet />}
 				</main>
 			</div>
 		</div>
@@ -273,12 +278,18 @@ function UserMenu({ user }: { user: RuntimeUser }) {
 }
 
 function navigationGroups(options: {
+	diagnostic: boolean;
 	hasBinds: boolean;
 	hasLlm: boolean;
 	hasMcp: boolean;
 	hasTraffic: boolean;
 	dumpMode: boolean;
 }): ReadonlyArray<{ title: string; items: readonly NavItemConfig[] }> {
+	if (options.diagnostic) return [{ title: 'Local diagnostics', items: [
+		{ to: '/', label: 'Home', icon: Home },
+		{ to: '/security/events', label: 'Security Events', icon: Shield },
+		{ to: '/llm/logs', label: 'Request Logs', icon: ScrollText }
+	] }];
 	// Platform navigation is intentionally capability-first rather than configuration-first.
 	// A missing bind must surface as an in-page setup state, never make an available module vanish.
 	void options;

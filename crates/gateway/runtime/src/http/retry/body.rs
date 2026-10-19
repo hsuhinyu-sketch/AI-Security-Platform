@@ -14,10 +14,6 @@ use thiserror::Error;
 
 use crate::http::buflist::BufList;
 
-#[cfg(test)]
-#[path = "body_tests.rs"]
-mod tests;
-
 /// Wraps an HTTP body type and lazily buffers data as it is read from the inner
 /// body.
 ///

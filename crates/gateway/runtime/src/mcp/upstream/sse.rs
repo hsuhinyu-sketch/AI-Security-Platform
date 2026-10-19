@@ -49,7 +49,7 @@ impl crate::mcp::upstream::stdio::MCPTransport for SseClient {
 			if data.is_empty() {
 				continue;
 			}
-			match serde_json::from_str::<ServerJsonRpcMessage>(&data) {
+			match serde_json::from_str(&data).and_then(crate::mcp::wire::decode_server) {
 				Err(e) => {
 					// Not a hard error, for now?
 					tracing::warn!("failed to deserialize server message: {e}");

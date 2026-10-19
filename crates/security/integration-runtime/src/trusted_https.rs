@@ -12,7 +12,12 @@ pub(crate) fn build_client(
 ) -> Result<(String, reqwest::blocking::Client), String> {
 	let endpoint = reqwest::Url::parse(endpoint)
 		.map_err(|error| format!("{service_name} endpoint is invalid: {error}"))?;
-	if endpoint.scheme() != "https" || endpoint.host_str().is_none() {
+	if endpoint.scheme() != "https"
+		|| endpoint.host_str().is_none()
+		|| !endpoint.username().is_empty()
+		|| endpoint.password().is_some()
+		|| endpoint.fragment().is_some()
+	{
 		return Err(format!(
 			"{service_name} endpoint must be an absolute https URL"
 		));
@@ -25,6 +30,8 @@ pub(crate) fn build_client(
 
 	let mut builder = reqwest::blocking::Client::builder()
 		.use_rustls_tls()
+		.redirect(reqwest::redirect::Policy::none())
+		.no_proxy()
 		.timeout(Duration::from_millis(timeout_millis));
 	if let Some(path) = root_ca_pem_file {
 		let pem = std::fs::read(path).map_err(|error| {

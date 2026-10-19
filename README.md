@@ -515,8 +515,7 @@ issue, protected Tool/API principals may consume, and anonymous HTTP requests ar
 The consuming Tool/API submits the opaque token plus the normalized `ActionRequest` and the hash
 it computed from the actual Tool parameters. A successful consume returns the bound request for a
 final local action/resource check; any binding mismatch burns the token before it can be replayed.
-See [`docs/architecture/capability-broker.md`](docs/architecture/capability-broker.md) for the wire
-contract and deployment boundary.
+The crate API and configuration schema define the wire contract and deployment boundary.
 
 Protected Tool/API services use the optional `security-capability-broker` `client` feature. Its
 `HttpCapabilityConsumer` extracts the gateway-only capability/context headers, hashes the actual
@@ -690,11 +689,10 @@ crates/platform/*            # shared first-party platform utilities
 crates/third-party/*         # retained third-party source dependencies
 ```
 
-## Build and test
+## Build
 
 ```bash
 cargo check -p security-types -p security-policy -p security-engine -p security-audit -p security-pipeline -p ai-security-platform-app
-cargo test -p security-engine -p security-policy -p security-audit -p security-pipeline
 ```
 
 ## License

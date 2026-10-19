@@ -128,8 +128,6 @@ impl CacheEntry {
 #[allow(clippy::large_enum_variant)]
 enum Resolver {
 	Real(TokioResolver),
-	#[cfg(test)]
-	Mock(Arc<tests::Mock>),
 }
 
 impl Resolver {
@@ -140,8 +138,6 @@ impl Resolver {
 				let ips = lookup.iter().collect::<Box<_>>();
 				(ips, expiry)
 			}),
-			#[cfg(test)]
-			Resolver::Mock(resolver) => resolver.resolve(host).await,
 		}
 	}
 }
@@ -208,7 +204,3 @@ async fn sleep_until_expired(valid_until: Instant, respect_small_value: bool) {
 
 	tokio::time::sleep_until(deadline.into()).await;
 }
-
-#[cfg(test)]
-#[path = "dns_tests.rs"]
-mod tests;

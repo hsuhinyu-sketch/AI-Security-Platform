@@ -1,7 +1,6 @@
 [patch.crates-io]
 schemars = { git = "https://github.com/howardjohn/schemars", rev = "f3e45a59786debf49e67d6bd6d8dcffc004d39ff" }
 http-serde = { git = "https://gitlab.com/howardjohn/http-serde", rev = "c2e482be0ddf029895ba72ef8749b9f94b388fc7" }
-wiremock = { git = "https://github.com/howardjohn/wiremock-rs", rev = "e55f5b96083125fdabc3e62f92790ee15ae3a10d" }
 rmcp = { git = "https://github.com/howardjohn/rust-sdk", rev = "7366ffc42beb89f27410ae348a67001beb4c6ba5" }
 
 [workspace]
@@ -66,7 +65,6 @@ atomic_float = { version = "1.1.0", features = ["serde"] }
 anyhow = "1.0"
 arc-swap = "1.9"
 arcstr = { version = "1.2", features = ["serde"] }
-assert_matches = "1.5.0"
 async-openai = { version = "0.41", default-features = false, features = ["chat-completion-types", "moderation-types", "response-types", "realtime-types"] }
 async-stream = "0.3"
 async-trait = "0.1"
@@ -96,7 +94,6 @@ chrono = { version = "0.4", features = ["serde"] }
 clap = { version = "4.6", features = ["derive"] }
 clocksource = "1.0"
 crossbeam = "0.8"
-divan = "0.1"
 durationfmt = "0.1"
 go-parse-duration = "0.1"
 flurry = "0.5.2"
@@ -129,7 +126,6 @@ hyper-rustls = "0.27"
 hyper-util = { version = "0.1", features = ["full"] }
 include_dir = "0.7"
 indexmap = { version = "2.13", features = ["serde"] }
-insta = { version = "1.47", features = ["json", "redactions", "filters", "yaml"] }
 ipnet = { version = "2.12", features = ["serde"] }
 itertools = "0.15"
 jsonwebtoken = { version = "10.4", features = ["aws_lc_rs"] }
@@ -177,7 +173,6 @@ reqwest = { version = "0.13", default-features = false, features = [
     "charset",
     "rustls",
 ] }
-rstest = "0.26"
 rust_decimal = { version = "1", default-features = false }
 mimalloc = { version = "0.1", features = ["v3", "no_thp"] }
 rustc_version = "0.4"
@@ -215,7 +210,6 @@ sqlx = { version = "0.9", default-features = false, features = [
 ] }
 stacker = "0.1"
 subtle = "2"
-tempfile = "3.27"
 thiserror = "2.0"
 tiktoken-rs = "0.12"
 tokio = { version = "1.52", features = ["full", "macros", "sync"] }
@@ -243,7 +237,6 @@ tracing-subscriber = { version = "0.3", features = [
 ] }
 url = "2.5"
 uuid = { version = "1.23", features = ["v4"] }
-wiremock = { version = "0.6", features = ["tls"] }
 x509-parser = { version = "0.18", default-features = false, features = ["verify-aws"] }
 which = "8.0"
 websocket-sans-io = '0.1'

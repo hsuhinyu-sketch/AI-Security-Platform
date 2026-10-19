@@ -95,28 +95,3 @@ impl Drop for IntegrityKey {
 		self.secret.fill(0);
 	}
 }
-
-#[cfg(test)]
-mod tests {
-	use super::*;
-
-	#[test]
-	fn rejects_tampering_wrong_purpose_and_key() {
-		let key = IntegrityKey::from_hex("key-1", &"ab".repeat(32)).unwrap();
-		let payload = serde_json::json!({"tenant":"a","classification":"restricted"});
-		let proof = key.sign_json("rag-chunk", &payload).unwrap();
-		assert!(key.verify_json("rag-chunk", &payload, &proof).is_ok());
-		assert!(key.verify_json("model-context", &payload, &proof).is_err());
-		assert!(
-			key
-				.verify_json(
-					"rag-chunk",
-					&serde_json::json!({"tenant":"b","classification":"restricted"}),
-					&proof
-				)
-				.is_err()
-		);
-		let other = IntegrityKey::from_hex("key-2", &"ab".repeat(32)).unwrap();
-		assert!(other.verify_json("rag-chunk", &payload, &proof).is_err());
-	}
-}

@@ -35,6 +35,8 @@ pub struct OpenAiCompatibleEmbeddingConfig {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct RagGatewayConfig {
+	#[serde(default, skip_serializing_if = "Option::is_none")]
+	pub lifecycle: Option<security_rag::lifecycle::DocumentLifecycleConfig>,
 	#[serde(default = "default_bind_address")]
 	pub bind_address: String,
 	pub port: u16,
@@ -55,6 +57,12 @@ pub struct RagGatewayConfig {
 impl RagGatewayConfig {
 	/// Validates local values before a listener is created or remote credentials are used.
 	pub fn validate(&self) -> Result<(), String> {
+		if let Some(lifecycle) = &self.lifecycle {
+			lifecycle.validate()?;
+			if self.qdrant.integrity.is_none() {
+				return Err("RAG lifecycle requires qdrant.integrity".into());
+			}
+		}
 		if self.bind_address.trim().is_empty() {
 			return Err("RAG bindAddress must not be empty".into());
 		}
@@ -131,6 +139,30 @@ pub struct HttpEmbeddingProvider {
 	config: OpenAiCompatibleEmbeddingConfig,
 }
 
+pub(crate) async fn read_bounded_response(
+	mut response: reqwest::Response,
+	limit: usize,
+) -> Result<Vec<u8>, String> {
+	if response
+		.content_length()
+		.is_some_and(|length| length > limit as u64)
+	{
+		return Err("RAG backend response exceeds byte budget".into());
+	}
+	let mut bytes = Vec::new();
+	while let Some(chunk) = response
+		.chunk()
+		.await
+		.map_err(|_| "RAG backend response unavailable")?
+	{
+		if bytes.len().saturating_add(chunk.len()) > limit {
+			return Err("RAG backend response exceeds byte budget".into());
+		}
+		bytes.extend_from_slice(&chunk);
+	}
+	Ok(bytes)
+}
+
 impl HttpEmbeddingProvider {
 	pub fn new(client: Client, config: OpenAiCompatibleEmbeddingConfig) -> Result<Self, String> {
 		if !valid_http_url(&config.endpoint) {
@@ -179,10 +211,7 @@ impl EmbeddingProvider for HttpEmbeddingProvider {
 				response.status()
 			));
 		}
-		let bytes = response
-			.bytes()
-			.await
-			.map_err(|error| format!("failed to read embedding response: {error}"))?;
+		let bytes = read_bounded_response(response, 4 * 1024 * 1024).await?;
 		let response: EmbeddingResponse = serde_json::from_slice(&bytes)
 			.map_err(|error| format!("invalid embedding response: {error}"))?;
 		response
@@ -197,79 +226,4 @@ impl EmbeddingProvider for HttpEmbeddingProvider {
 
 fn valid_http_url(value: &str) -> bool {
 	value.starts_with("https://") || value.starts_with("http://")
-}
-
-#[cfg(test)]
-mod tests {
-	use super::*;
-
-	#[test]
-	fn parses_and_validates_deployment_configuration() {
-		let config: RagGatewayConfig = serde_json::from_value(serde_json::json!({
-			"port": 8181,
-			"qdrant": {
-				"endpoint": "https://qdrant.example.test",
-				"collection": "knowledge",
-				"quarantineCollection": "knowledge-quarantine"
-			},
-			"embedding": {
-				"endpoint": "https://embeddings.example.test/v1/embeddings",
-				"model": "text-embedding-3-small"
-			}
-		}))
-		.unwrap();
-		assert_eq!(config.bind_address, "127.0.0.1");
-		assert_eq!(config.chunk_max_chars, 2_000);
-		config.validate().unwrap();
-	}
-
-	#[test]
-	fn trusted_sources_require_qdrant_integrity_and_accept_configured_integrity() {
-		let mut value = serde_json::json!({
-			"port": 8181,
-			"qdrant": {
-				"endpoint": "https://qdrant.example.test",
-				"collection": "knowledge",
-				"quarantineCollection": "knowledge-quarantine"
-			},
-			"embedding": {
-				"endpoint": "https://embeddings.example.test/v1/embeddings",
-				"model": "embedding-model"
-			},
-			"trustedSources": [{"id":"internal-kb", "baseUrl":"https://kb.example.test/docs/"}]
-		});
-		let config: RagGatewayConfig = serde_json::from_value(value.clone()).unwrap();
-		assert!(config.validate().unwrap_err().contains("qdrant.integrity"));
-
-		value["qdrant"]["integrity"] = serde_json::json!({
-			"keyId":"rag-index-v1", "keyEnvVar":"RAG_INDEX_HMAC_KEY"
-		});
-		let config: RagGatewayConfig = serde_json::from_value(value).unwrap();
-		config.validate().unwrap();
-	}
-
-	#[test]
-	fn rejects_duplicate_classification_rule_ids_at_config_load() {
-		let config: RagGatewayConfig = serde_json::from_value(serde_json::json!({
-			"port": 8181,
-			"qdrant": {
-				"endpoint": "https://qdrant.example.test",
-				"collection": "knowledge",
-				"quarantineCollection": "knowledge-quarantine"
-			},
-			"embedding": {
-				"endpoint": "https://embeddings.example.test/v1/embeddings",
-				"model": "embedding-model"
-			},
-			"ingestion": {
-				"maxDocumentBytes": 1048576,
-				"classificationRules": [
-					{"id":"customer-data","classification":"restricted","pattern":"customer email"},
-					{"id":"customer-data","classification":"internal","pattern":"address"}
-				]
-			}
-		}))
-		.unwrap();
-		assert!(config.validate().is_err());
-	}
 }

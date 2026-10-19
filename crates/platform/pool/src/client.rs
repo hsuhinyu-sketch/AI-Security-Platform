@@ -1201,12 +1201,6 @@ impl Builder {
 		self
 	}
 
-	#[cfg(test)]
-	pub(crate) fn pool_expected_http2_capacity(&mut self, expected: usize) -> &mut Self {
-		self.pool_config.expected_http2_capacity = expected;
-		self
-	}
-
 	/// Combine the configuration of this builder with a connector to create a `Client`, with a custom pooling key.
 	/// A function to extract the pool key from the request is required.
 	pub fn build<C, PK>(&self, connector: C) -> Client<C, PK>

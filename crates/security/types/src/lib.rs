@@ -1,5 +1,7 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+mod documents;
+pub use documents::{DocumentKey, DocumentVersion, DocumentVersionValidator};
 
 /// Ordered sensitivity used by data-flow controls. Legacy/missing metadata defaults to the
 /// most restrictive class, so an old or incomplete index entry cannot silently downgrade data.
@@ -28,17 +30,39 @@ pub struct Subject {
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub enum ActionType {
+	DependencyInvoke,
+	/// Creation/use of an execution budget; does not grant business operations.
+	ExecutionOperation,
 	ModelInvoke,
 	InferenceRoute,
 	AgentInvoke,
+	/// Task lifecycle permission, in addition to AgentInvoke and ownership checks.
+	AgentTaskOperation,
+	/// Visibility of an artifact embedded in an authorized Task response.
+	AgentArtifactRead,
+	/// Fetch external artifact bytes; reading a Task or inline artifact does not grant this.
+	AgentArtifactDownload,
+	/// Read gateway-observed events; never grants a Task operation or upstream resubscription.
+	AgentEventRecover,
+	/// Manage or receive Task-scoped Gateway-terminated push channels.
+	AgentPushOperation,
 	ToolList,
 	ToolInvoke,
+	/// MCP resource/prompt operations; the exact protocol method is Action.name.
+	McpOperation,
+	/// MCP transport session lifecycle; does not grant Tool/Resource/Prompt permissions.
+	McpSessionOperation,
+	/// Async Tool Task lifecycle, in addition to the originating Tool permission.
+	McpTaskOperation,
 	/// Accept a document into a knowledge corpus before chunking and indexing.
 	KnowledgeIngest,
 	/// Search a knowledge corpus and select document chunks for an AI context.
 	KnowledgeRetrieve,
 	/// Assemble already-authorized knowledge chunks into an LLM context.
 	ContextAssemble,
+	/// Lifecycle control of identity-bound RAG security contexts, not content assembly.
+	ContextOperation,
+	KnowledgeDocumentOperation,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -51,14 +75,23 @@ pub struct Action {
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub enum ResourceType {
+	DependencyEndpoint,
+	Execution,
 	Model,
 	InferenceEndpoint,
 	Agent,
+	AgentTask,
+	AgentArtifact,
 	McpServer,
+	McpSession,
+	McpTask,
 	Tool,
+	McpResource,
+	McpPrompt,
 	KnowledgeBase,
 	Document,
 	DocumentChunk,
+	SecurityContext,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

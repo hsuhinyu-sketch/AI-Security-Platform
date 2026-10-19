@@ -1,4 +1,7 @@
 # Path 2 — an autonomous service Agent with all gateway capabilities enabled.
+config:
+  management:
+    mode: demo
 aiSystems:
   - id: autonomous-service-agent
     security:
