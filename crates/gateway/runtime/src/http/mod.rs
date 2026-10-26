@@ -941,7 +941,7 @@ impl Debug for DebugExtensions<'_> {
 		if let Some(e) = ext.get::<crate::http::filters::AutoHostname>() {
 			d.field("AutoHostname", e);
 		}
-		if let Some(e) = ext.get::<crate::llm::bedrock::AwsRegion>() {
+		if let Some(e) = ext.get::<crate::http::auth::AwsRegion>() {
 			d.field("AwsRegion", e);
 		}
 		if let Some(e) = ext.get::<crate::client::ResolvedDestination>() {

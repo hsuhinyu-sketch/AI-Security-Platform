@@ -1,0 +1,5755 @@
+{
+  "cases": [
+    {
+      "kind": "codec",
+      "name": "valid",
+      "inputHex": "00000056000000321aa6b4820a747970652d65787472610700097072657365727665640b3a6576656e742d7479706507000c6d65737361676553746172747b22726f6c65223a22617373697374616e74227d4eb42ab4",
+      "chunkSizes": [
+        86
+      ],
+      "limit": 4096,
+      "sourceError": false,
+      "trailer": false,
+      "expected": [
+        {
+          "atChunk": 0,
+          "message": "Message { headers: [Header { name: StrBytes { bytes: b\"type-extra\" }, value: String(StrBytes { bytes: b\"preserved\" }) }, Header { name: StrBytes { bytes: b\":event-type\" }, value: String(StrBytes { bytes: b\"messageStart\" }) }], payload: b\"{\\\"role\\\":\\\"assistant\\\"}\" }",
+          "remaining": 0
+        },
+        {
+          "atChunk": 0,
+          "pending": true,
+          "remaining": 0
+        },
+        {
+          "eof": true,
+          "remaining": 0
+        }
+      ]
+    },
+    {
+      "kind": "codec",
+      "name": "no-header-empty",
+      "inputHex": "000000100000000005c248eb7d98c8ff",
+      "chunkSizes": [
+        16
+      ],
+      "limit": 4096,
+      "sourceError": false,
+      "trailer": false,
+      "expected": [
+        {
+          "atChunk": 0,
+          "message": "Message { headers: [], payload: b\"\" }",
+          "remaining": 0
+        },
+        {
+          "atChunk": 0,
+          "pending": true,
+          "remaining": 0
+        },
+        {
+          "eof": true,
+          "remaining": 0
+        }
+      ]
+    },
+    {
+      "kind": "codec",
+      "name": "consecutive",
+      "inputHex": "00000056000000321aa6b4820a747970652d65787472610700097072657365727665640b3a6576656e742d7479706507000c6d65737361676553746172747b22726f6c65223a22617373697374616e74227d4eb42ab40000007400000037d1cd3c690a747970652d65787472610700097072657365727665640b3a6576656e742d74797065070011636f6e74656e74426c6f636b44656c74617b22636f6e74656e74426c6f636b496e646578223a302c2264656c7461223a7b2274657874223a226869227d7d36b4f427",
+      "chunkSizes": [
+        202
+      ],
+      "limit": 4096,
+      "sourceError": false,
+      "trailer": false,
+      "expected": [
+        {
+          "atChunk": 0,
+          "message": "Message { headers: [Header { name: StrBytes { bytes: b\"type-extra\" }, value: String(StrBytes { bytes: b\"preserved\" }) }, Header { name: StrBytes { bytes: b\":event-type\" }, value: String(StrBytes { bytes: b\"messageStart\" }) }], payload: b\"{\\\"role\\\":\\\"assistant\\\"}\" }",
+          "remaining": 116
+        },
+        {
+          "atChunk": 0,
+          "message": "Message { headers: [Header { name: StrBytes { bytes: b\"type-extra\" }, value: String(StrBytes { bytes: b\"preserved\" }) }, Header { name: StrBytes { bytes: b\":event-type\" }, value: String(StrBytes { bytes: b\"contentBlockDelta\" }) }], payload: b\"{\\\"contentBlockIndex\\\":0,\\\"delta\\\":{\\\"text\\\":\\\"hi\\\"}}\" }",
+          "remaining": 0
+        },
+        {
+          "atChunk": 0,
+          "pending": true,
+          "remaining": 0
+        },
+        {
+          "eof": true,
+          "remaining": 0
+        }
+      ]
+    },
+    {
+      "kind": "codec",
+      "name": "bad-prelude-crc",
+      "inputHex": "00000056000000321ba6b4820a747970652d65787472610700097072657365727665640b3a6576656e742d7479706507000c6d65737361676553746172747b22726f6c65223a22617373697374616e74227d4eb42ab4",
+      "chunkSizes": [
+        86
+      ],
+      "limit": 4096,
+      "sourceError": false,
+      "trailer": false,
+      "expected": [
+        {
+          "atChunk": 0,
+          "error": {
+            "causes": [
+              "prelude checksum 0x1BA6B482 didn't match expected checksum 0x1AA6B482",
+              "prelude checksum 0x1BA6B482 didn't match expected checksum 0x1AA6B482"
+            ],
+            "kinds": [
+              "awsProtocol"
+            ],
+            "debug": "Protocol(Error { kind: PreludeChecksumMismatch(447132802, 463910018) })"
+          },
+          "remaining": 74
+        }
+      ]
+    },
+    {
+      "kind": "codec",
+      "name": "bad-message-crc",
+      "inputHex": "00000056000000321aa6b4820a747970652d65787472610700097072657365727665640b3a6576656e742d7479706507000c6d65737361676553746172747b22726f6c65223a22617373697374616e74227d4eb42ab5",
+      "chunkSizes": [
+        86
+      ],
+      "limit": 4096,
+      "sourceError": false,
+      "trailer": false,
+      "expected": [
+        {
+          "atChunk": 0,
+          "error": {
+            "causes": [
+              "message checksum 0x4EB42AB5 didn't match expected checksum 0x4EB42AB4",
+              "message checksum 0x4EB42AB5 didn't match expected checksum 0x4EB42AB4"
+            ],
+            "kinds": [
+              "awsProtocol"
+            ],
+            "debug": "Protocol(Error { kind: MessageChecksumMismatch(1320430260, 1320430261) })"
+          },
+          "remaining": 0
+        }
+      ]
+    },
+    {
+      "kind": "codec",
+      "name": "bad-header-length",
+      "inputHex": "0000005600000056507911c30a747970652d65787472610700097072657365727665640b3a6576656e742d7479706507000c6d65737361676553746172747b22726f6c65223a22617373697374616e74227d4bde6328",
+      "chunkSizes": [
+        86
+      ],
+      "limit": 4096,
+      "sourceError": false,
+      "trailer": false,
+      "expected": [
+        {
+          "atChunk": 0,
+          "error": {
+            "causes": [
+              "invalid headers length",
+              "invalid headers length"
+            ],
+            "kinds": [
+              "awsProtocol"
+            ],
+            "debug": "Protocol(Error { kind: InvalidHeadersLength })"
+          },
+          "remaining": 74
+        }
+      ]
+    },
+    {
+      "kind": "codec",
+      "name": "short-total",
+      "inputHex": "0000000c00000032680563e8",
+      "chunkSizes": [
+        12
+      ],
+      "limit": 4096,
+      "sourceError": false,
+      "trailer": false,
+      "expected": [
+        {
+          "atChunk": 0,
+          "error": {
+            "causes": [
+              "invalid message length",
+              "invalid message length"
+            ],
+            "kinds": [
+              "awsProtocol"
+            ],
+            "debug": "Protocol(Error { kind: InvalidMessageLength })"
+          },
+          "remaining": 0
+        }
+      ]
+    },
+    {
+      "kind": "codec",
+      "name": "partial-prelude",
+      "inputHex": "00000056000000321a",
+      "chunkSizes": [
+        9
+      ],
+      "limit": 4096,
+      "sourceError": false,
+      "trailer": false,
+      "expected": [
+        {
+          "atChunk": 0,
+          "pending": true,
+          "remaining": 9
+        },
+        {
+          "eofError": {
+            "causes": [
+              "bytes remaining on stream",
+              "bytes remaining on stream"
+            ],
+            "kinds": [
+              "awsIo",
+              "io:Other"
+            ],
+            "debug": "Io(Custom { kind: Other, error: \"bytes remaining on stream\" })"
+          },
+          "remaining": 9
+        }
+      ]
+    },
+    {
+      "kind": "codec",
+      "name": "partial-payload",
+      "inputHex": "00000056000000321aa6b4820a747970652d65787472610700097072657365727665640b3a6576656e742d7479706507000c6d65737361676553746172747b22726f6c65223a22617373697374616e74227d4e",
+      "chunkSizes": [
+        83
+      ],
+      "limit": 4096,
+      "sourceError": false,
+      "trailer": false,
+      "expected": [
+        {
+          "atChunk": 0,
+          "pending": true,
+          "remaining": 83
+        },
+        {
+          "eofError": {
+            "causes": [
+              "bytes remaining on stream",
+              "bytes remaining on stream"
+            ],
+            "kinds": [
+              "awsIo",
+              "io:Other"
+            ],
+            "debug": "Io(Custom { kind: Other, error: \"bytes remaining on stream\" })"
+          },
+          "remaining": 83
+        }
+      ]
+    },
+    {
+      "kind": "codec",
+      "name": "trailing-byte",
+      "inputHex": "00000056000000321aa6b4820a747970652d65787472610700097072657365727665640b3a6576656e742d7479706507000c6d65737361676553746172747b22726f6c65223a22617373697374616e74227d4eb42ab478",
+      "chunkSizes": [
+        87
+      ],
+      "limit": 4096,
+      "sourceError": false,
+      "trailer": false,
+      "expected": [
+        {
+          "atChunk": 0,
+          "message": "Message { headers: [Header { name: StrBytes { bytes: b\"type-extra\" }, value: String(StrBytes { bytes: b\"preserved\" }) }, Header { name: StrBytes { bytes: b\":event-type\" }, value: String(StrBytes { bytes: b\"messageStart\" }) }], payload: b\"{\\\"role\\\":\\\"assistant\\\"}\" }",
+          "remaining": 1
+        },
+        {
+          "atChunk": 0,
+          "pending": true,
+          "remaining": 1
+        },
+        {
+          "eofError": {
+            "causes": [
+              "bytes remaining on stream",
+              "bytes remaining on stream"
+            ],
+            "kinds": [
+              "awsIo",
+              "io:Other"
+            ],
+            "debug": "Io(Custom { kind: Other, error: \"bytes remaining on stream\" })"
+          },
+          "remaining": 1
+        }
+      ]
+    },
+    {
+      "kind": "codec",
+      "name": "unknown",
+      "inputHex": "000000590000002c62f91e300a747970652d65787472610700097072657365727665640b3a6576656e742d747970650700066675747572657b22706f6c696379223a226e657665722d706c61696e2d74657874227d54c9fbdc",
+      "chunkSizes": [
+        89
+      ],
+      "limit": 4096,
+      "sourceError": false,
+      "trailer": false,
+      "expected": [
+        {
+          "atChunk": 0,
+          "message": "Message { headers: [Header { name: StrBytes { bytes: b\"type-extra\" }, value: String(StrBytes { bytes: b\"preserved\" }) }, Header { name: StrBytes { bytes: b\":event-type\" }, value: String(StrBytes { bytes: b\"future\" }) }], payload: b\"{\\\"policy\\\":\\\"never-plain-text\\\"}\" }",
+          "remaining": 0
+        },
+        {
+          "atChunk": 0,
+          "pending": true,
+          "remaining": 0
+        },
+        {
+          "eof": true,
+          "remaining": 0
+        }
+      ]
+    },
+    {
+      "kind": "codec",
+      "name": "exception",
+      "inputHex": "0000006a00000046291f54200d3a6d6573736167652d74797065070009657863657074696f6e0f3a657863657074696f6e2d747970650700196d6f64656c53747265616d4572726f72457863657074696f6e7b226d657373616765223a2264656e696564227d1714d1eb",
+      "chunkSizes": [
+        106
+      ],
+      "limit": 4096,
+      "sourceError": false,
+      "trailer": false,
+      "expected": [
+        {
+          "atChunk": 0,
+          "message": "Message { headers: [Header { name: StrBytes { bytes: b\":message-type\" }, value: String(StrBytes { bytes: b\"exception\" }) }, Header { name: StrBytes { bytes: b\":exception-type\" }, value: String(StrBytes { bytes: b\"modelStreamErrorException\" }) }], payload: b\"{\\\"message\\\":\\\"denied\\\"}\" }",
+          "remaining": 0
+        },
+        {
+          "atChunk": 0,
+          "pending": true,
+          "remaining": 0
+        },
+        {
+          "eof": true,
+          "remaining": 0
+        }
+      ]
+    },
+    {
+      "kind": "codec",
+      "name": "split-1",
+      "inputHex": "00000056000000321aa6b4820a747970652d65787472610700097072657365727665640b3a6576656e742d7479706507000c6d65737361676553746172747b22726f6c65223a22617373697374616e74227d4eb42ab40000007400000037d1cd3c690a747970652d65787472610700097072657365727665640b3a6576656e742d74797065070011636f6e74656e74426c6f636b44656c74617b22636f6e74656e74426c6f636b496e646578223a302c2264656c7461223a7b2274657874223a226869227d7d36b4f427",
+      "chunkSizes": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "limit": 4096,
+      "sourceError": false,
+      "trailer": false,
+      "expected": [
+        {
+          "atChunk": 0,
+          "pending": true,
+          "remaining": 1
+        },
+        {
+          "atChunk": 1,
+          "pending": true,
+          "remaining": 2
+        },
+        {
+          "atChunk": 2,
+          "pending": true,
+          "remaining": 3
+        },
+        {
+          "atChunk": 3,
+          "pending": true,
+          "remaining": 4
+        },
+        {
+          "atChunk": 4,
+          "pending": true,
+          "remaining": 5
+        },
+        {
+          "atChunk": 5,
+          "pending": true,
+          "remaining": 6
+        },
+        {
+          "atChunk": 6,
+          "pending": true,
+          "remaining": 7
+        },
+        {
+          "atChunk": 7,
+          "pending": true,
+          "remaining": 8
+        },
+        {
+          "atChunk": 8,
+          "pending": true,
+          "remaining": 9
+        },
+        {
+          "atChunk": 9,
+          "pending": true,
+          "remaining": 10
+        },
+        {
+          "atChunk": 10,
+          "pending": true,
+          "remaining": 11
+        },
+        {
+          "atChunk": 11,
+          "pending": true,
+          "remaining": 12
+        },
+        {
+          "atChunk": 12,
+          "pending": true,
+          "remaining": 13
+        },
+        {
+          "atChunk": 13,
+          "pending": true,
+          "remaining": 14
+        },
+        {
+          "atChunk": 14,
+          "pending": true,
+          "remaining": 15
+        },
+        {
+          "atChunk": 15,
+          "pending": true,
+          "remaining": 16
+        },
+        {
+          "atChunk": 16,
+          "pending": true,
+          "remaining": 17
+        },
+        {
+          "atChunk": 17,
+          "pending": true,
+          "remaining": 18
+        },
+        {
+          "atChunk": 18,
+          "pending": true,
+          "remaining": 19
+        },
+        {
+          "atChunk": 19,
+          "pending": true,
+          "remaining": 20
+        },
+        {
+          "atChunk": 20,
+          "pending": true,
+          "remaining": 21
+        },
+        {
+          "atChunk": 21,
+          "pending": true,
+          "remaining": 22
+        },
+        {
+          "atChunk": 22,
+          "pending": true,
+          "remaining": 23
+        },
+        {
+          "atChunk": 23,
+          "pending": true,
+          "remaining": 24
+        },
+        {
+          "atChunk": 24,
+          "pending": true,
+          "remaining": 25
+        },
+        {
+          "atChunk": 25,
+          "pending": true,
+          "remaining": 26
+        },
+        {
+          "atChunk": 26,
+          "pending": true,
+          "remaining": 27
+        },
+        {
+          "atChunk": 27,
+          "pending": true,
+          "remaining": 28
+        },
+        {
+          "atChunk": 28,
+          "pending": true,
+          "remaining": 29
+        },
+        {
+          "atChunk": 29,
+          "pending": true,
+          "remaining": 30
+        },
+        {
+          "atChunk": 30,
+          "pending": true,
+          "remaining": 31
+        },
+        {
+          "atChunk": 31,
+          "pending": true,
+          "remaining": 32
+        },
+        {
+          "atChunk": 32,
+          "pending": true,
+          "remaining": 33
+        },
+        {
+          "atChunk": 33,
+          "pending": true,
+          "remaining": 34
+        },
+        {
+          "atChunk": 34,
+          "pending": true,
+          "remaining": 35
+        },
+        {
+          "atChunk": 35,
+          "pending": true,
+          "remaining": 36
+        },
+        {
+          "atChunk": 36,
+          "pending": true,
+          "remaining": 37
+        },
+        {
+          "atChunk": 37,
+          "pending": true,
+          "remaining": 38
+        },
+        {
+          "atChunk": 38,
+          "pending": true,
+          "remaining": 39
+        },
+        {
+          "atChunk": 39,
+          "pending": true,
+          "remaining": 40
+        },
+        {
+          "atChunk": 40,
+          "pending": true,
+          "remaining": 41
+        },
+        {
+          "atChunk": 41,
+          "pending": true,
+          "remaining": 42
+        },
+        {
+          "atChunk": 42,
+          "pending": true,
+          "remaining": 43
+        },
+        {
+          "atChunk": 43,
+          "pending": true,
+          "remaining": 44
+        },
+        {
+          "atChunk": 44,
+          "pending": true,
+          "remaining": 45
+        },
+        {
+          "atChunk": 45,
+          "pending": true,
+          "remaining": 46
+        },
+        {
+          "atChunk": 46,
+          "pending": true,
+          "remaining": 47
+        },
+        {
+          "atChunk": 47,
+          "pending": true,
+          "remaining": 48
+        },
+        {
+          "atChunk": 48,
+          "pending": true,
+          "remaining": 49
+        },
+        {
+          "atChunk": 49,
+          "pending": true,
+          "remaining": 50
+        },
+        {
+          "atChunk": 50,
+          "pending": true,
+          "remaining": 51
+        },
+        {
+          "atChunk": 51,
+          "pending": true,
+          "remaining": 52
+        },
+        {
+          "atChunk": 52,
+          "pending": true,
+          "remaining": 53
+        },
+        {
+          "atChunk": 53,
+          "pending": true,
+          "remaining": 54
+        },
+        {
+          "atChunk": 54,
+          "pending": true,
+          "remaining": 55
+        },
+        {
+          "atChunk": 55,
+          "pending": true,
+          "remaining": 56
+        },
+        {
+          "atChunk": 56,
+          "pending": true,
+          "remaining": 57
+        },
+        {
+          "atChunk": 57,
+          "pending": true,
+          "remaining": 58
+        },
+        {
+          "atChunk": 58,
+          "pending": true,
+          "remaining": 59
+        },
+        {
+          "atChunk": 59,
+          "pending": true,
+          "remaining": 60
+        },
+        {
+          "atChunk": 60,
+          "pending": true,
+          "remaining": 61
+        },
+        {
+          "atChunk": 61,
+          "pending": true,
+          "remaining": 62
+        },
+        {
+          "atChunk": 62,
+          "pending": true,
+          "remaining": 63
+        },
+        {
+          "atChunk": 63,
+          "pending": true,
+          "remaining": 64
+        },
+        {
+          "atChunk": 64,
+          "pending": true,
+          "remaining": 65
+        },
+        {
+          "atChunk": 65,
+          "pending": true,
+          "remaining": 66
+        },
+        {
+          "atChunk": 66,
+          "pending": true,
+          "remaining": 67
+        },
+        {
+          "atChunk": 67,
+          "pending": true,
+          "remaining": 68
+        },
+        {
+          "atChunk": 68,
+          "pending": true,
+          "remaining": 69
+        },
+        {
+          "atChunk": 69,
+          "pending": true,
+          "remaining": 70
+        },
+        {
+          "atChunk": 70,
+          "pending": true,
+          "remaining": 71
+        },
+        {
+          "atChunk": 71,
+          "pending": true,
+          "remaining": 72
+        },
+        {
+          "atChunk": 72,
+          "pending": true,
+          "remaining": 73
+        },
+        {
+          "atChunk": 73,
+          "pending": true,
+          "remaining": 74
+        },
+        {
+          "atChunk": 74,
+          "pending": true,
+          "remaining": 75
+        },
+        {
+          "atChunk": 75,
+          "pending": true,
+          "remaining": 76
+        },
+        {
+          "atChunk": 76,
+          "pending": true,
+          "remaining": 77
+        },
+        {
+          "atChunk": 77,
+          "pending": true,
+          "remaining": 78
+        },
+        {
+          "atChunk": 78,
+          "pending": true,
+          "remaining": 79
+        },
+        {
+          "atChunk": 79,
+          "pending": true,
+          "remaining": 80
+        },
+        {
+          "atChunk": 80,
+          "pending": true,
+          "remaining": 81
+        },
+        {
+          "atChunk": 81,
+          "pending": true,
+          "remaining": 82
+        },
+        {
+          "atChunk": 82,
+          "pending": true,
+          "remaining": 83
+        },
+        {
+          "atChunk": 83,
+          "pending": true,
+          "remaining": 84
+        },
+        {
+          "atChunk": 84,
+          "pending": true,
+          "remaining": 85
+        },
+        {
+          "atChunk": 85,
+          "message": "Message { headers: [Header { name: StrBytes { bytes: b\"type-extra\" }, value: String(StrBytes { bytes: b\"preserved\" }) }, Header { name: StrBytes { bytes: b\":event-type\" }, value: String(StrBytes { bytes: b\"messageStart\" }) }], payload: b\"{\\\"role\\\":\\\"assistant\\\"}\" }",
+          "remaining": 0
+        },
+        {
+          "atChunk": 85,
+          "pending": true,
+          "remaining": 0
+        },
+        {
+          "atChunk": 86,
+          "pending": true,
+          "remaining": 1
+        },
+        {
+          "atChunk": 87,
+          "pending": true,
+          "remaining": 2
+        },
+        {
+          "atChunk": 88,
+          "pending": true,
+          "remaining": 3
+        },
+        {
+          "atChunk": 89,
+          "pending": true,
+          "remaining": 4
+        },
+        {
+          "atChunk": 90,
+          "pending": true,
+          "remaining": 5
+        },
+        {
+          "atChunk": 91,
+          "pending": true,
+          "remaining": 6
+        },
+        {
+          "atChunk": 92,
+          "pending": true,
+          "remaining": 7
+        },
+        {
+          "atChunk": 93,
+          "pending": true,
+          "remaining": 8
+        },
+        {
+          "atChunk": 94,
+          "pending": true,
+          "remaining": 9
+        },
+        {
+          "atChunk": 95,
+          "pending": true,
+          "remaining": 10
+        },
+        {
+          "atChunk": 96,
+          "pending": true,
+          "remaining": 11
+        },
+        {
+          "atChunk": 97,
+          "pending": true,
+          "remaining": 12
+        },
+        {
+          "atChunk": 98,
+          "pending": true,
+          "remaining": 13
+        },
+        {
+          "atChunk": 99,
+          "pending": true,
+          "remaining": 14
+        },
+        {
+          "atChunk": 100,
+          "pending": true,
+          "remaining": 15
+        },
+        {
+          "atChunk": 101,
+          "pending": true,
+          "remaining": 16
+        },
+        {
+          "atChunk": 102,
+          "pending": true,
+          "remaining": 17
+        },
+        {
+          "atChunk": 103,
+          "pending": true,
+          "remaining": 18
+        },
+        {
+          "atChunk": 104,
+          "pending": true,
+          "remaining": 19
+        },
+        {
+          "atChunk": 105,
+          "pending": true,
+          "remaining": 20
+        },
+        {
+          "atChunk": 106,
+          "pending": true,
+          "remaining": 21
+        },
+        {
+          "atChunk": 107,
+          "pending": true,
+          "remaining": 22
+        },
+        {
+          "atChunk": 108,
+          "pending": true,
+          "remaining": 23
+        },
+        {
+          "atChunk": 109,
+          "pending": true,
+          "remaining": 24
+        },
+        {
+          "atChunk": 110,
+          "pending": true,
+          "remaining": 25
+        },
+        {
+          "atChunk": 111,
+          "pending": true,
+          "remaining": 26
+        },
+        {
+          "atChunk": 112,
+          "pending": true,
+          "remaining": 27
+        },
+        {
+          "atChunk": 113,
+          "pending": true,
+          "remaining": 28
+        },
+        {
+          "atChunk": 114,
+          "pending": true,
+          "remaining": 29
+        },
+        {
+          "atChunk": 115,
+          "pending": true,
+          "remaining": 30
+        },
+        {
+          "atChunk": 116,
+          "pending": true,
+          "remaining": 31
+        },
+        {
+          "atChunk": 117,
+          "pending": true,
+          "remaining": 32
+        },
+        {
+          "atChunk": 118,
+          "pending": true,
+          "remaining": 33
+        },
+        {
+          "atChunk": 119,
+          "pending": true,
+          "remaining": 34
+        },
+        {
+          "atChunk": 120,
+          "pending": true,
+          "remaining": 35
+        },
+        {
+          "atChunk": 121,
+          "pending": true,
+          "remaining": 36
+        },
+        {
+          "atChunk": 122,
+          "pending": true,
+          "remaining": 37
+        },
+        {
+          "atChunk": 123,
+          "pending": true,
+          "remaining": 38
+        },
+        {
+          "atChunk": 124,
+          "pending": true,
+          "remaining": 39
+        },
+        {
+          "atChunk": 125,
+          "pending": true,
+          "remaining": 40
+        },
+        {
+          "atChunk": 126,
+          "pending": true,
+          "remaining": 41
+        },
+        {
+          "atChunk": 127,
+          "pending": true,
+          "remaining": 42
+        },
+        {
+          "atChunk": 128,
+          "pending": true,
+          "remaining": 43
+        },
+        {
+          "atChunk": 129,
+          "pending": true,
+          "remaining": 44
+        },
+        {
+          "atChunk": 130,
+          "pending": true,
+          "remaining": 45
+        },
+        {
+          "atChunk": 131,
+          "pending": true,
+          "remaining": 46
+        },
+        {
+          "atChunk": 132,
+          "pending": true,
+          "remaining": 47
+        },
+        {
+          "atChunk": 133,
+          "pending": true,
+          "remaining": 48
+        },
+        {
+          "atChunk": 134,
+          "pending": true,
+          "remaining": 49
+        },
+        {
+          "atChunk": 135,
+          "pending": true,
+          "remaining": 50
+        },
+        {
+          "atChunk": 136,
+          "pending": true,
+          "remaining": 51
+        },
+        {
+          "atChunk": 137,
+          "pending": true,
+          "remaining": 52
+        },
+        {
+          "atChunk": 138,
+          "pending": true,
+          "remaining": 53
+        },
+        {
+          "atChunk": 139,
+          "pending": true,
+          "remaining": 54
+        },
+        {
+          "atChunk": 140,
+          "pending": true,
+          "remaining": 55
+        },
+        {
+          "atChunk": 141,
+          "pending": true,
+          "remaining": 56
+        },
+        {
+          "atChunk": 142,
+          "pending": true,
+          "remaining": 57
+        },
+        {
+          "atChunk": 143,
+          "pending": true,
+          "remaining": 58
+        },
+        {
+          "atChunk": 144,
+          "pending": true,
+          "remaining": 59
+        },
+        {
+          "atChunk": 145,
+          "pending": true,
+          "remaining": 60
+        },
+        {
+          "atChunk": 146,
+          "pending": true,
+          "remaining": 61
+        },
+        {
+          "atChunk": 147,
+          "pending": true,
+          "remaining": 62
+        },
+        {
+          "atChunk": 148,
+          "pending": true,
+          "remaining": 63
+        },
+        {
+          "atChunk": 149,
+          "pending": true,
+          "remaining": 64
+        },
+        {
+          "atChunk": 150,
+          "pending": true,
+          "remaining": 65
+        },
+        {
+          "atChunk": 151,
+          "pending": true,
+          "remaining": 66
+        },
+        {
+          "atChunk": 152,
+          "pending": true,
+          "remaining": 67
+        },
+        {
+          "atChunk": 153,
+          "pending": true,
+          "remaining": 68
+        },
+        {
+          "atChunk": 154,
+          "pending": true,
+          "remaining": 69
+        },
+        {
+          "atChunk": 155,
+          "pending": true,
+          "remaining": 70
+        },
+        {
+          "atChunk": 156,
+          "pending": true,
+          "remaining": 71
+        },
+        {
+          "atChunk": 157,
+          "pending": true,
+          "remaining": 72
+        },
+        {
+          "atChunk": 158,
+          "pending": true,
+          "remaining": 73
+        },
+        {
+          "atChunk": 159,
+          "pending": true,
+          "remaining": 74
+        },
+        {
+          "atChunk": 160,
+          "pending": true,
+          "remaining": 75
+        },
+        {
+          "atChunk": 161,
+          "pending": true,
+          "remaining": 76
+        },
+        {
+          "atChunk": 162,
+          "pending": true,
+          "remaining": 77
+        },
+        {
+          "atChunk": 163,
+          "pending": true,
+          "remaining": 78
+        },
+        {
+          "atChunk": 164,
+          "pending": true,
+          "remaining": 79
+        },
+        {
+          "atChunk": 165,
+          "pending": true,
+          "remaining": 80
+        },
+        {
+          "atChunk": 166,
+          "pending": true,
+          "remaining": 81
+        },
+        {
+          "atChunk": 167,
+          "pending": true,
+          "remaining": 82
+        },
+        {
+          "atChunk": 168,
+          "pending": true,
+          "remaining": 83
+        },
+        {
+          "atChunk": 169,
+          "pending": true,
+          "remaining": 84
+        },
+        {
+          "atChunk": 170,
+          "pending": true,
+          "remaining": 85
+        },
+        {
+          "atChunk": 171,
+          "pending": true,
+          "remaining": 86
+        },
+        {
+          "atChunk": 172,
+          "pending": true,
+          "remaining": 87
+        },
+        {
+          "atChunk": 173,
+          "pending": true,
+          "remaining": 88
+        },
+        {
+          "atChunk": 174,
+          "pending": true,
+          "remaining": 89
+        },
+        {
+          "atChunk": 175,
+          "pending": true,
+          "remaining": 90
+        },
+        {
+          "atChunk": 176,
+          "pending": true,
+          "remaining": 91
+        },
+        {
+          "atChunk": 177,
+          "pending": true,
+          "remaining": 92
+        },
+        {
+          "atChunk": 178,
+          "pending": true,
+          "remaining": 93
+        },
+        {
+          "atChunk": 179,
+          "pending": true,
+          "remaining": 94
+        },
+        {
+          "atChunk": 180,
+          "pending": true,
+          "remaining": 95
+        },
+        {
+          "atChunk": 181,
+          "pending": true,
+          "remaining": 96
+        },
+        {
+          "atChunk": 182,
+          "pending": true,
+          "remaining": 97
+        },
+        {
+          "atChunk": 183,
+          "pending": true,
+          "remaining": 98
+        },
+        {
+          "atChunk": 184,
+          "pending": true,
+          "remaining": 99
+        },
+        {
+          "atChunk": 185,
+          "pending": true,
+          "remaining": 100
+        },
+        {
+          "atChunk": 186,
+          "pending": true,
+          "remaining": 101
+        },
+        {
+          "atChunk": 187,
+          "pending": true,
+          "remaining": 102
+        },
+        {
+          "atChunk": 188,
+          "pending": true,
+          "remaining": 103
+        },
+        {
+          "atChunk": 189,
+          "pending": true,
+          "remaining": 104
+        },
+        {
+          "atChunk": 190,
+          "pending": true,
+          "remaining": 105
+        },
+        {
+          "atChunk": 191,
+          "pending": true,
+          "remaining": 106
+        },
+        {
+          "atChunk": 192,
+          "pending": true,
+          "remaining": 107
+        },
+        {
+          "atChunk": 193,
+          "pending": true,
+          "remaining": 108
+        },
+        {
+          "atChunk": 194,
+          "pending": true,
+          "remaining": 109
+        },
+        {
+          "atChunk": 195,
+          "pending": true,
+          "remaining": 110
+        },
+        {
+          "atChunk": 196,
+          "pending": true,
+          "remaining": 111
+        },
+        {
+          "atChunk": 197,
+          "pending": true,
+          "remaining": 112
+        },
+        {
+          "atChunk": 198,
+          "pending": true,
+          "remaining": 113
+        },
+        {
+          "atChunk": 199,
+          "pending": true,
+          "remaining": 114
+        },
+        {
+          "atChunk": 200,
+          "pending": true,
+          "remaining": 115
+        },
+        {
+          "atChunk": 201,
+          "message": "Message { headers: [Header { name: StrBytes { bytes: b\"type-extra\" }, value: String(StrBytes { bytes: b\"preserved\" }) }, Header { name: StrBytes { bytes: b\":event-type\" }, value: String(StrBytes { bytes: b\"contentBlockDelta\" }) }], payload: b\"{\\\"contentBlockIndex\\\":0,\\\"delta\\\":{\\\"text\\\":\\\"hi\\\"}}\" }",
+          "remaining": 0
+        },
+        {
+          "atChunk": 201,
+          "pending": true,
+          "remaining": 0
+        },
+        {
+          "eof": true,
+          "remaining": 0
+        }
+      ]
+    },
+    {
+      "kind": "codec",
+      "name": "split-5",
+      "inputHex": "00000056000000321aa6b4820a747970652d65787472610700097072657365727665640b3a6576656e742d7479706507000c6d65737361676553746172747b22726f6c65223a22617373697374616e74227d4eb42ab40000007400000037d1cd3c690a747970652d65787472610700097072657365727665640b3a6576656e742d74797065070011636f6e74656e74426c6f636b44656c74617b22636f6e74656e74426c6f636b496e646578223a302c2264656c7461223a7b2274657874223a226869227d7d36b4f427",
+      "chunkSizes": [
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        2
+      ],
+      "limit": 4096,
+      "sourceError": false,
+      "trailer": false,
+      "expected": [
+        {
+          "atChunk": 0,
+          "pending": true,
+          "remaining": 5
+        },
+        {
+          "atChunk": 1,
+          "pending": true,
+          "remaining": 10
+        },
+        {
+          "atChunk": 2,
+          "pending": true,
+          "remaining": 15
+        },
+        {
+          "atChunk": 3,
+          "pending": true,
+          "remaining": 20
+        },
+        {
+          "atChunk": 4,
+          "pending": true,
+          "remaining": 25
+        },
+        {
+          "atChunk": 5,
+          "pending": true,
+          "remaining": 30
+        },
+        {
+          "atChunk": 6,
+          "pending": true,
+          "remaining": 35
+        },
+        {
+          "atChunk": 7,
+          "pending": true,
+          "remaining": 40
+        },
+        {
+          "atChunk": 8,
+          "pending": true,
+          "remaining": 45
+        },
+        {
+          "atChunk": 9,
+          "pending": true,
+          "remaining": 50
+        },
+        {
+          "atChunk": 10,
+          "pending": true,
+          "remaining": 55
+        },
+        {
+          "atChunk": 11,
+          "pending": true,
+          "remaining": 60
+        },
+        {
+          "atChunk": 12,
+          "pending": true,
+          "remaining": 65
+        },
+        {
+          "atChunk": 13,
+          "pending": true,
+          "remaining": 70
+        },
+        {
+          "atChunk": 14,
+          "pending": true,
+          "remaining": 75
+        },
+        {
+          "atChunk": 15,
+          "pending": true,
+          "remaining": 80
+        },
+        {
+          "atChunk": 16,
+          "pending": true,
+          "remaining": 85
+        },
+        {
+          "atChunk": 17,
+          "message": "Message { headers: [Header { name: StrBytes { bytes: b\"type-extra\" }, value: String(StrBytes { bytes: b\"preserved\" }) }, Header { name: StrBytes { bytes: b\":event-type\" }, value: String(StrBytes { bytes: b\"messageStart\" }) }], payload: b\"{\\\"role\\\":\\\"assistant\\\"}\" }",
+          "remaining": 4
+        },
+        {
+          "atChunk": 17,
+          "pending": true,
+          "remaining": 4
+        },
+        {
+          "atChunk": 18,
+          "pending": true,
+          "remaining": 9
+        },
+        {
+          "atChunk": 19,
+          "pending": true,
+          "remaining": 14
+        },
+        {
+          "atChunk": 20,
+          "pending": true,
+          "remaining": 19
+        },
+        {
+          "atChunk": 21,
+          "pending": true,
+          "remaining": 24
+        },
+        {
+          "atChunk": 22,
+          "pending": true,
+          "remaining": 29
+        },
+        {
+          "atChunk": 23,
+          "pending": true,
+          "remaining": 34
+        },
+        {
+          "atChunk": 24,
+          "pending": true,
+          "remaining": 39
+        },
+        {
+          "atChunk": 25,
+          "pending": true,
+          "remaining": 44
+        },
+        {
+          "atChunk": 26,
+          "pending": true,
+          "remaining": 49
+        },
+        {
+          "atChunk": 27,
+          "pending": true,
+          "remaining": 54
+        },
+        {
+          "atChunk": 28,
+          "pending": true,
+          "remaining": 59
+        },
+        {
+          "atChunk": 29,
+          "pending": true,
+          "remaining": 64
+        },
+        {
+          "atChunk": 30,
+          "pending": true,
+          "remaining": 69
+        },
+        {
+          "atChunk": 31,
+          "pending": true,
+          "remaining": 74
+        },
+        {
+          "atChunk": 32,
+          "pending": true,
+          "remaining": 79
+        },
+        {
+          "atChunk": 33,
+          "pending": true,
+          "remaining": 84
+        },
+        {
+          "atChunk": 34,
+          "pending": true,
+          "remaining": 89
+        },
+        {
+          "atChunk": 35,
+          "pending": true,
+          "remaining": 94
+        },
+        {
+          "atChunk": 36,
+          "pending": true,
+          "remaining": 99
+        },
+        {
+          "atChunk": 37,
+          "pending": true,
+          "remaining": 104
+        },
+        {
+          "atChunk": 38,
+          "pending": true,
+          "remaining": 109
+        },
+        {
+          "atChunk": 39,
+          "pending": true,
+          "remaining": 114
+        },
+        {
+          "atChunk": 40,
+          "message": "Message { headers: [Header { name: StrBytes { bytes: b\"type-extra\" }, value: String(StrBytes { bytes: b\"preserved\" }) }, Header { name: StrBytes { bytes: b\":event-type\" }, value: String(StrBytes { bytes: b\"contentBlockDelta\" }) }], payload: b\"{\\\"contentBlockIndex\\\":0,\\\"delta\\\":{\\\"text\\\":\\\"hi\\\"}}\" }",
+          "remaining": 0
+        },
+        {
+          "atChunk": 40,
+          "pending": true,
+          "remaining": 0
+        },
+        {
+          "eof": true,
+          "remaining": 0
+        }
+      ]
+    },
+    {
+      "kind": "codec",
+      "name": "split-11",
+      "inputHex": "00000056000000321aa6b4820a747970652d65787472610700097072657365727665640b3a6576656e742d7479706507000c6d65737361676553746172747b22726f6c65223a22617373697374616e74227d4eb42ab40000007400000037d1cd3c690a747970652d65787472610700097072657365727665640b3a6576656e742d74797065070011636f6e74656e74426c6f636b44656c74617b22636f6e74656e74426c6f636b496e646578223a302c2264656c7461223a7b2274657874223a226869227d7d36b4f427",
+      "chunkSizes": [
+        11,
+        11,
+        11,
+        11,
+        11,
+        11,
+        11,
+        11,
+        11,
+        11,
+        11,
+        11,
+        11,
+        11,
+        11,
+        11,
+        11,
+        11,
+        4
+      ],
+      "limit": 4096,
+      "sourceError": false,
+      "trailer": false,
+      "expected": [
+        {
+          "atChunk": 0,
+          "pending": true,
+          "remaining": 11
+        },
+        {
+          "atChunk": 1,
+          "pending": true,
+          "remaining": 22
+        },
+        {
+          "atChunk": 2,
+          "pending": true,
+          "remaining": 33
+        },
+        {
+          "atChunk": 3,
+          "pending": true,
+          "remaining": 44
+        },
+        {
+          "atChunk": 4,
+          "pending": true,
+          "remaining": 55
+        },
+        {
+          "atChunk": 5,
+          "pending": true,
+          "remaining": 66
+        },
+        {
+          "atChunk": 6,
+          "pending": true,
+          "remaining": 77
+        },
+        {
+          "atChunk": 7,
+          "message": "Message { headers: [Header { name: StrBytes { bytes: b\"type-extra\" }, value: String(StrBytes { bytes: b\"preserved\" }) }, Header { name: StrBytes { bytes: b\":event-type\" }, value: String(StrBytes { bytes: b\"messageStart\" }) }], payload: b\"{\\\"role\\\":\\\"assistant\\\"}\" }",
+          "remaining": 2
+        },
+        {
+          "atChunk": 7,
+          "pending": true,
+          "remaining": 2
+        },
+        {
+          "atChunk": 8,
+          "pending": true,
+          "remaining": 13
+        },
+        {
+          "atChunk": 9,
+          "pending": true,
+          "remaining": 24
+        },
+        {
+          "atChunk": 10,
+          "pending": true,
+          "remaining": 35
+        },
+        {
+          "atChunk": 11,
+          "pending": true,
+          "remaining": 46
+        },
+        {
+          "atChunk": 12,
+          "pending": true,
+          "remaining": 57
+        },
+        {
+          "atChunk": 13,
+          "pending": true,
+          "remaining": 68
+        },
+        {
+          "atChunk": 14,
+          "pending": true,
+          "remaining": 79
+        },
+        {
+          "atChunk": 15,
+          "pending": true,
+          "remaining": 90
+        },
+        {
+          "atChunk": 16,
+          "pending": true,
+          "remaining": 101
+        },
+        {
+          "atChunk": 17,
+          "pending": true,
+          "remaining": 112
+        },
+        {
+          "atChunk": 18,
+          "message": "Message { headers: [Header { name: StrBytes { bytes: b\"type-extra\" }, value: String(StrBytes { bytes: b\"preserved\" }) }, Header { name: StrBytes { bytes: b\":event-type\" }, value: String(StrBytes { bytes: b\"contentBlockDelta\" }) }], payload: b\"{\\\"contentBlockIndex\\\":0,\\\"delta\\\":{\\\"text\\\":\\\"hi\\\"}}\" }",
+          "remaining": 0
+        },
+        {
+          "atChunk": 18,
+          "pending": true,
+          "remaining": 0
+        },
+        {
+          "eof": true,
+          "remaining": 0
+        }
+      ]
+    },
+    {
+      "kind": "codec",
+      "name": "split-12",
+      "inputHex": "00000056000000321aa6b4820a747970652d65787472610700097072657365727665640b3a6576656e742d7479706507000c6d65737361676553746172747b22726f6c65223a22617373697374616e74227d4eb42ab40000007400000037d1cd3c690a747970652d65787472610700097072657365727665640b3a6576656e742d74797065070011636f6e74656e74426c6f636b44656c74617b22636f6e74656e74426c6f636b496e646578223a302c2264656c7461223a7b2274657874223a226869227d7d36b4f427",
+      "chunkSizes": [
+        12,
+        12,
+        12,
+        12,
+        12,
+        12,
+        12,
+        12,
+        12,
+        12,
+        12,
+        12,
+        12,
+        12,
+        12,
+        12,
+        10
+      ],
+      "limit": 4096,
+      "sourceError": false,
+      "trailer": false,
+      "expected": [
+        {
+          "atChunk": 0,
+          "pending": true,
+          "remaining": 12
+        },
+        {
+          "atChunk": 1,
+          "pending": true,
+          "remaining": 24
+        },
+        {
+          "atChunk": 2,
+          "pending": true,
+          "remaining": 36
+        },
+        {
+          "atChunk": 3,
+          "pending": true,
+          "remaining": 48
+        },
+        {
+          "atChunk": 4,
+          "pending": true,
+          "remaining": 60
+        },
+        {
+          "atChunk": 5,
+          "pending": true,
+          "remaining": 72
+        },
+        {
+          "atChunk": 6,
+          "pending": true,
+          "remaining": 84
+        },
+        {
+          "atChunk": 7,
+          "message": "Message { headers: [Header { name: StrBytes { bytes: b\"type-extra\" }, value: String(StrBytes { bytes: b\"preserved\" }) }, Header { name: StrBytes { bytes: b\":event-type\" }, value: String(StrBytes { bytes: b\"messageStart\" }) }], payload: b\"{\\\"role\\\":\\\"assistant\\\"}\" }",
+          "remaining": 10
+        },
+        {
+          "atChunk": 7,
+          "pending": true,
+          "remaining": 10
+        },
+        {
+          "atChunk": 8,
+          "pending": true,
+          "remaining": 22
+        },
+        {
+          "atChunk": 9,
+          "pending": true,
+          "remaining": 34
+        },
+        {
+          "atChunk": 10,
+          "pending": true,
+          "remaining": 46
+        },
+        {
+          "atChunk": 11,
+          "pending": true,
+          "remaining": 58
+        },
+        {
+          "atChunk": 12,
+          "pending": true,
+          "remaining": 70
+        },
+        {
+          "atChunk": 13,
+          "pending": true,
+          "remaining": 82
+        },
+        {
+          "atChunk": 14,
+          "pending": true,
+          "remaining": 94
+        },
+        {
+          "atChunk": 15,
+          "pending": true,
+          "remaining": 106
+        },
+        {
+          "atChunk": 16,
+          "message": "Message { headers: [Header { name: StrBytes { bytes: b\"type-extra\" }, value: String(StrBytes { bytes: b\"preserved\" }) }, Header { name: StrBytes { bytes: b\":event-type\" }, value: String(StrBytes { bytes: b\"contentBlockDelta\" }) }], payload: b\"{\\\"contentBlockIndex\\\":0,\\\"delta\\\":{\\\"text\\\":\\\"hi\\\"}}\" }",
+          "remaining": 0
+        },
+        {
+          "atChunk": 16,
+          "pending": true,
+          "remaining": 0
+        },
+        {
+          "eof": true,
+          "remaining": 0
+        }
+      ]
+    },
+    {
+      "kind": "codec",
+      "name": "split-13",
+      "inputHex": "00000056000000321aa6b4820a747970652d65787472610700097072657365727665640b3a6576656e742d7479706507000c6d65737361676553746172747b22726f6c65223a22617373697374616e74227d4eb42ab40000007400000037d1cd3c690a747970652d65787472610700097072657365727665640b3a6576656e742d74797065070011636f6e74656e74426c6f636b44656c74617b22636f6e74656e74426c6f636b496e646578223a302c2264656c7461223a7b2274657874223a226869227d7d36b4f427",
+      "chunkSizes": [
+        13,
+        13,
+        13,
+        13,
+        13,
+        13,
+        13,
+        13,
+        13,
+        13,
+        13,
+        13,
+        13,
+        13,
+        13,
+        7
+      ],
+      "limit": 4096,
+      "sourceError": false,
+      "trailer": false,
+      "expected": [
+        {
+          "atChunk": 0,
+          "pending": true,
+          "remaining": 13
+        },
+        {
+          "atChunk": 1,
+          "pending": true,
+          "remaining": 26
+        },
+        {
+          "atChunk": 2,
+          "pending": true,
+          "remaining": 39
+        },
+        {
+          "atChunk": 3,
+          "pending": true,
+          "remaining": 52
+        },
+        {
+          "atChunk": 4,
+          "pending": true,
+          "remaining": 65
+        },
+        {
+          "atChunk": 5,
+          "pending": true,
+          "remaining": 78
+        },
+        {
+          "atChunk": 6,
+          "message": "Message { headers: [Header { name: StrBytes { bytes: b\"type-extra\" }, value: String(StrBytes { bytes: b\"preserved\" }) }, Header { name: StrBytes { bytes: b\":event-type\" }, value: String(StrBytes { bytes: b\"messageStart\" }) }], payload: b\"{\\\"role\\\":\\\"assistant\\\"}\" }",
+          "remaining": 5
+        },
+        {
+          "atChunk": 6,
+          "pending": true,
+          "remaining": 5
+        },
+        {
+          "atChunk": 7,
+          "pending": true,
+          "remaining": 18
+        },
+        {
+          "atChunk": 8,
+          "pending": true,
+          "remaining": 31
+        },
+        {
+          "atChunk": 9,
+          "pending": true,
+          "remaining": 44
+        },
+        {
+          "atChunk": 10,
+          "pending": true,
+          "remaining": 57
+        },
+        {
+          "atChunk": 11,
+          "pending": true,
+          "remaining": 70
+        },
+        {
+          "atChunk": 12,
+          "pending": true,
+          "remaining": 83
+        },
+        {
+          "atChunk": 13,
+          "pending": true,
+          "remaining": 96
+        },
+        {
+          "atChunk": 14,
+          "pending": true,
+          "remaining": 109
+        },
+        {
+          "atChunk": 15,
+          "message": "Message { headers: [Header { name: StrBytes { bytes: b\"type-extra\" }, value: String(StrBytes { bytes: b\"preserved\" }) }, Header { name: StrBytes { bytes: b\":event-type\" }, value: String(StrBytes { bytes: b\"contentBlockDelta\" }) }], payload: b\"{\\\"contentBlockIndex\\\":0,\\\"delta\\\":{\\\"text\\\":\\\"hi\\\"}}\" }",
+          "remaining": 0
+        },
+        {
+          "atChunk": 15,
+          "pending": true,
+          "remaining": 0
+        },
+        {
+          "eof": true,
+          "remaining": 0
+        }
+      ]
+    },
+    {
+      "kind": "codec",
+      "name": "exact-limit",
+      "inputHex": "00000056000000321aa6b4820a747970652d65787472610700097072657365727665640b3a6576656e742d7479706507000c6d65737361676553746172747b22726f6c65223a22617373697374616e74227d4eb42ab4",
+      "chunkSizes": [
+        86
+      ],
+      "limit": 86,
+      "sourceError": false,
+      "trailer": false,
+      "expected": [
+        {
+          "atChunk": 0,
+          "message": "Message { headers: [Header { name: StrBytes { bytes: b\"type-extra\" }, value: String(StrBytes { bytes: b\"preserved\" }) }, Header { name: StrBytes { bytes: b\":event-type\" }, value: String(StrBytes { bytes: b\"messageStart\" }) }], payload: b\"{\\\"role\\\":\\\"assistant\\\"}\" }",
+          "remaining": 0
+        },
+        {
+          "atChunk": 0,
+          "pending": true,
+          "remaining": 0
+        },
+        {
+          "eof": true,
+          "remaining": 0
+        }
+      ]
+    },
+    {
+      "kind": "codec",
+      "name": "too-large",
+      "inputHex": "00000056000000321aa6b4820a747970652d65787472610700097072657365727665640b3a6576656e742d7479706507000c6d65737361676553746172747b22726f6c65223a22617373697374616e74227d4eb42ab4",
+      "chunkSizes": [
+        86
+      ],
+      "limit": 85,
+      "sourceError": false,
+      "trailer": false,
+      "expected": [
+        {
+          "atChunk": 0,
+          "error": {
+            "causes": [
+              "eventstream frame size 86 exceeds buffer limit 85"
+            ],
+            "kinds": [
+              "frameTooLarge"
+            ],
+            "debug": "FrameTooLarge { actual: 86, limit: 85 }"
+          },
+          "remaining": 86
+        }
+      ]
+    },
+    {
+      "kind": "codec",
+      "name": "oversize-prelude",
+      "inputHex": "000186a0000000007b9bbc8e",
+      "chunkSizes": [
+        12
+      ],
+      "limit": 64,
+      "sourceError": false,
+      "trailer": false,
+      "expected": [
+        {
+          "atChunk": 0,
+          "error": {
+            "causes": [
+              "eventstream frame size 100000 exceeds buffer limit 64"
+            ],
+            "kinds": [
+              "frameTooLarge"
+            ],
+            "debug": "FrameTooLarge { actual: 100000, limit: 64 }"
+          },
+          "remaining": 12
+        }
+      ]
+    },
+    {
+      "kind": "aws-transform",
+      "name": "valid",
+      "inputHex": "00000056000000321aa6b4820a747970652d65787472610700097072657365727665640b3a6576656e742d7479706507000c6d65737361676553746172747b22726f6c65223a22617373697374616e74227d4eb42ab40000007400000037d1cd3c690a747970652d65787472610700097072657365727665640b3a6576656e742d74797065070011636f6e74656e74426c6f636b44656c74617b22636f6e74656e74426c6f636b496e646578223a302c2264656c7461223a7b2274657874223a226869227d7d36b4f427",
+      "chunkSizes": [
+        202
+      ],
+      "limit": 4096,
+      "sourceError": false,
+      "trailer": false,
+      "expected": {
+        "frames": [
+          {
+            "dataHex": "646174613a207b226465636f646564223a224d6573736167655374617274284d65737361676553746172744576656e74207b20726f6c653a20417373697374616e74207d29227d0a0a646174613a207b226465636f646564223a22436f6e74656e74426c6f636b44656c746128436f6e74656e74426c6f636b44656c74614576656e74207b2064656c74613a20536f6d652854657874285c2268695c2229292c20636f6e74656e745f626c6f636b5f696e6465783a2030207d29227d0a0a",
+            "sourcePolls": 1
+          },
+          {
+            "eof": true,
+            "sourcePolls": 2
+          }
+        ],
+        "observations": [
+          {
+            "decoded": "MessageStart(MessageStartEvent { role: Assistant })"
+          },
+          {
+            "decoded": "ContentBlockDelta(ContentBlockDeltaEvent { delta: Some(Text(\"hi\")), content_block_index: 0 })"
+          }
+        ],
+        "sourceDrops": 1
+      }
+    },
+    {
+      "kind": "aws-transform",
+      "name": "crc",
+      "inputHex": "00000056000000321aa6b4820a747970652d65787472610700097072657365727665640b3a6576656e742d7479706507000c6d65737361676553746172747b22726f6c65223a22617373697374616e74227d4eb42ab40000007400000037d1cd3c690a747970652d65787472610700097072657365727665640b3a6576656e742d74797065070011636f6e74656e74426c6f636b44656c74617b22636f6e74656e74426c6f636b496e646578223a302c2264656c7461223a7b2274657874223a226869227d7d36b4f42700000056000000321aa6b4820a747970652d65787472610700097072657365727665640b3a6576656e742d7479706507000c6d65737361676553746172747b22726f6c65223a22617373697374616e74227d4eb42ab5",
+      "chunkSizes": [
+        288
+      ],
+      "limit": 4096,
+      "sourceError": false,
+      "trailer": false,
+      "expected": {
+        "frames": [
+          {
+            "error": {
+              "causes": [
+                "message checksum 0x4EB42AB5 didn't match expected checksum 0x4EB42AB4",
+                "message checksum 0x4EB42AB5 didn't match expected checksum 0x4EB42AB4",
+                "message checksum 0x4EB42AB5 didn't match expected checksum 0x4EB42AB4",
+                "message checksum 0x4EB42AB5 didn't match expected checksum 0x4EB42AB4"
+              ],
+              "kinds": [
+                "awsProtocol"
+              ],
+              "debug": "Error { inner: Error { inner: Protocol(Error { kind: MessageChecksumMismatch(1320430260, 1320430261) }) } }"
+            },
+            "sourcePolls": 1
+          }
+        ],
+        "observations": [
+          {
+            "decoded": "MessageStart(MessageStartEvent { role: Assistant })"
+          },
+          {
+            "decoded": "ContentBlockDelta(ContentBlockDeltaEvent { delta: Some(Text(\"hi\")), content_block_index: 0 })"
+          }
+        ],
+        "sourceDrops": 1
+      }
+    },
+    {
+      "kind": "aws-transform",
+      "name": "unknown",
+      "inputHex": "000000590000002c62f91e300a747970652d65787472610700097072657365727665640b3a6576656e742d747970650700066675747572657b22706f6c696379223a226e657665722d706c61696e2d74657874227d54c9fbdc",
+      "chunkSizes": [
+        89
+      ],
+      "limit": 4096,
+      "sourceError": false,
+      "trailer": false,
+      "expected": {
+        "frames": [
+          {
+            "eof": true,
+            "sourcePolls": 2
+          }
+        ],
+        "observations": [
+          {
+            "error": "unexpected event type: future"
+          }
+        ],
+        "sourceDrops": 1
+      }
+    },
+    {
+      "kind": "aws-transform",
+      "name": "exception",
+      "inputHex": "0000006a00000046291f54200d3a6d6573736167652d74797065070009657863657074696f6e0f3a657863657074696f6e2d747970650700196d6f64656c53747265616d4572726f72457863657074696f6e7b226d657373616765223a2264656e696564227d1714d1eb",
+      "chunkSizes": [
+        106
+      ],
+      "limit": 4096,
+      "sourceError": false,
+      "trailer": false,
+      "expected": {
+        "frames": [
+          {
+            "eof": true,
+            "sourcePolls": 2
+          }
+        ],
+        "observations": [
+          {
+            "error": "modelStreamErrorException: {\"message\":\"denied\"}"
+          }
+        ],
+        "sourceDrops": 1
+      }
+    },
+    {
+      "kind": "aws-transform",
+      "name": "truncated",
+      "inputHex": "00000056000000321aa6b4820a747970652d65787472610700097072657365727665640b3a6576656e742d7479706507000c6d65737361676553746172747b22726f6c65223a22617373697374616e74227d4eb42ab40000007400000037d1cd3c690a747970652d65787472610700097072657365727665640b3a6576656e742d74797065070011636f6e74656e74426c6f636b44656c74617b22636f6e74656e74426c6f636b496e646578223a302c2264656c7461223a7b2274657874223a226869227d7d36",
+      "chunkSizes": [
+        199
+      ],
+      "limit": 4096,
+      "sourceError": false,
+      "trailer": false,
+      "expected": {
+        "frames": [
+          {
+            "dataHex": "646174613a207b226465636f646564223a224d6573736167655374617274284d65737361676553746172744576656e74207b20726f6c653a20417373697374616e74207d29227d0a0a",
+            "sourcePolls": 1
+          },
+          {
+            "error": {
+              "causes": [
+                "bytes remaining on stream",
+                "bytes remaining on stream",
+                "bytes remaining on stream",
+                "bytes remaining on stream"
+              ],
+              "kinds": [
+                "awsIo",
+                "io:Other"
+              ],
+              "debug": "Error { inner: Error { inner: Io(Custom { kind: Other, error: \"bytes remaining on stream\" }) } }"
+            },
+            "sourcePolls": 2
+          }
+        ],
+        "observations": [
+          {
+            "decoded": "MessageStart(MessageStartEvent { role: Assistant })"
+          }
+        ],
+        "sourceDrops": 1
+      }
+    },
+    {
+      "kind": "aws-transform",
+      "name": "split",
+      "inputHex": "00000056000000321aa6b4820a747970652d65787472610700097072657365727665640b3a6576656e742d7479706507000c6d65737361676553746172747b22726f6c65223a22617373697374616e74227d4eb42ab40000007400000037d1cd3c690a747970652d65787472610700097072657365727665640b3a6576656e742d74797065070011636f6e74656e74426c6f636b44656c74617b22636f6e74656e74426c6f636b496e646578223a302c2264656c7461223a7b2274657874223a226869227d7d36b4f427",
+      "chunkSizes": [
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        2
+      ],
+      "limit": 4096,
+      "sourceError": false,
+      "trailer": false,
+      "expected": {
+        "frames": [
+          {
+            "dataHex": "646174613a207b226465636f646564223a224d6573736167655374617274284d65737361676553746172744576656e74207b20726f6c653a20417373697374616e74207d29227d0a0a",
+            "sourcePolls": 18
+          },
+          {
+            "dataHex": "646174613a207b226465636f646564223a22436f6e74656e74426c6f636b44656c746128436f6e74656e74426c6f636b44656c74614576656e74207b2064656c74613a20536f6d652854657874285c2268695c2229292c20636f6e74656e745f626c6f636b5f696e6465783a2030207d29227d0a0a",
+            "sourcePolls": 41
+          },
+          {
+            "eof": true,
+            "sourcePolls": 42
+          }
+        ],
+        "observations": [
+          {
+            "decoded": "MessageStart(MessageStartEvent { role: Assistant })"
+          },
+          {
+            "decoded": "ContentBlockDelta(ContentBlockDeltaEvent { delta: Some(Text(\"hi\")), content_block_index: 0 })"
+          }
+        ],
+        "sourceDrops": 1
+      }
+    },
+    {
+      "kind": "aws-transform",
+      "name": "source-error",
+      "inputHex": "00000056000000321aa6b4820a747970652d65787472610700097072657365727665640b3a6576656e742d7479706507000c6d65737361676553746172747b22726f6c65223a22617373697374616e74227d4eb42ab40000007400000037d1cd3c690a747970652d65787472610700097072657365727665640b3a6576656e742d74797065070011636f6e74656e74426c6f636b44656c74617b22636f6e74656e74426c6f636b496e646578223a302c2264656c7461223a7b2274657874223a226869227d7d36b4f427",
+      "chunkSizes": [
+        202
+      ],
+      "limit": 4096,
+      "sourceError": true,
+      "trailer": false,
+      "expected": {
+        "frames": [
+          {
+            "dataHex": "646174613a207b226465636f646564223a224d6573736167655374617274284d65737361676553746172744576656e74207b20726f6c653a20417373697374616e74207d29227d0a0a646174613a207b226465636f646564223a22436f6e74656e74426c6f636b44656c746128436f6e74656e74426c6f636b44656c74614576656e74207b2064656c74613a20536f6d652854657874285c2268695c2229292c20636f6e74656e745f626c6f636b5f696e6465783a2030207d29227d0a0a",
+            "sourcePolls": 1
+          },
+          {
+            "error": {
+              "causes": [
+                "fixture source reset",
+                "fixture source reset",
+                "fixture source reset"
+              ],
+              "kinds": [
+                "io:ConnectionReset"
+              ],
+              "debug": "Error { inner: Error { inner: Custom { kind: ConnectionReset, error: \"fixture source reset\" } } }"
+            },
+            "sourcePolls": 2
+          }
+        ],
+        "observations": [
+          {
+            "decoded": "MessageStart(MessageStartEvent { role: Assistant })"
+          },
+          {
+            "decoded": "ContentBlockDelta(ContentBlockDeltaEvent { delta: Some(Text(\"hi\")), content_block_index: 0 })"
+          }
+        ],
+        "sourceDrops": 1
+      }
+    },
+    {
+      "kind": "aws-transform",
+      "name": "trailers",
+      "inputHex": "00000056000000321aa6b4820a747970652d65787472610700097072657365727665640b3a6576656e742d7479706507000c6d65737361676553746172747b22726f6c65223a22617373697374616e74227d4eb42ab40000007400000037d1cd3c690a747970652d65787472610700097072657365727665640b3a6576656e742d74797065070011636f6e74656e74426c6f636b44656c74617b22636f6e74656e74426c6f636b496e646578223a302c2264656c7461223a7b2274657874223a226869227d7d36b4f427",
+      "chunkSizes": [
+        202
+      ],
+      "limit": 4096,
+      "sourceError": false,
+      "trailer": true,
+      "expected": {
+        "frames": [
+          {
+            "dataHex": "646174613a207b226465636f646564223a224d6573736167655374617274284d65737361676553746172744576656e74207b20726f6c653a20417373697374616e74207d29227d0a0a646174613a207b226465636f646564223a22436f6e74656e74426c6f636b44656c746128436f6e74656e74426c6f636b44656c74614576656e74207b2064656c74613a20536f6d652854657874285c2268695c2229292c20636f6e74656e745f626c6f636b5f696e6465783a2030207d29227d0a0a",
+            "sourcePolls": 1
+          },
+          {
+            "trailers": "{\"x-end\": \"kept\"}",
+            "sourcePolls": 3
+          },
+          {
+            "eof": true,
+            "sourcePolls": 3
+          }
+        ],
+        "observations": [
+          {
+            "decoded": "MessageStart(MessageStartEvent { role: Assistant })"
+          },
+          {
+            "decoded": "ContentBlockDelta(ContentBlockDeltaEvent { delta: Some(Text(\"hi\")), content_block_index: 0 })"
+          }
+        ],
+        "sourceDrops": 1
+      }
+    },
+    {
+      "kind": "aws-multi",
+      "name": "valid",
+      "inputHex": "00000056000000321aa6b4820a747970652d65787472610700097072657365727665640b3a6576656e742d7479706507000c6d65737361676553746172747b22726f6c65223a22617373697374616e74227d4eb42ab40000007400000037d1cd3c690a747970652d65787472610700097072657365727665640b3a6576656e742d74797065070011636f6e74656e74426c6f636b44656c74617b22636f6e74656e74426c6f636b496e646578223a302c2264656c7461223a7b2274657874223a226869227d7d36b4f427",
+      "chunkSizes": [
+        202
+      ],
+      "limit": 4096,
+      "sourceError": false,
+      "trailer": false,
+      "expected": {
+        "frames": [
+          {
+            "dataHex": "6576656e743a206177732e66697273740a646174613a207b227061796c6f6164486578223a2237623232373236663663363532323361323236313733373336393733373436313665373432323764227d0a0a6576656e743a206177732e7365636f6e640a646174613a207b227061796c6f6164486578223a2237623232373236663663363532323361323236313733373336393733373436313665373432323764227d0a0a6576656e743a206177732e66697273740a646174613a207b227061796c6f6164486578223a22376232323633366636653734363536653734343236633666363336623439366536343635373832323361333032633232363436353663373436313232336137623232373436353738373432323361323236383639323237643764227d0a0a6576656e743a206177732e7365636f6e640a646174613a207b227061796c6f6164486578223a22376232323633366636653734363536653734343236633666363336623439366536343635373832323361333032633232363436353663373436313232336137623232373436353738373432323361323236383639323237643764227d0a0a",
+            "sourcePolls": 1
+          },
+          {
+            "eof": true,
+            "sourcePolls": 2
+          }
+        ],
+        "observations": [
+          {
+            "payloadHex": "7b22726f6c65223a22617373697374616e74227d"
+          },
+          {
+            "payloadHex": "7b22636f6e74656e74426c6f636b496e646578223a302c2264656c7461223a7b2274657874223a226869227d7d"
+          }
+        ],
+        "sourceDrops": 1
+      }
+    },
+    {
+      "kind": "aws-multi",
+      "name": "crc",
+      "inputHex": "00000056000000321aa6b4820a747970652d65787472610700097072657365727665640b3a6576656e742d7479706507000c6d65737361676553746172747b22726f6c65223a22617373697374616e74227d4eb42ab40000007400000037d1cd3c690a747970652d65787472610700097072657365727665640b3a6576656e742d74797065070011636f6e74656e74426c6f636b44656c74617b22636f6e74656e74426c6f636b496e646578223a302c2264656c7461223a7b2274657874223a226869227d7d36b4f42700000056000000321aa6b4820a747970652d65787472610700097072657365727665640b3a6576656e742d7479706507000c6d65737361676553746172747b22726f6c65223a22617373697374616e74227d4eb42ab5",
+      "chunkSizes": [
+        288
+      ],
+      "limit": 4096,
+      "sourceError": false,
+      "trailer": false,
+      "expected": {
+        "frames": [
+          {
+            "error": {
+              "causes": [
+                "message checksum 0x4EB42AB5 didn't match expected checksum 0x4EB42AB4",
+                "message checksum 0x4EB42AB5 didn't match expected checksum 0x4EB42AB4",
+                "message checksum 0x4EB42AB5 didn't match expected checksum 0x4EB42AB4",
+                "message checksum 0x4EB42AB5 didn't match expected checksum 0x4EB42AB4"
+              ],
+              "kinds": [
+                "awsProtocol"
+              ],
+              "debug": "Error { inner: Error { inner: Protocol(Error { kind: MessageChecksumMismatch(1320430260, 1320430261) }) } }"
+            },
+            "sourcePolls": 1
+          }
+        ],
+        "observations": [
+          {
+            "payloadHex": "7b22726f6c65223a22617373697374616e74227d"
+          },
+          {
+            "payloadHex": "7b22636f6e74656e74426c6f636b496e646578223a302c2264656c7461223a7b2274657874223a226869227d7d"
+          }
+        ],
+        "sourceDrops": 1
+      }
+    },
+    {
+      "kind": "aws-multi",
+      "name": "unknown",
+      "inputHex": "000000590000002c62f91e300a747970652d65787472610700097072657365727665640b3a6576656e742d747970650700066675747572657b22706f6c696379223a226e657665722d706c61696e2d74657874227d54c9fbdc",
+      "chunkSizes": [
+        89
+      ],
+      "limit": 4096,
+      "sourceError": false,
+      "trailer": false,
+      "expected": {
+        "frames": [
+          {
+            "dataHex": "6576656e743a206177732e66697273740a646174613a207b227061796c6f6164486578223a2237623232373036663663363936333739323233613232366536353736363537323264373036633631363936653264373436353738373432323764227d0a0a6576656e743a206177732e7365636f6e640a646174613a207b227061796c6f6164486578223a2237623232373036663663363936333739323233613232366536353736363537323264373036633631363936653264373436353738373432323764227d0a0a",
+            "sourcePolls": 1
+          },
+          {
+            "eof": true,
+            "sourcePolls": 2
+          }
+        ],
+        "observations": [
+          {
+            "payloadHex": "7b22706f6c696379223a226e657665722d706c61696e2d74657874227d"
+          }
+        ],
+        "sourceDrops": 1
+      }
+    },
+    {
+      "kind": "aws-multi",
+      "name": "exception",
+      "inputHex": "0000006a00000046291f54200d3a6d6573736167652d74797065070009657863657074696f6e0f3a657863657074696f6e2d747970650700196d6f64656c53747265616d4572726f72457863657074696f6e7b226d657373616765223a2264656e696564227d1714d1eb",
+      "chunkSizes": [
+        106
+      ],
+      "limit": 4096,
+      "sourceError": false,
+      "trailer": false,
+      "expected": {
+        "frames": [
+          {
+            "dataHex": "6576656e743a206177732e66697273740a646174613a207b227061796c6f6164486578223a2237623232366436353733373336313637363532323361323236343635366536393635363432323764227d0a0a6576656e743a206177732e7365636f6e640a646174613a207b227061796c6f6164486578223a2237623232366436353733373336313637363532323361323236343635366536393635363432323764227d0a0a",
+            "sourcePolls": 1
+          },
+          {
+            "eof": true,
+            "sourcePolls": 2
+          }
+        ],
+        "observations": [
+          {
+            "payloadHex": "7b226d657373616765223a2264656e696564227d"
+          }
+        ],
+        "sourceDrops": 1
+      }
+    },
+    {
+      "kind": "aws-multi",
+      "name": "truncated",
+      "inputHex": "00000056000000321aa6b4820a747970652d65787472610700097072657365727665640b3a6576656e742d7479706507000c6d65737361676553746172747b22726f6c65223a22617373697374616e74227d4eb42ab40000007400000037d1cd3c690a747970652d65787472610700097072657365727665640b3a6576656e742d74797065070011636f6e74656e74426c6f636b44656c74617b22636f6e74656e74426c6f636b496e646578223a302c2264656c7461223a7b2274657874223a226869227d7d36",
+      "chunkSizes": [
+        199
+      ],
+      "limit": 4096,
+      "sourceError": false,
+      "trailer": false,
+      "expected": {
+        "frames": [
+          {
+            "dataHex": "6576656e743a206177732e66697273740a646174613a207b227061796c6f6164486578223a2237623232373236663663363532323361323236313733373336393733373436313665373432323764227d0a0a6576656e743a206177732e7365636f6e640a646174613a207b227061796c6f6164486578223a2237623232373236663663363532323361323236313733373336393733373436313665373432323764227d0a0a",
+            "sourcePolls": 1
+          },
+          {
+            "error": {
+              "causes": [
+                "bytes remaining on stream",
+                "bytes remaining on stream",
+                "bytes remaining on stream",
+                "bytes remaining on stream"
+              ],
+              "kinds": [
+                "awsIo",
+                "io:Other"
+              ],
+              "debug": "Error { inner: Error { inner: Io(Custom { kind: Other, error: \"bytes remaining on stream\" }) } }"
+            },
+            "sourcePolls": 2
+          }
+        ],
+        "observations": [
+          {
+            "payloadHex": "7b22726f6c65223a22617373697374616e74227d"
+          }
+        ],
+        "sourceDrops": 1
+      }
+    },
+    {
+      "kind": "aws-multi",
+      "name": "split",
+      "inputHex": "00000056000000321aa6b4820a747970652d65787472610700097072657365727665640b3a6576656e742d7479706507000c6d65737361676553746172747b22726f6c65223a22617373697374616e74227d4eb42ab40000007400000037d1cd3c690a747970652d65787472610700097072657365727665640b3a6576656e742d74797065070011636f6e74656e74426c6f636b44656c74617b22636f6e74656e74426c6f636b496e646578223a302c2264656c7461223a7b2274657874223a226869227d7d36b4f427",
+      "chunkSizes": [
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        2
+      ],
+      "limit": 4096,
+      "sourceError": false,
+      "trailer": false,
+      "expected": {
+        "frames": [
+          {
+            "dataHex": "6576656e743a206177732e66697273740a646174613a207b227061796c6f6164486578223a2237623232373236663663363532323361323236313733373336393733373436313665373432323764227d0a0a6576656e743a206177732e7365636f6e640a646174613a207b227061796c6f6164486578223a2237623232373236663663363532323361323236313733373336393733373436313665373432323764227d0a0a",
+            "sourcePolls": 18
+          },
+          {
+            "dataHex": "6576656e743a206177732e66697273740a646174613a207b227061796c6f6164486578223a22376232323633366636653734363536653734343236633666363336623439366536343635373832323361333032633232363436353663373436313232336137623232373436353738373432323361323236383639323237643764227d0a0a6576656e743a206177732e7365636f6e640a646174613a207b227061796c6f6164486578223a22376232323633366636653734363536653734343236633666363336623439366536343635373832323361333032633232363436353663373436313232336137623232373436353738373432323361323236383639323237643764227d0a0a",
+            "sourcePolls": 41
+          },
+          {
+            "eof": true,
+            "sourcePolls": 42
+          }
+        ],
+        "observations": [
+          {
+            "payloadHex": "7b22726f6c65223a22617373697374616e74227d"
+          },
+          {
+            "payloadHex": "7b22636f6e74656e74426c6f636b496e646578223a302c2264656c7461223a7b2274657874223a226869227d7d"
+          }
+        ],
+        "sourceDrops": 1
+      }
+    },
+    {
+      "kind": "aws-multi",
+      "name": "source-error",
+      "inputHex": "00000056000000321aa6b4820a747970652d65787472610700097072657365727665640b3a6576656e742d7479706507000c6d65737361676553746172747b22726f6c65223a22617373697374616e74227d4eb42ab40000007400000037d1cd3c690a747970652d65787472610700097072657365727665640b3a6576656e742d74797065070011636f6e74656e74426c6f636b44656c74617b22636f6e74656e74426c6f636b496e646578223a302c2264656c7461223a7b2274657874223a226869227d7d36b4f427",
+      "chunkSizes": [
+        202
+      ],
+      "limit": 4096,
+      "sourceError": true,
+      "trailer": false,
+      "expected": {
+        "frames": [
+          {
+            "dataHex": "6576656e743a206177732e66697273740a646174613a207b227061796c6f6164486578223a2237623232373236663663363532323361323236313733373336393733373436313665373432323764227d0a0a6576656e743a206177732e7365636f6e640a646174613a207b227061796c6f6164486578223a2237623232373236663663363532323361323236313733373336393733373436313665373432323764227d0a0a6576656e743a206177732e66697273740a646174613a207b227061796c6f6164486578223a22376232323633366636653734363536653734343236633666363336623439366536343635373832323361333032633232363436353663373436313232336137623232373436353738373432323361323236383639323237643764227d0a0a6576656e743a206177732e7365636f6e640a646174613a207b227061796c6f6164486578223a22376232323633366636653734363536653734343236633666363336623439366536343635373832323361333032633232363436353663373436313232336137623232373436353738373432323361323236383639323237643764227d0a0a",
+            "sourcePolls": 1
+          },
+          {
+            "error": {
+              "causes": [
+                "fixture source reset",
+                "fixture source reset",
+                "fixture source reset"
+              ],
+              "kinds": [
+                "io:ConnectionReset"
+              ],
+              "debug": "Error { inner: Error { inner: Custom { kind: ConnectionReset, error: \"fixture source reset\" } } }"
+            },
+            "sourcePolls": 2
+          }
+        ],
+        "observations": [
+          {
+            "payloadHex": "7b22726f6c65223a22617373697374616e74227d"
+          },
+          {
+            "payloadHex": "7b22636f6e74656e74426c6f636b496e646578223a302c2264656c7461223a7b2274657874223a226869227d7d"
+          }
+        ],
+        "sourceDrops": 1
+      }
+    },
+    {
+      "kind": "aws-multi",
+      "name": "trailers",
+      "inputHex": "00000056000000321aa6b4820a747970652d65787472610700097072657365727665640b3a6576656e742d7479706507000c6d65737361676553746172747b22726f6c65223a22617373697374616e74227d4eb42ab40000007400000037d1cd3c690a747970652d65787472610700097072657365727665640b3a6576656e742d74797065070011636f6e74656e74426c6f636b44656c74617b22636f6e74656e74426c6f636b496e646578223a302c2264656c7461223a7b2274657874223a226869227d7d36b4f427",
+      "chunkSizes": [
+        202
+      ],
+      "limit": 4096,
+      "sourceError": false,
+      "trailer": true,
+      "expected": {
+        "frames": [
+          {
+            "dataHex": "6576656e743a206177732e66697273740a646174613a207b227061796c6f6164486578223a2237623232373236663663363532323361323236313733373336393733373436313665373432323764227d0a0a6576656e743a206177732e7365636f6e640a646174613a207b227061796c6f6164486578223a2237623232373236663663363532323361323236313733373336393733373436313665373432323764227d0a0a6576656e743a206177732e66697273740a646174613a207b227061796c6f6164486578223a22376232323633366636653734363536653734343236633666363336623439366536343635373832323361333032633232363436353663373436313232336137623232373436353738373432323361323236383639323237643764227d0a0a6576656e743a206177732e7365636f6e640a646174613a207b227061796c6f6164486578223a22376232323633366636653734363536653734343236633666363336623439366536343635373832323361333032633232363436353663373436313232336137623232373436353738373432323361323236383639323237643764227d0a0a",
+            "sourcePolls": 1
+          },
+          {
+            "trailers": "{\"x-end\": \"kept\"}",
+            "sourcePolls": 3
+          },
+          {
+            "eof": true,
+            "sourcePolls": 3
+          }
+        ],
+        "observations": [
+          {
+            "payloadHex": "7b22726f6c65223a22617373697374616e74227d"
+          },
+          {
+            "payloadHex": "7b22636f6e74656e74426c6f636b496e646578223a302c2264656c7461223a7b2274657874223a226869227d7d"
+          }
+        ],
+        "sourceDrops": 1
+      }
+    },
+    {
+      "kind": "aws-inspect",
+      "name": "valid",
+      "inputHex": "00000056000000321aa6b4820a747970652d65787472610700097072657365727665640b3a6576656e742d7479706507000c6d65737361676553746172747b22726f6c65223a22617373697374616e74227d4eb42ab40000007400000037d1cd3c690a747970652d65787472610700097072657365727665640b3a6576656e742d74797065070011636f6e74656e74426c6f636b44656c74617b22636f6e74656e74426c6f636b496e646578223a302c2264656c7461223a7b2274657874223a226869227d7d36b4f427",
+      "chunkSizes": [
+        202
+      ],
+      "limit": 4096,
+      "sourceError": false,
+      "trailer": false,
+      "expected": {
+        "frames": [
+          {
+            "dataHex": "00000056000000321aa6b4820a747970652d65787472610700097072657365727665640b3a6576656e742d7479706507000c6d65737361676553746172747b22726f6c65223a22617373697374616e74227d4eb42ab40000007400000037d1cd3c690a747970652d65787472610700097072657365727665640b3a6576656e742d74797065070011636f6e74656e74426c6f636b44656c74617b22636f6e74656e74426c6f636b496e646578223a302c2264656c7461223a7b2274657874223a226869227d7d36b4f427",
+            "sourcePolls": 1
+          },
+          {
+            "eof": true,
+            "sourcePolls": 2
+          }
+        ],
+        "observations": [
+          {
+            "payloadHex": "7b22726f6c65223a22617373697374616e74227d"
+          },
+          {
+            "payloadHex": "7b22636f6e74656e74426c6f636b496e646578223a302c2264656c7461223a7b2274657874223a226869227d7d"
+          }
+        ],
+        "sourceDrops": 1
+      }
+    },
+    {
+      "kind": "aws-inspect",
+      "name": "crc",
+      "inputHex": "00000056000000321aa6b4820a747970652d65787472610700097072657365727665640b3a6576656e742d7479706507000c6d65737361676553746172747b22726f6c65223a22617373697374616e74227d4eb42ab40000007400000037d1cd3c690a747970652d65787472610700097072657365727665640b3a6576656e742d74797065070011636f6e74656e74426c6f636b44656c74617b22636f6e74656e74426c6f636b496e646578223a302c2264656c7461223a7b2274657874223a226869227d7d36b4f42700000056000000321aa6b4820a747970652d65787472610700097072657365727665640b3a6576656e742d7479706507000c6d65737361676553746172747b22726f6c65223a22617373697374616e74227d4eb42ab5",
+      "chunkSizes": [
+        288
+      ],
+      "limit": 4096,
+      "sourceError": false,
+      "trailer": false,
+      "expected": {
+        "frames": [
+          {
+            "dataHex": "00000056000000321aa6b4820a747970652d65787472610700097072657365727665640b3a6576656e742d7479706507000c6d65737361676553746172747b22726f6c65223a22617373697374616e74227d4eb42ab40000007400000037d1cd3c690a747970652d65787472610700097072657365727665640b3a6576656e742d74797065070011636f6e74656e74426c6f636b44656c74617b22636f6e74656e74426c6f636b496e646578223a302c2264656c7461223a7b2274657874223a226869227d7d36b4f42700000056000000321aa6b4820a747970652d65787472610700097072657365727665640b3a6576656e742d7479706507000c6d65737361676553746172747b22726f6c65223a22617373697374616e74227d4eb42ab5",
+            "sourcePolls": 1
+          },
+          {
+            "eof": true,
+            "sourcePolls": 2
+          }
+        ],
+        "observations": [
+          {
+            "payloadHex": "7b22726f6c65223a22617373697374616e74227d"
+          },
+          {
+            "payloadHex": "7b22636f6e74656e74426c6f636b496e646578223a302c2264656c7461223a7b2274657874223a226869227d7d"
+          }
+        ],
+        "sourceDrops": 1
+      }
+    },
+    {
+      "kind": "aws-inspect",
+      "name": "unknown",
+      "inputHex": "000000590000002c62f91e300a747970652d65787472610700097072657365727665640b3a6576656e742d747970650700066675747572657b22706f6c696379223a226e657665722d706c61696e2d74657874227d54c9fbdc",
+      "chunkSizes": [
+        89
+      ],
+      "limit": 4096,
+      "sourceError": false,
+      "trailer": false,
+      "expected": {
+        "frames": [
+          {
+            "dataHex": "000000590000002c62f91e300a747970652d65787472610700097072657365727665640b3a6576656e742d747970650700066675747572657b22706f6c696379223a226e657665722d706c61696e2d74657874227d54c9fbdc",
+            "sourcePolls": 1
+          },
+          {
+            "eof": true,
+            "sourcePolls": 2
+          }
+        ],
+        "observations": [
+          {
+            "payloadHex": "7b22706f6c696379223a226e657665722d706c61696e2d74657874227d"
+          }
+        ],
+        "sourceDrops": 1
+      }
+    },
+    {
+      "kind": "aws-inspect",
+      "name": "exception",
+      "inputHex": "0000006a00000046291f54200d3a6d6573736167652d74797065070009657863657074696f6e0f3a657863657074696f6e2d747970650700196d6f64656c53747265616d4572726f72457863657074696f6e7b226d657373616765223a2264656e696564227d1714d1eb",
+      "chunkSizes": [
+        106
+      ],
+      "limit": 4096,
+      "sourceError": false,
+      "trailer": false,
+      "expected": {
+        "frames": [
+          {
+            "dataHex": "0000006a00000046291f54200d3a6d6573736167652d74797065070009657863657074696f6e0f3a657863657074696f6e2d747970650700196d6f64656c53747265616d4572726f72457863657074696f6e7b226d657373616765223a2264656e696564227d1714d1eb",
+            "sourcePolls": 1
+          },
+          {
+            "eof": true,
+            "sourcePolls": 2
+          }
+        ],
+        "observations": [
+          {
+            "payloadHex": "7b226d657373616765223a2264656e696564227d"
+          }
+        ],
+        "sourceDrops": 1
+      }
+    },
+    {
+      "kind": "aws-inspect",
+      "name": "truncated",
+      "inputHex": "00000056000000321aa6b4820a747970652d65787472610700097072657365727665640b3a6576656e742d7479706507000c6d65737361676553746172747b22726f6c65223a22617373697374616e74227d4eb42ab40000007400000037d1cd3c690a747970652d65787472610700097072657365727665640b3a6576656e742d74797065070011636f6e74656e74426c6f636b44656c74617b22636f6e74656e74426c6f636b496e646578223a302c2264656c7461223a7b2274657874223a226869227d7d36",
+      "chunkSizes": [
+        199
+      ],
+      "limit": 4096,
+      "sourceError": false,
+      "trailer": false,
+      "expected": {
+        "frames": [
+          {
+            "dataHex": "00000056000000321aa6b4820a747970652d65787472610700097072657365727665640b3a6576656e742d7479706507000c6d65737361676553746172747b22726f6c65223a22617373697374616e74227d4eb42ab40000007400000037d1cd3c690a747970652d65787472610700097072657365727665640b3a6576656e742d74797065070011636f6e74656e74426c6f636b44656c74617b22636f6e74656e74426c6f636b496e646578223a302c2264656c7461223a7b2274657874223a226869227d7d36",
+            "sourcePolls": 1
+          },
+          {
+            "eof": true,
+            "sourcePolls": 2
+          }
+        ],
+        "observations": [
+          {
+            "payloadHex": "7b22726f6c65223a22617373697374616e74227d"
+          }
+        ],
+        "sourceDrops": 1
+      }
+    },
+    {
+      "kind": "aws-inspect",
+      "name": "split",
+      "inputHex": "00000056000000321aa6b4820a747970652d65787472610700097072657365727665640b3a6576656e742d7479706507000c6d65737361676553746172747b22726f6c65223a22617373697374616e74227d4eb42ab40000007400000037d1cd3c690a747970652d65787472610700097072657365727665640b3a6576656e742d74797065070011636f6e74656e74426c6f636b44656c74617b22636f6e74656e74426c6f636b496e646578223a302c2264656c7461223a7b2274657874223a226869227d7d36b4f427",
+      "chunkSizes": [
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        2
+      ],
+      "limit": 4096,
+      "sourceError": false,
+      "trailer": false,
+      "expected": {
+        "frames": [
+          {
+            "dataHex": "0000005600",
+            "sourcePolls": 1
+          },
+          {
+            "dataHex": "0000321aa6",
+            "sourcePolls": 2
+          },
+          {
+            "dataHex": "b4820a7479",
+            "sourcePolls": 3
+          },
+          {
+            "dataHex": "70652d6578",
+            "sourcePolls": 4
+          },
+          {
+            "dataHex": "7472610700",
+            "sourcePolls": 5
+          },
+          {
+            "dataHex": "0970726573",
+            "sourcePolls": 6
+          },
+          {
+            "dataHex": "6572766564",
+            "sourcePolls": 7
+          },
+          {
+            "dataHex": "0b3a657665",
+            "sourcePolls": 8
+          },
+          {
+            "dataHex": "6e742d7479",
+            "sourcePolls": 9
+          },
+          {
+            "dataHex": "706507000c",
+            "sourcePolls": 10
+          },
+          {
+            "dataHex": "6d65737361",
+            "sourcePolls": 11
+          },
+          {
+            "dataHex": "6765537461",
+            "sourcePolls": 12
+          },
+          {
+            "dataHex": "72747b2272",
+            "sourcePolls": 13
+          },
+          {
+            "dataHex": "6f6c65223a",
+            "sourcePolls": 14
+          },
+          {
+            "dataHex": "2261737369",
+            "sourcePolls": 15
+          },
+          {
+            "dataHex": "7374616e74",
+            "sourcePolls": 16
+          },
+          {
+            "dataHex": "227d4eb42a",
+            "sourcePolls": 17
+          },
+          {
+            "dataHex": "b400000074",
+            "sourcePolls": 18
+          },
+          {
+            "dataHex": "00000037d1",
+            "sourcePolls": 19
+          },
+          {
+            "dataHex": "cd3c690a74",
+            "sourcePolls": 20
+          },
+          {
+            "dataHex": "7970652d65",
+            "sourcePolls": 21
+          },
+          {
+            "dataHex": "7874726107",
+            "sourcePolls": 22
+          },
+          {
+            "dataHex": "0009707265",
+            "sourcePolls": 23
+          },
+          {
+            "dataHex": "7365727665",
+            "sourcePolls": 24
+          },
+          {
+            "dataHex": "640b3a6576",
+            "sourcePolls": 25
+          },
+          {
+            "dataHex": "656e742d74",
+            "sourcePolls": 26
+          },
+          {
+            "dataHex": "7970650700",
+            "sourcePolls": 27
+          },
+          {
+            "dataHex": "11636f6e74",
+            "sourcePolls": 28
+          },
+          {
+            "dataHex": "656e74426c",
+            "sourcePolls": 29
+          },
+          {
+            "dataHex": "6f636b4465",
+            "sourcePolls": 30
+          },
+          {
+            "dataHex": "6c74617b22",
+            "sourcePolls": 31
+          },
+          {
+            "dataHex": "636f6e7465",
+            "sourcePolls": 32
+          },
+          {
+            "dataHex": "6e74426c6f",
+            "sourcePolls": 33
+          },
+          {
+            "dataHex": "636b496e64",
+            "sourcePolls": 34
+          },
+          {
+            "dataHex": "6578223a30",
+            "sourcePolls": 35
+          },
+          {
+            "dataHex": "2c2264656c",
+            "sourcePolls": 36
+          },
+          {
+            "dataHex": "7461223a7b",
+            "sourcePolls": 37
+          },
+          {
+            "dataHex": "2274657874",
+            "sourcePolls": 38
+          },
+          {
+            "dataHex": "223a226869",
+            "sourcePolls": 39
+          },
+          {
+            "dataHex": "227d7d36b4",
+            "sourcePolls": 40
+          },
+          {
+            "dataHex": "f427",
+            "sourcePolls": 41
+          },
+          {
+            "eof": true,
+            "sourcePolls": 42
+          }
+        ],
+        "observations": [
+          {
+            "payloadHex": "7b22726f6c65223a22617373697374616e74227d"
+          },
+          {
+            "payloadHex": "7b22636f6e74656e74426c6f636b496e646578223a302c2264656c7461223a7b2274657874223a226869227d7d"
+          }
+        ],
+        "sourceDrops": 1
+      }
+    },
+    {
+      "kind": "aws-inspect",
+      "name": "source-error",
+      "inputHex": "00000056000000321aa6b4820a747970652d65787472610700097072657365727665640b3a6576656e742d7479706507000c6d65737361676553746172747b22726f6c65223a22617373697374616e74227d4eb42ab40000007400000037d1cd3c690a747970652d65787472610700097072657365727665640b3a6576656e742d74797065070011636f6e74656e74426c6f636b44656c74617b22636f6e74656e74426c6f636b496e646578223a302c2264656c7461223a7b2274657874223a226869227d7d36b4f427",
+      "chunkSizes": [
+        202
+      ],
+      "limit": 4096,
+      "sourceError": true,
+      "trailer": false,
+      "expected": {
+        "frames": [
+          {
+            "dataHex": "00000056000000321aa6b4820a747970652d65787472610700097072657365727665640b3a6576656e742d7479706507000c6d65737361676553746172747b22726f6c65223a22617373697374616e74227d4eb42ab40000007400000037d1cd3c690a747970652d65787472610700097072657365727665640b3a6576656e742d74797065070011636f6e74656e74426c6f636b44656c74617b22636f6e74656e74426c6f636b496e646578223a302c2264656c7461223a7b2274657874223a226869227d7d36b4f427",
+            "sourcePolls": 1
+          },
+          {
+            "error": {
+              "causes": [
+                "fixture source reset",
+                "fixture source reset",
+                "fixture source reset",
+                "fixture source reset"
+              ],
+              "kinds": [
+                "io:ConnectionReset"
+              ],
+              "debug": "Error { inner: Error { inner: Error { inner: Custom { kind: ConnectionReset, error: \"fixture source reset\" } } } }"
+            },
+            "sourcePolls": 2
+          }
+        ],
+        "observations": [
+          {
+            "payloadHex": "7b22726f6c65223a22617373697374616e74227d"
+          },
+          {
+            "payloadHex": "7b22636f6e74656e74426c6f636b496e646578223a302c2264656c7461223a7b2274657874223a226869227d7d"
+          }
+        ],
+        "sourceDrops": 1
+      }
+    },
+    {
+      "kind": "aws-inspect",
+      "name": "trailers",
+      "inputHex": "00000056000000321aa6b4820a747970652d65787472610700097072657365727665640b3a6576656e742d7479706507000c6d65737361676553746172747b22726f6c65223a22617373697374616e74227d4eb42ab40000007400000037d1cd3c690a747970652d65787472610700097072657365727665640b3a6576656e742d74797065070011636f6e74656e74426c6f636b44656c74617b22636f6e74656e74426c6f636b496e646578223a302c2264656c7461223a7b2274657874223a226869227d7d36b4f427",
+      "chunkSizes": [
+        202
+      ],
+      "limit": 4096,
+      "sourceError": false,
+      "trailer": true,
+      "expected": {
+        "frames": [
+          {
+            "dataHex": "00000056000000321aa6b4820a747970652d65787472610700097072657365727665640b3a6576656e742d7479706507000c6d65737361676553746172747b22726f6c65223a22617373697374616e74227d4eb42ab40000007400000037d1cd3c690a747970652d65787472610700097072657365727665640b3a6576656e742d74797065070011636f6e74656e74426c6f636b44656c74617b22636f6e74656e74426c6f636b496e646578223a302c2264656c7461223a7b2274657874223a226869227d7d36b4f427",
+            "sourcePolls": 1
+          },
+          {
+            "eof": true,
+            "sourcePolls": 3
+          }
+        ],
+        "observations": [
+          {
+            "payloadHex": "7b22726f6c65223a22617373697374616e74227d"
+          },
+          {
+            "payloadHex": "7b22636f6e74656e74426c6f636b496e646578223a302c2264656c7461223a7b2274657874223a226869227d7d"
+          }
+        ],
+        "sourceDrops": 1
+      }
+    },
+    {
+      "kind": "validated-aws",
+      "name": "valid",
+      "inputHex": "00000056000000321aa6b4820a747970652d65787472610700097072657365727665640b3a6576656e742d7479706507000c6d65737361676553746172747b22726f6c65223a22617373697374616e74227d4eb42ab40000007400000037d1cd3c690a747970652d65787472610700097072657365727665640b3a6576656e742d74797065070011636f6e74656e74426c6f636b44656c74617b22636f6e74656e74426c6f636b496e646578223a302c2264656c7461223a7b2274657874223a226869227d7d36b4f427",
+      "chunkSizes": [
+        202
+      ],
+      "limit": 4096,
+      "sourceError": false,
+      "trailer": false,
+      "expected": {
+        "frames": [
+          {
+            "dataHex": "00000056000000321aa6b4820a747970652d65787472610700097072657365727665640b3a6576656e742d7479706507000c6d65737361676553746172747b22726f6c65223a22617373697374616e74227d4eb42ab4",
+            "sourcePolls": 1
+          },
+          {
+            "dataHex": "0000007400000037d1cd3c690a747970652d65787472610700097072657365727665640b3a6576656e742d74797065070011636f6e74656e74426c6f636b44656c74617b22636f6e74656e74426c6f636b496e646578223a302c2264656c7461223a7b2274657874223a226869227d7d36b4f427",
+            "sourcePolls": 1
+          },
+          {
+            "eof": true,
+            "sourcePolls": 2
+          }
+        ],
+        "observations": [],
+        "sourceDrops": 1
+      }
+    },
+    {
+      "kind": "validated-aws",
+      "name": "crc",
+      "inputHex": "00000056000000321aa6b4820a747970652d65787472610700097072657365727665640b3a6576656e742d7479706507000c6d65737361676553746172747b22726f6c65223a22617373697374616e74227d4eb42ab40000007400000037d1cd3c690a747970652d65787472610700097072657365727665640b3a6576656e742d74797065070011636f6e74656e74426c6f636b44656c74617b22636f6e74656e74426c6f636b496e646578223a302c2264656c7461223a7b2274657874223a226869227d7d36b4f42700000056000000321aa6b4820a747970652d65787472610700097072657365727665640b3a6576656e742d7479706507000c6d65737361676553746172747b22726f6c65223a22617373697374616e74227d4eb42ab5",
+      "chunkSizes": [
+        288
+      ],
+      "limit": 4096,
+      "sourceError": false,
+      "trailer": false,
+      "expected": {
+        "frames": [
+          {
+            "dataHex": "00000056000000321aa6b4820a747970652d65787472610700097072657365727665640b3a6576656e742d7479706507000c6d65737361676553746172747b22726f6c65223a22617373697374616e74227d4eb42ab4",
+            "sourcePolls": 1
+          },
+          {
+            "dataHex": "0000007400000037d1cd3c690a747970652d65787472610700097072657365727665640b3a6576656e742d74797065070011636f6e74656e74426c6f636b44656c74617b22636f6e74656e74426c6f636b496e646578223a302c2264656c7461223a7b2274657874223a226869227d7d36b4f427",
+            "sourcePolls": 1
+          },
+          {
+            "error": {
+              "causes": [
+                "message checksum 0x4EB42AB5 didn't match expected checksum 0x4EB42AB4",
+                "message checksum 0x4EB42AB5 didn't match expected checksum 0x4EB42AB4",
+                "message checksum 0x4EB42AB5 didn't match expected checksum 0x4EB42AB4",
+                "message checksum 0x4EB42AB5 didn't match expected checksum 0x4EB42AB4"
+              ],
+              "kinds": [
+                "io:Other"
+              ],
+              "debug": "Error { inner: Error { inner: Custom { kind: Other, error: Protocol(Error { kind: MessageChecksumMismatch(1320430260, 1320430261) }) } } }"
+            },
+            "sourcePolls": 1
+          }
+        ],
+        "observations": [],
+        "sourceDrops": 1
+      }
+    },
+    {
+      "kind": "validated-aws",
+      "name": "unknown",
+      "inputHex": "000000590000002c62f91e300a747970652d65787472610700097072657365727665640b3a6576656e742d747970650700066675747572657b22706f6c696379223a226e657665722d706c61696e2d74657874227d54c9fbdc",
+      "chunkSizes": [
+        89
+      ],
+      "limit": 4096,
+      "sourceError": false,
+      "trailer": false,
+      "expected": {
+        "frames": [
+          {
+            "dataHex": "000000590000002c62f91e300a747970652d65787472610700097072657365727665640b3a6576656e742d747970650700066675747572657b22706f6c696379223a226e657665722d706c61696e2d74657874227d54c9fbdc",
+            "sourcePolls": 1
+          },
+          {
+            "eof": true,
+            "sourcePolls": 2
+          }
+        ],
+        "observations": [],
+        "sourceDrops": 1
+      }
+    },
+    {
+      "kind": "validated-aws",
+      "name": "exception",
+      "inputHex": "0000006a00000046291f54200d3a6d6573736167652d74797065070009657863657074696f6e0f3a657863657074696f6e2d747970650700196d6f64656c53747265616d4572726f72457863657074696f6e7b226d657373616765223a2264656e696564227d1714d1eb",
+      "chunkSizes": [
+        106
+      ],
+      "limit": 4096,
+      "sourceError": false,
+      "trailer": false,
+      "expected": {
+        "frames": [
+          {
+            "dataHex": "0000006a00000046291f54200d3a6d6573736167652d74797065070009657863657074696f6e0f3a657863657074696f6e2d747970650700196d6f64656c53747265616d4572726f72457863657074696f6e7b226d657373616765223a2264656e696564227d1714d1eb",
+            "sourcePolls": 1
+          },
+          {
+            "eof": true,
+            "sourcePolls": 2
+          }
+        ],
+        "observations": [],
+        "sourceDrops": 1
+      }
+    },
+    {
+      "kind": "validated-aws",
+      "name": "truncated",
+      "inputHex": "00000056000000321aa6b4820a747970652d65787472610700097072657365727665640b3a6576656e742d7479706507000c6d65737361676553746172747b22726f6c65223a22617373697374616e74227d4eb42ab40000007400000037d1cd3c690a747970652d65787472610700097072657365727665640b3a6576656e742d74797065070011636f6e74656e74426c6f636b44656c74617b22636f6e74656e74426c6f636b496e646578223a302c2264656c7461223a7b2274657874223a226869227d7d36",
+      "chunkSizes": [
+        199
+      ],
+      "limit": 4096,
+      "sourceError": false,
+      "trailer": false,
+      "expected": {
+        "frames": [
+          {
+            "dataHex": "00000056000000321aa6b4820a747970652d65787472610700097072657365727665640b3a6576656e742d7479706507000c6d65737361676553746172747b22726f6c65223a22617373697374616e74227d4eb42ab4",
+            "sourcePolls": 1
+          },
+          {
+            "error": {
+              "causes": [
+                "bytes remaining on stream",
+                "bytes remaining on stream",
+                "bytes remaining on stream",
+                "bytes remaining on stream"
+              ],
+              "kinds": [
+                "io:Other",
+                "io:Other"
+              ],
+              "debug": "Error { inner: Error { inner: Custom { kind: Other, error: Io(Custom { kind: Other, error: \"bytes remaining on stream\" }) } } }"
+            },
+            "sourcePolls": 2
+          }
+        ],
+        "observations": [],
+        "sourceDrops": 1
+      }
+    },
+    {
+      "kind": "validated-aws",
+      "name": "split",
+      "inputHex": "00000056000000321aa6b4820a747970652d65787472610700097072657365727665640b3a6576656e742d7479706507000c6d65737361676553746172747b22726f6c65223a22617373697374616e74227d4eb42ab40000007400000037d1cd3c690a747970652d65787472610700097072657365727665640b3a6576656e742d74797065070011636f6e74656e74426c6f636b44656c74617b22636f6e74656e74426c6f636b496e646578223a302c2264656c7461223a7b2274657874223a226869227d7d36b4f427",
+      "chunkSizes": [
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        2
+      ],
+      "limit": 4096,
+      "sourceError": false,
+      "trailer": false,
+      "expected": {
+        "frames": [
+          {
+            "dataHex": "00000056000000321aa6b4820a747970652d65787472610700097072657365727665640b3a6576656e742d7479706507000c6d65737361676553746172747b22726f6c65223a22617373697374616e74227d4eb42ab4",
+            "sourcePolls": 18
+          },
+          {
+            "dataHex": "0000007400000037d1cd3c690a747970652d65787472610700097072657365727665640b3a6576656e742d74797065070011636f6e74656e74426c6f636b44656c74617b22636f6e74656e74426c6f636b496e646578223a302c2264656c7461223a7b2274657874223a226869227d7d36b4f427",
+            "sourcePolls": 41
+          },
+          {
+            "eof": true,
+            "sourcePolls": 42
+          }
+        ],
+        "observations": [],
+        "sourceDrops": 1
+      }
+    },
+    {
+      "kind": "validated-aws",
+      "name": "source-error",
+      "inputHex": "00000056000000321aa6b4820a747970652d65787472610700097072657365727665640b3a6576656e742d7479706507000c6d65737361676553746172747b22726f6c65223a22617373697374616e74227d4eb42ab40000007400000037d1cd3c690a747970652d65787472610700097072657365727665640b3a6576656e742d74797065070011636f6e74656e74426c6f636b44656c74617b22636f6e74656e74426c6f636b496e646578223a302c2264656c7461223a7b2274657874223a226869227d7d36b4f427",
+      "chunkSizes": [
+        202
+      ],
+      "limit": 4096,
+      "sourceError": true,
+      "trailer": false,
+      "expected": {
+        "frames": [
+          {
+            "dataHex": "00000056000000321aa6b4820a747970652d65787472610700097072657365727665640b3a6576656e742d7479706507000c6d65737361676553746172747b22726f6c65223a22617373697374616e74227d4eb42ab4",
+            "sourcePolls": 1
+          },
+          {
+            "dataHex": "0000007400000037d1cd3c690a747970652d65787472610700097072657365727665640b3a6576656e742d74797065070011636f6e74656e74426c6f636b44656c74617b22636f6e74656e74426c6f636b496e646578223a302c2264656c7461223a7b2274657874223a226869227d7d36b4f427",
+            "sourcePolls": 1
+          },
+          {
+            "error": {
+              "causes": [
+                "fixture source reset",
+                "fixture source reset",
+                "fixture source reset",
+                "fixture source reset",
+                "fixture source reset"
+              ],
+              "kinds": [
+                "io:Other",
+                "io:Other",
+                "io:ConnectionReset"
+              ],
+              "debug": "Error { inner: Error { inner: Custom { kind: Other, error: Io(Custom { kind: Other, error: Error { inner: Custom { kind: ConnectionReset, error: \"fixture source reset\" } } }) } } }"
+            },
+            "sourcePolls": 2
+          }
+        ],
+        "observations": [],
+        "sourceDrops": 1
+      }
+    },
+    {
+      "kind": "validated-aws",
+      "name": "trailers",
+      "inputHex": "00000056000000321aa6b4820a747970652d65787472610700097072657365727665640b3a6576656e742d7479706507000c6d65737361676553746172747b22726f6c65223a22617373697374616e74227d4eb42ab40000007400000037d1cd3c690a747970652d65787472610700097072657365727665640b3a6576656e742d74797065070011636f6e74656e74426c6f636b44656c74617b22636f6e74656e74426c6f636b496e646578223a302c2264656c7461223a7b2274657874223a226869227d7d36b4f427",
+      "chunkSizes": [
+        202
+      ],
+      "limit": 4096,
+      "sourceError": false,
+      "trailer": true,
+      "expected": {
+        "frames": [
+          {
+            "dataHex": "00000056000000321aa6b4820a747970652d65787472610700097072657365727665640b3a6576656e742d7479706507000c6d65737361676553746172747b22726f6c65223a22617373697374616e74227d4eb42ab4",
+            "sourcePolls": 1
+          },
+          {
+            "dataHex": "0000007400000037d1cd3c690a747970652d65787472610700097072657365727665640b3a6576656e742d74797065070011636f6e74656e74426c6f636b44656c74617b22636f6e74656e74426c6f636b496e646578223a302c2264656c7461223a7b2274657874223a226869227d7d36b4f427",
+            "sourcePolls": 1
+          },
+          {
+            "eof": true,
+            "sourcePolls": 3
+          }
+        ],
+        "observations": [],
+        "sourceDrops": 1
+      }
+    },
+    {
+      "kind": "sse-transform",
+      "name": "valid",
+      "inputHex": "3a2070696e670a0a6576656e743a2064656c74612e666f6f0a69643a20370a72657472793a20330a646174613a207b2278223a312c2274657874223a226869227d0a0a646174613a205b444f4e455d0a0a",
+      "chunkSizes": [
+        81
+      ],
+      "limit": 4096,
+      "sourceError": false,
+      "trailer": false,
+      "expected": {
+        "frames": [
+          {
+            "dataHex": "646174613a207b2278223a312c2274657874223a226869227d0a0a646174613a205b444f4e455d0a0a",
+            "sourcePolls": 1
+          },
+          {
+            "eof": true,
+            "sourcePolls": 2
+          }
+        ],
+        "observations": [
+          {
+            "x": 1,
+            "text": "hi"
+          }
+        ],
+        "sourceDrops": 1
+      }
+    },
+    {
+      "kind": "sse-transform",
+      "name": "split",
+      "inputHex": "3a2070696e670a0a6576656e743a2064656c74612e666f6f0a69643a20370a72657472793a20330a646174613a207b2278223a312c2274657874223a226869227d0a0a646174613a205b444f4e455d0a0a",
+      "chunkSizes": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "limit": 4096,
+      "sourceError": false,
+      "trailer": false,
+      "expected": {
+        "frames": [
+          {
+            "dataHex": "646174613a207b2278223a312c2274657874223a226869227d0a0a",
+            "sourcePolls": 67
+          },
+          {
+            "dataHex": "646174613a205b444f4e455d0a0a",
+            "sourcePolls": 81
+          },
+          {
+            "eof": true,
+            "sourcePolls": 82
+          }
+        ],
+        "observations": [
+          {
+            "x": 1,
+            "text": "hi"
+          }
+        ],
+        "sourceDrops": 1
+      }
+    },
+    {
+      "kind": "sse-transform",
+      "name": "malformed",
+      "inputHex": "646174613a207b0a0a",
+      "chunkSizes": [
+        9
+      ],
+      "limit": 4096,
+      "sourceError": false,
+      "trailer": false,
+      "expected": {
+        "frames": [
+          {
+            "eof": true,
+            "sourcePolls": 2
+          }
+        ],
+        "observations": [
+          {
+            "error": "EOF while parsing an object at line 1 column 1"
+          }
+        ],
+        "sourceDrops": 1
+      }
+    },
+    {
+      "kind": "sse-transform",
+      "name": "partial",
+      "inputHex": "646174613a207b2274657874223a226869227d",
+      "chunkSizes": [
+        19
+      ],
+      "limit": 4096,
+      "sourceError": false,
+      "trailer": false,
+      "expected": {
+        "frames": [
+          {
+            "error": {
+              "causes": [
+                "unexpected end of stream",
+                "unexpected end of stream",
+                "unexpected end of stream"
+              ],
+              "kinds": [],
+              "debug": "Error { inner: Error { inner: UnexpectedEof } }"
+            },
+            "sourcePolls": 2
+          }
+        ],
+        "observations": [],
+        "sourceDrops": 1
+      }
+    },
+    {
+      "kind": "sse-transform",
+      "name": "source-error",
+      "inputHex": "3a2070696e670a0a6576656e743a2064656c74612e666f6f0a69643a20370a72657472793a20330a646174613a207b2278223a312c2274657874223a226869227d0a0a646174613a205b444f4e455d0a0a",
+      "chunkSizes": [
+        81
+      ],
+      "limit": 4096,
+      "sourceError": true,
+      "trailer": false,
+      "expected": {
+        "frames": [
+          {
+            "dataHex": "646174613a207b2278223a312c2274657874223a226869227d0a0a646174613a205b444f4e455d0a0a",
+            "sourcePolls": 1
+          },
+          {
+            "error": {
+              "causes": [
+                "fixture source reset",
+                "fixture source reset",
+                "fixture source reset"
+              ],
+              "kinds": [
+                "io:ConnectionReset"
+              ],
+              "debug": "Error { inner: Error { inner: Custom { kind: ConnectionReset, error: \"fixture source reset\" } } }"
+            },
+            "sourcePolls": 2
+          }
+        ],
+        "observations": [
+          {
+            "x": 1,
+            "text": "hi"
+          }
+        ],
+        "sourceDrops": 1
+      }
+    },
+    {
+      "kind": "sse-transform",
+      "name": "trailers",
+      "inputHex": "3a2070696e670a0a6576656e743a2064656c74612e666f6f0a69643a20370a72657472793a20330a646174613a207b2278223a312c2274657874223a226869227d0a0a646174613a205b444f4e455d0a0a",
+      "chunkSizes": [
+        81
+      ],
+      "limit": 4096,
+      "sourceError": false,
+      "trailer": true,
+      "expected": {
+        "frames": [
+          {
+            "dataHex": "646174613a207b2278223a312c2274657874223a226869227d0a0a646174613a205b444f4e455d0a0a",
+            "sourcePolls": 1
+          },
+          {
+            "trailers": "{\"x-end\": \"kept\"}",
+            "sourcePolls": 3
+          },
+          {
+            "eof": true,
+            "sourcePolls": 3
+          }
+        ],
+        "observations": [
+          {
+            "x": 1,
+            "text": "hi"
+          }
+        ],
+        "sourceDrops": 1
+      }
+    },
+    {
+      "kind": "sse-multi",
+      "name": "valid",
+      "inputHex": "3a2070696e670a0a6576656e743a2064656c74612e666f6f0a69643a20370a72657472793a20330a646174613a207b2278223a312c2274657874223a226869227d0a0a646174613a205b444f4e455d0a0a",
+      "chunkSizes": [
+        81
+      ],
+      "limit": 4096,
+      "sourceError": false,
+      "trailer": false,
+      "expected": {
+        "frames": [
+          {
+            "dataHex": "6576656e743a206d61707065642e64656c74610a646174613a207b2278223a312c2274657874223a226869227d0a0a6576656e743a206d61707065642e64656c74610a646174613a207b22646f6e65223a747275657d0a0a",
+            "sourcePolls": 1
+          },
+          {
+            "eof": true,
+            "sourcePolls": 2
+          }
+        ],
+        "observations": [
+          {
+            "x": 1,
+            "text": "hi"
+          },
+          {
+            "done": true
+          }
+        ],
+        "sourceDrops": 1
+      }
+    },
+    {
+      "kind": "sse-multi",
+      "name": "split",
+      "inputHex": "3a2070696e670a0a6576656e743a2064656c74612e666f6f0a69643a20370a72657472793a20330a646174613a207b2278223a312c2274657874223a226869227d0a0a646174613a205b444f4e455d0a0a",
+      "chunkSizes": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "limit": 4096,
+      "sourceError": false,
+      "trailer": false,
+      "expected": {
+        "frames": [
+          {
+            "dataHex": "6576656e743a206d61707065642e64656c74610a646174613a207b2278223a312c2274657874223a226869227d0a0a",
+            "sourcePolls": 67
+          },
+          {
+            "dataHex": "6576656e743a206d61707065642e64656c74610a646174613a207b22646f6e65223a747275657d0a0a",
+            "sourcePolls": 81
+          },
+          {
+            "eof": true,
+            "sourcePolls": 82
+          }
+        ],
+        "observations": [
+          {
+            "x": 1,
+            "text": "hi"
+          },
+          {
+            "done": true
+          }
+        ],
+        "sourceDrops": 1
+      }
+    },
+    {
+      "kind": "sse-multi",
+      "name": "malformed",
+      "inputHex": "646174613a207b0a0a",
+      "chunkSizes": [
+        9
+      ],
+      "limit": 4096,
+      "sourceError": false,
+      "trailer": false,
+      "expected": {
+        "frames": [
+          {
+            "dataHex": "6576656e743a206d61707065642e64656c74610a646174613a207b226572726f72223a22454f46207768696c652070617273696e6720616e206f626a656374206174206c696e65203120636f6c756d6e2031227d0a0a",
+            "sourcePolls": 1
+          },
+          {
+            "eof": true,
+            "sourcePolls": 2
+          }
+        ],
+        "observations": [
+          {
+            "error": "EOF while parsing an object at line 1 column 1"
+          }
+        ],
+        "sourceDrops": 1
+      }
+    },
+    {
+      "kind": "sse-multi",
+      "name": "partial",
+      "inputHex": "646174613a207b2274657874223a226869227d",
+      "chunkSizes": [
+        19
+      ],
+      "limit": 4096,
+      "sourceError": false,
+      "trailer": false,
+      "expected": {
+        "frames": [
+          {
+            "error": {
+              "causes": [
+                "unexpected end of stream",
+                "unexpected end of stream",
+                "unexpected end of stream"
+              ],
+              "kinds": [],
+              "debug": "Error { inner: Error { inner: UnexpectedEof } }"
+            },
+            "sourcePolls": 2
+          }
+        ],
+        "observations": [],
+        "sourceDrops": 1
+      }
+    },
+    {
+      "kind": "sse-multi",
+      "name": "source-error",
+      "inputHex": "3a2070696e670a0a6576656e743a2064656c74612e666f6f0a69643a20370a72657472793a20330a646174613a207b2278223a312c2274657874223a226869227d0a0a646174613a205b444f4e455d0a0a",
+      "chunkSizes": [
+        81
+      ],
+      "limit": 4096,
+      "sourceError": true,
+      "trailer": false,
+      "expected": {
+        "frames": [
+          {
+            "dataHex": "6576656e743a206d61707065642e64656c74610a646174613a207b2278223a312c2274657874223a226869227d0a0a6576656e743a206d61707065642e64656c74610a646174613a207b22646f6e65223a747275657d0a0a",
+            "sourcePolls": 1
+          },
+          {
+            "error": {
+              "causes": [
+                "fixture source reset",
+                "fixture source reset",
+                "fixture source reset"
+              ],
+              "kinds": [
+                "io:ConnectionReset"
+              ],
+              "debug": "Error { inner: Error { inner: Custom { kind: ConnectionReset, error: \"fixture source reset\" } } }"
+            },
+            "sourcePolls": 2
+          }
+        ],
+        "observations": [
+          {
+            "x": 1,
+            "text": "hi"
+          },
+          {
+            "done": true
+          }
+        ],
+        "sourceDrops": 1
+      }
+    },
+    {
+      "kind": "sse-multi",
+      "name": "trailers",
+      "inputHex": "3a2070696e670a0a6576656e743a2064656c74612e666f6f0a69643a20370a72657472793a20330a646174613a207b2278223a312c2274657874223a226869227d0a0a646174613a205b444f4e455d0a0a",
+      "chunkSizes": [
+        81
+      ],
+      "limit": 4096,
+      "sourceError": false,
+      "trailer": true,
+      "expected": {
+        "frames": [
+          {
+            "dataHex": "6576656e743a206d61707065642e64656c74610a646174613a207b2278223a312c2274657874223a226869227d0a0a6576656e743a206d61707065642e64656c74610a646174613a207b22646f6e65223a747275657d0a0a",
+            "sourcePolls": 1
+          },
+          {
+            "trailers": "{\"x-end\": \"kept\"}",
+            "sourcePolls": 3
+          },
+          {
+            "eof": true,
+            "sourcePolls": 3
+          }
+        ],
+        "observations": [
+          {
+            "x": 1,
+            "text": "hi"
+          },
+          {
+            "done": true
+          }
+        ],
+        "sourceDrops": 1
+      }
+    },
+    {
+      "kind": "sse-pass",
+      "name": "valid",
+      "inputHex": "3a2070696e670a0a6576656e743a2064656c74612e666f6f0a69643a20370a72657472793a20330a646174613a207b2278223a312c2274657874223a226869227d0a0a646174613a205b444f4e455d0a0a",
+      "chunkSizes": [
+        81
+      ],
+      "limit": 4096,
+      "sourceError": false,
+      "trailer": false,
+      "expected": {
+        "frames": [
+          {
+            "dataHex": "3a2070696e670a0a6576656e743a2064656c74612e666f6f0a69643a20370a72657472793a20330a646174613a207b2278223a312c2274657874223a226869227d0a0a646174613a205b444f4e455d0a0a",
+            "sourcePolls": 1
+          },
+          {
+            "eof": true,
+            "sourcePolls": 2
+          }
+        ],
+        "observations": [
+          "Some(Ok(Object {\"x\": Number(1), \"text\": String(\"hi\")}))",
+          "None"
+        ],
+        "sourceDrops": 1
+      }
+    },
+    {
+      "kind": "sse-pass",
+      "name": "split",
+      "inputHex": "3a2070696e670a0a6576656e743a2064656c74612e666f6f0a69643a20370a72657472793a20330a646174613a207b2278223a312c2274657874223a226869227d0a0a646174613a205b444f4e455d0a0a",
+      "chunkSizes": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "limit": 4096,
+      "sourceError": false,
+      "trailer": false,
+      "expected": {
+        "frames": [
+          {
+            "dataHex": "3a",
+            "sourcePolls": 1
+          },
+          {
+            "dataHex": "20",
+            "sourcePolls": 2
+          },
+          {
+            "dataHex": "70",
+            "sourcePolls": 3
+          },
+          {
+            "dataHex": "69",
+            "sourcePolls": 4
+          },
+          {
+            "dataHex": "6e",
+            "sourcePolls": 5
+          },
+          {
+            "dataHex": "67",
+            "sourcePolls": 6
+          },
+          {
+            "dataHex": "0a",
+            "sourcePolls": 7
+          },
+          {
+            "dataHex": "0a",
+            "sourcePolls": 8
+          },
+          {
+            "dataHex": "65",
+            "sourcePolls": 9
+          },
+          {
+            "dataHex": "76",
+            "sourcePolls": 10
+          },
+          {
+            "dataHex": "65",
+            "sourcePolls": 11
+          },
+          {
+            "dataHex": "6e",
+            "sourcePolls": 12
+          },
+          {
+            "dataHex": "74",
+            "sourcePolls": 13
+          },
+          {
+            "dataHex": "3a",
+            "sourcePolls": 14
+          },
+          {
+            "dataHex": "20",
+            "sourcePolls": 15
+          },
+          {
+            "dataHex": "64",
+            "sourcePolls": 16
+          },
+          {
+            "dataHex": "65",
+            "sourcePolls": 17
+          },
+          {
+            "dataHex": "6c",
+            "sourcePolls": 18
+          },
+          {
+            "dataHex": "74",
+            "sourcePolls": 19
+          },
+          {
+            "dataHex": "61",
+            "sourcePolls": 20
+          },
+          {
+            "dataHex": "2e",
+            "sourcePolls": 21
+          },
+          {
+            "dataHex": "66",
+            "sourcePolls": 22
+          },
+          {
+            "dataHex": "6f",
+            "sourcePolls": 23
+          },
+          {
+            "dataHex": "6f",
+            "sourcePolls": 24
+          },
+          {
+            "dataHex": "0a",
+            "sourcePolls": 25
+          },
+          {
+            "dataHex": "69",
+            "sourcePolls": 26
+          },
+          {
+            "dataHex": "64",
+            "sourcePolls": 27
+          },
+          {
+            "dataHex": "3a",
+            "sourcePolls": 28
+          },
+          {
+            "dataHex": "20",
+            "sourcePolls": 29
+          },
+          {
+            "dataHex": "37",
+            "sourcePolls": 30
+          },
+          {
+            "dataHex": "0a",
+            "sourcePolls": 31
+          },
+          {
+            "dataHex": "72",
+            "sourcePolls": 32
+          },
+          {
+            "dataHex": "65",
+            "sourcePolls": 33
+          },
+          {
+            "dataHex": "74",
+            "sourcePolls": 34
+          },
+          {
+            "dataHex": "72",
+            "sourcePolls": 35
+          },
+          {
+            "dataHex": "79",
+            "sourcePolls": 36
+          },
+          {
+            "dataHex": "3a",
+            "sourcePolls": 37
+          },
+          {
+            "dataHex": "20",
+            "sourcePolls": 38
+          },
+          {
+            "dataHex": "33",
+            "sourcePolls": 39
+          },
+          {
+            "dataHex": "0a",
+            "sourcePolls": 40
+          },
+          {
+            "dataHex": "64",
+            "sourcePolls": 41
+          },
+          {
+            "dataHex": "61",
+            "sourcePolls": 42
+          },
+          {
+            "dataHex": "74",
+            "sourcePolls": 43
+          },
+          {
+            "dataHex": "61",
+            "sourcePolls": 44
+          },
+          {
+            "dataHex": "3a",
+            "sourcePolls": 45
+          },
+          {
+            "dataHex": "20",
+            "sourcePolls": 46
+          },
+          {
+            "dataHex": "7b",
+            "sourcePolls": 47
+          },
+          {
+            "dataHex": "22",
+            "sourcePolls": 48
+          },
+          {
+            "dataHex": "78",
+            "sourcePolls": 49
+          },
+          {
+            "dataHex": "22",
+            "sourcePolls": 50
+          },
+          {
+            "dataHex": "3a",
+            "sourcePolls": 51
+          },
+          {
+            "dataHex": "31",
+            "sourcePolls": 52
+          },
+          {
+            "dataHex": "2c",
+            "sourcePolls": 53
+          },
+          {
+            "dataHex": "22",
+            "sourcePolls": 54
+          },
+          {
+            "dataHex": "74",
+            "sourcePolls": 55
+          },
+          {
+            "dataHex": "65",
+            "sourcePolls": 56
+          },
+          {
+            "dataHex": "78",
+            "sourcePolls": 57
+          },
+          {
+            "dataHex": "74",
+            "sourcePolls": 58
+          },
+          {
+            "dataHex": "22",
+            "sourcePolls": 59
+          },
+          {
+            "dataHex": "3a",
+            "sourcePolls": 60
+          },
+          {
+            "dataHex": "22",
+            "sourcePolls": 61
+          },
+          {
+            "dataHex": "68",
+            "sourcePolls": 62
+          },
+          {
+            "dataHex": "69",
+            "sourcePolls": 63
+          },
+          {
+            "dataHex": "22",
+            "sourcePolls": 64
+          },
+          {
+            "dataHex": "7d",
+            "sourcePolls": 65
+          },
+          {
+            "dataHex": "0a",
+            "sourcePolls": 66
+          },
+          {
+            "dataHex": "0a",
+            "sourcePolls": 67
+          },
+          {
+            "dataHex": "64",
+            "sourcePolls": 68
+          },
+          {
+            "dataHex": "61",
+            "sourcePolls": 69
+          },
+          {
+            "dataHex": "74",
+            "sourcePolls": 70
+          },
+          {
+            "dataHex": "61",
+            "sourcePolls": 71
+          },
+          {
+            "dataHex": "3a",
+            "sourcePolls": 72
+          },
+          {
+            "dataHex": "20",
+            "sourcePolls": 73
+          },
+          {
+            "dataHex": "5b",
+            "sourcePolls": 74
+          },
+          {
+            "dataHex": "44",
+            "sourcePolls": 75
+          },
+          {
+            "dataHex": "4f",
+            "sourcePolls": 76
+          },
+          {
+            "dataHex": "4e",
+            "sourcePolls": 77
+          },
+          {
+            "dataHex": "45",
+            "sourcePolls": 78
+          },
+          {
+            "dataHex": "5d",
+            "sourcePolls": 79
+          },
+          {
+            "dataHex": "0a",
+            "sourcePolls": 80
+          },
+          {
+            "dataHex": "0a",
+            "sourcePolls": 81
+          },
+          {
+            "eof": true,
+            "sourcePolls": 82
+          }
+        ],
+        "observations": [
+          "Some(Ok(Object {\"x\": Number(1), \"text\": String(\"hi\")}))",
+          "None"
+        ],
+        "sourceDrops": 1
+      }
+    },
+    {
+      "kind": "sse-pass",
+      "name": "malformed",
+      "inputHex": "646174613a207b0a0a",
+      "chunkSizes": [
+        9
+      ],
+      "limit": 4096,
+      "sourceError": false,
+      "trailer": false,
+      "expected": {
+        "frames": [
+          {
+            "dataHex": "646174613a207b0a0a",
+            "sourcePolls": 1
+          },
+          {
+            "eof": true,
+            "sourcePolls": 2
+          }
+        ],
+        "observations": [
+          "Some(Err(EOF while parsing an object at line 1 column 1))"
+        ],
+        "sourceDrops": 1
+      }
+    },
+    {
+      "kind": "sse-pass",
+      "name": "partial",
+      "inputHex": "646174613a207b2274657874223a226869227d",
+      "chunkSizes": [
+        19
+      ],
+      "limit": 4096,
+      "sourceError": false,
+      "trailer": false,
+      "expected": {
+        "frames": [
+          {
+            "dataHex": "646174613a207b2274657874223a226869227d",
+            "sourcePolls": 1
+          },
+          {
+            "error": {
+              "causes": [
+                "unexpected end of stream",
+                "unexpected end of stream",
+                "unexpected end of stream"
+              ],
+              "kinds": [],
+              "debug": "Error { inner: Error { inner: UnexpectedEof } }"
+            },
+            "sourcePolls": 2
+          }
+        ],
+        "observations": [],
+        "sourceDrops": 1
+      }
+    },
+    {
+      "kind": "sse-pass",
+      "name": "source-error",
+      "inputHex": "3a2070696e670a0a6576656e743a2064656c74612e666f6f0a69643a20370a72657472793a20330a646174613a207b2278223a312c2274657874223a226869227d0a0a646174613a205b444f4e455d0a0a",
+      "chunkSizes": [
+        81
+      ],
+      "limit": 4096,
+      "sourceError": true,
+      "trailer": false,
+      "expected": {
+        "frames": [
+          {
+            "dataHex": "3a2070696e670a0a6576656e743a2064656c74612e666f6f0a69643a20370a72657472793a20330a646174613a207b2278223a312c2274657874223a226869227d0a0a646174613a205b444f4e455d0a0a",
+            "sourcePolls": 1
+          },
+          {
+            "error": {
+              "causes": [
+                "fixture source reset",
+                "fixture source reset",
+                "fixture source reset"
+              ],
+              "kinds": [
+                "io:ConnectionReset"
+              ],
+              "debug": "Error { inner: Error { inner: Custom { kind: ConnectionReset, error: \"fixture source reset\" } } }"
+            },
+            "sourcePolls": 2
+          }
+        ],
+        "observations": [
+          "Some(Ok(Object {\"x\": Number(1), \"text\": String(\"hi\")}))",
+          "None"
+        ],
+        "sourceDrops": 1
+      }
+    },
+    {
+      "kind": "sse-pass",
+      "name": "trailers",
+      "inputHex": "3a2070696e670a0a6576656e743a2064656c74612e666f6f0a69643a20370a72657472793a20330a646174613a207b2278223a312c2274657874223a226869227d0a0a646174613a205b444f4e455d0a0a",
+      "chunkSizes": [
+        81
+      ],
+      "limit": 4096,
+      "sourceError": false,
+      "trailer": true,
+      "expected": {
+        "frames": [
+          {
+            "dataHex": "3a2070696e670a0a6576656e743a2064656c74612e666f6f0a69643a20370a72657472793a20330a646174613a207b2278223a312c2274657874223a226869227d0a0a646174613a205b444f4e455d0a0a",
+            "sourcePolls": 1
+          },
+          {
+            "trailers": "{\"x-end\": \"kept\"}",
+            "sourcePolls": 2
+          },
+          {
+            "eof": true,
+            "sourcePolls": 3
+          }
+        ],
+        "observations": [
+          "Some(Ok(Object {\"x\": Number(1), \"text\": String(\"hi\")}))",
+          "None"
+        ],
+        "sourceDrops": 1
+      }
+    },
+    {
+      "kind": "sse-permissive",
+      "name": "valid",
+      "inputHex": "3a2070696e670a0a6576656e743a2064656c74612e666f6f0a69643a20370a72657472793a20330a646174613a207b2278223a312c2274657874223a226869227d0a0a646174613a205b444f4e455d0a0a",
+      "chunkSizes": [
+        81
+      ],
+      "limit": 4096,
+      "sourceError": false,
+      "trailer": false,
+      "expected": {
+        "frames": [
+          {
+            "dataHex": "3a2070696e670a0a6576656e743a2064656c74612e666f6f0a69643a20370a72657472793a20330a646174613a207b2278223a312c2274657874223a226869227d0a0a646174613a205b444f4e455d0a0a",
+            "sourcePolls": 1
+          },
+          {
+            "eof": true,
+            "sourcePolls": 2
+          }
+        ],
+        "observations": [
+          "Some(Ok(Object {\"x\": Number(1), \"text\": String(\"hi\")}))",
+          "None"
+        ],
+        "sourceDrops": 1
+      }
+    },
+    {
+      "kind": "sse-permissive",
+      "name": "split",
+      "inputHex": "3a2070696e670a0a6576656e743a2064656c74612e666f6f0a69643a20370a72657472793a20330a646174613a207b2278223a312c2274657874223a226869227d0a0a646174613a205b444f4e455d0a0a",
+      "chunkSizes": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "limit": 4096,
+      "sourceError": false,
+      "trailer": false,
+      "expected": {
+        "frames": [
+          {
+            "dataHex": "3a",
+            "sourcePolls": 1
+          },
+          {
+            "dataHex": "20",
+            "sourcePolls": 2
+          },
+          {
+            "dataHex": "70",
+            "sourcePolls": 3
+          },
+          {
+            "dataHex": "69",
+            "sourcePolls": 4
+          },
+          {
+            "dataHex": "6e",
+            "sourcePolls": 5
+          },
+          {
+            "dataHex": "67",
+            "sourcePolls": 6
+          },
+          {
+            "dataHex": "0a",
+            "sourcePolls": 7
+          },
+          {
+            "dataHex": "0a",
+            "sourcePolls": 8
+          },
+          {
+            "dataHex": "65",
+            "sourcePolls": 9
+          },
+          {
+            "dataHex": "76",
+            "sourcePolls": 10
+          },
+          {
+            "dataHex": "65",
+            "sourcePolls": 11
+          },
+          {
+            "dataHex": "6e",
+            "sourcePolls": 12
+          },
+          {
+            "dataHex": "74",
+            "sourcePolls": 13
+          },
+          {
+            "dataHex": "3a",
+            "sourcePolls": 14
+          },
+          {
+            "dataHex": "20",
+            "sourcePolls": 15
+          },
+          {
+            "dataHex": "64",
+            "sourcePolls": 16
+          },
+          {
+            "dataHex": "65",
+            "sourcePolls": 17
+          },
+          {
+            "dataHex": "6c",
+            "sourcePolls": 18
+          },
+          {
+            "dataHex": "74",
+            "sourcePolls": 19
+          },
+          {
+            "dataHex": "61",
+            "sourcePolls": 20
+          },
+          {
+            "dataHex": "2e",
+            "sourcePolls": 21
+          },
+          {
+            "dataHex": "66",
+            "sourcePolls": 22
+          },
+          {
+            "dataHex": "6f",
+            "sourcePolls": 23
+          },
+          {
+            "dataHex": "6f",
+            "sourcePolls": 24
+          },
+          {
+            "dataHex": "0a",
+            "sourcePolls": 25
+          },
+          {
+            "dataHex": "69",
+            "sourcePolls": 26
+          },
+          {
+            "dataHex": "64",
+            "sourcePolls": 27
+          },
+          {
+            "dataHex": "3a",
+            "sourcePolls": 28
+          },
+          {
+            "dataHex": "20",
+            "sourcePolls": 29
+          },
+          {
+            "dataHex": "37",
+            "sourcePolls": 30
+          },
+          {
+            "dataHex": "0a",
+            "sourcePolls": 31
+          },
+          {
+            "dataHex": "72",
+            "sourcePolls": 32
+          },
+          {
+            "dataHex": "65",
+            "sourcePolls": 33
+          },
+          {
+            "dataHex": "74",
+            "sourcePolls": 34
+          },
+          {
+            "dataHex": "72",
+            "sourcePolls": 35
+          },
+          {
+            "dataHex": "79",
+            "sourcePolls": 36
+          },
+          {
+            "dataHex": "3a",
+            "sourcePolls": 37
+          },
+          {
+            "dataHex": "20",
+            "sourcePolls": 38
+          },
+          {
+            "dataHex": "33",
+            "sourcePolls": 39
+          },
+          {
+            "dataHex": "0a",
+            "sourcePolls": 40
+          },
+          {
+            "dataHex": "64",
+            "sourcePolls": 41
+          },
+          {
+            "dataHex": "61",
+            "sourcePolls": 42
+          },
+          {
+            "dataHex": "74",
+            "sourcePolls": 43
+          },
+          {
+            "dataHex": "61",
+            "sourcePolls": 44
+          },
+          {
+            "dataHex": "3a",
+            "sourcePolls": 45
+          },
+          {
+            "dataHex": "20",
+            "sourcePolls": 46
+          },
+          {
+            "dataHex": "7b",
+            "sourcePolls": 47
+          },
+          {
+            "dataHex": "22",
+            "sourcePolls": 48
+          },
+          {
+            "dataHex": "78",
+            "sourcePolls": 49
+          },
+          {
+            "dataHex": "22",
+            "sourcePolls": 50
+          },
+          {
+            "dataHex": "3a",
+            "sourcePolls": 51
+          },
+          {
+            "dataHex": "31",
+            "sourcePolls": 52
+          },
+          {
+            "dataHex": "2c",
+            "sourcePolls": 53
+          },
+          {
+            "dataHex": "22",
+            "sourcePolls": 54
+          },
+          {
+            "dataHex": "74",
+            "sourcePolls": 55
+          },
+          {
+            "dataHex": "65",
+            "sourcePolls": 56
+          },
+          {
+            "dataHex": "78",
+            "sourcePolls": 57
+          },
+          {
+            "dataHex": "74",
+            "sourcePolls": 58
+          },
+          {
+            "dataHex": "22",
+            "sourcePolls": 59
+          },
+          {
+            "dataHex": "3a",
+            "sourcePolls": 60
+          },
+          {
+            "dataHex": "22",
+            "sourcePolls": 61
+          },
+          {
+            "dataHex": "68",
+            "sourcePolls": 62
+          },
+          {
+            "dataHex": "69",
+            "sourcePolls": 63
+          },
+          {
+            "dataHex": "22",
+            "sourcePolls": 64
+          },
+          {
+            "dataHex": "7d",
+            "sourcePolls": 65
+          },
+          {
+            "dataHex": "0a",
+            "sourcePolls": 66
+          },
+          {
+            "dataHex": "0a",
+            "sourcePolls": 67
+          },
+          {
+            "dataHex": "64",
+            "sourcePolls": 68
+          },
+          {
+            "dataHex": "61",
+            "sourcePolls": 69
+          },
+          {
+            "dataHex": "74",
+            "sourcePolls": 70
+          },
+          {
+            "dataHex": "61",
+            "sourcePolls": 71
+          },
+          {
+            "dataHex": "3a",
+            "sourcePolls": 72
+          },
+          {
+            "dataHex": "20",
+            "sourcePolls": 73
+          },
+          {
+            "dataHex": "5b",
+            "sourcePolls": 74
+          },
+          {
+            "dataHex": "44",
+            "sourcePolls": 75
+          },
+          {
+            "dataHex": "4f",
+            "sourcePolls": 76
+          },
+          {
+            "dataHex": "4e",
+            "sourcePolls": 77
+          },
+          {
+            "dataHex": "45",
+            "sourcePolls": 78
+          },
+          {
+            "dataHex": "5d",
+            "sourcePolls": 79
+          },
+          {
+            "dataHex": "0a",
+            "sourcePolls": 80
+          },
+          {
+            "dataHex": "0a",
+            "sourcePolls": 81
+          },
+          {
+            "eof": true,
+            "sourcePolls": 82
+          }
+        ],
+        "observations": [
+          "Some(Ok(Object {\"x\": Number(1), \"text\": String(\"hi\")}))",
+          "None"
+        ],
+        "sourceDrops": 1
+      }
+    },
+    {
+      "kind": "sse-permissive",
+      "name": "malformed",
+      "inputHex": "646174613a207b0a0a",
+      "chunkSizes": [
+        9
+      ],
+      "limit": 4096,
+      "sourceError": false,
+      "trailer": false,
+      "expected": {
+        "frames": [
+          {
+            "dataHex": "646174613a207b0a0a",
+            "sourcePolls": 1
+          },
+          {
+            "eof": true,
+            "sourcePolls": 2
+          }
+        ],
+        "observations": [
+          "Some(Err(EOF while parsing an object at line 1 column 1))"
+        ],
+        "sourceDrops": 1
+      }
+    },
+    {
+      "kind": "sse-permissive",
+      "name": "partial",
+      "inputHex": "646174613a207b2274657874223a226869227d",
+      "chunkSizes": [
+        19
+      ],
+      "limit": 4096,
+      "sourceError": false,
+      "trailer": false,
+      "expected": {
+        "frames": [
+          {
+            "dataHex": "646174613a207b2274657874223a226869227d",
+            "sourcePolls": 1
+          },
+          {
+            "eof": true,
+            "sourcePolls": 2
+          }
+        ],
+        "observations": [],
+        "sourceDrops": 1
+      }
+    },
+    {
+      "kind": "sse-permissive",
+      "name": "source-error",
+      "inputHex": "3a2070696e670a0a6576656e743a2064656c74612e666f6f0a69643a20370a72657472793a20330a646174613a207b2278223a312c2274657874223a226869227d0a0a646174613a205b444f4e455d0a0a",
+      "chunkSizes": [
+        81
+      ],
+      "limit": 4096,
+      "sourceError": true,
+      "trailer": false,
+      "expected": {
+        "frames": [
+          {
+            "dataHex": "3a2070696e670a0a6576656e743a2064656c74612e666f6f0a69643a20370a72657472793a20330a646174613a207b2278223a312c2274657874223a226869227d0a0a646174613a205b444f4e455d0a0a",
+            "sourcePolls": 1
+          },
+          {
+            "error": {
+              "causes": [
+                "fixture source reset",
+                "fixture source reset",
+                "fixture source reset"
+              ],
+              "kinds": [
+                "io:ConnectionReset"
+              ],
+              "debug": "Error { inner: Error { inner: Custom { kind: ConnectionReset, error: \"fixture source reset\" } } }"
+            },
+            "sourcePolls": 2
+          }
+        ],
+        "observations": [
+          "Some(Ok(Object {\"x\": Number(1), \"text\": String(\"hi\")}))",
+          "None"
+        ],
+        "sourceDrops": 1
+      }
+    },
+    {
+      "kind": "sse-permissive",
+      "name": "trailers",
+      "inputHex": "3a2070696e670a0a6576656e743a2064656c74612e666f6f0a69643a20370a72657472793a20330a646174613a207b2278223a312c2274657874223a226869227d0a0a646174613a205b444f4e455d0a0a",
+      "chunkSizes": [
+        81
+      ],
+      "limit": 4096,
+      "sourceError": false,
+      "trailer": true,
+      "expected": {
+        "frames": [
+          {
+            "dataHex": "3a2070696e670a0a6576656e743a2064656c74612e666f6f0a69643a20370a72657472793a20330a646174613a207b2278223a312c2274657874223a226869227d0a0a646174613a205b444f4e455d0a0a",
+            "sourcePolls": 1
+          },
+          {
+            "trailers": "{\"x-end\": \"kept\"}",
+            "sourcePolls": 2
+          },
+          {
+            "eof": true,
+            "sourcePolls": 3
+          }
+        ],
+        "observations": [
+          "Some(Ok(Object {\"x\": Number(1), \"text\": String(\"hi\")}))",
+          "None"
+        ],
+        "sourceDrops": 1
+      }
+    },
+    {
+      "kind": "validated-sse",
+      "name": "valid",
+      "inputHex": "3a2070696e670a0a6576656e743a2064656c74612e666f6f0a69643a20370a72657472793a20330a646174613a207b2278223a312c2274657874223a226869227d0a0a646174613a205b444f4e455d0a0a",
+      "chunkSizes": [
+        81
+      ],
+      "limit": 4096,
+      "sourceError": false,
+      "trailer": false,
+      "expected": {
+        "frames": [
+          {
+            "dataHex": "",
+            "sourcePolls": 1
+          },
+          {
+            "dataHex": "",
+            "sourcePolls": 1
+          },
+          {
+            "dataHex": "6576656e743a2064656c74612e666f6f0a646174613a207b2278223a312c2274657874223a226869227d0a0a",
+            "sourcePolls": 1
+          },
+          {
+            "dataHex": "646174613a205b444f4e455d0a0a",
+            "sourcePolls": 1
+          },
+          {
+            "eof": true,
+            "sourcePolls": 2
+          }
+        ],
+        "observations": [],
+        "sourceDrops": 1
+      }
+    },
+    {
+      "kind": "validated-sse",
+      "name": "split",
+      "inputHex": "3a2070696e670a0a6576656e743a2064656c74612e666f6f0a69643a20370a72657472793a20330a646174613a207b2278223a312c2274657874223a226869227d0a0a646174613a205b444f4e455d0a0a",
+      "chunkSizes": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "limit": 4096,
+      "sourceError": false,
+      "trailer": false,
+      "expected": {
+        "frames": [
+          {
+            "dataHex": "",
+            "sourcePolls": 7
+          },
+          {
+            "dataHex": "",
+            "sourcePolls": 40
+          },
+          {
+            "dataHex": "6576656e743a2064656c74612e666f6f0a646174613a207b2278223a312c2274657874223a226869227d0a0a",
+            "sourcePolls": 67
+          },
+          {
+            "dataHex": "646174613a205b444f4e455d0a0a",
+            "sourcePolls": 81
+          },
+          {
+            "eof": true,
+            "sourcePolls": 82
+          }
+        ],
+        "observations": [],
+        "sourceDrops": 1
+      }
+    },
+    {
+      "kind": "validated-sse",
+      "name": "malformed",
+      "inputHex": "646174613a207b0a0a",
+      "chunkSizes": [
+        9
+      ],
+      "limit": 4096,
+      "sourceError": false,
+      "trailer": false,
+      "expected": {
+        "frames": [
+          {
+            "error": {
+              "causes": [
+                "EOF while parsing an object at line 1 column 1",
+                "EOF while parsing an object at line 1 column 1",
+                "EOF while parsing an object at line 1 column 1"
+              ],
+              "kinds": [
+                "io:Other"
+              ],
+              "debug": "Error { inner: Error { inner: Custom { kind: Other, error: Error(\"EOF while parsing an object\", line: 1, column: 1) } } }"
+            },
+            "sourcePolls": 1
+          }
+        ],
+        "observations": [],
+        "sourceDrops": 1
+      }
+    },
+    {
+      "kind": "validated-sse",
+      "name": "partial",
+      "inputHex": "646174613a207b2274657874223a226869227d",
+      "chunkSizes": [
+        19
+      ],
+      "limit": 4096,
+      "sourceError": false,
+      "trailer": false,
+      "expected": {
+        "frames": [
+          {
+            "error": {
+              "causes": [
+                "unexpected end of stream",
+                "unexpected end of stream",
+                "unexpected end of stream"
+              ],
+              "kinds": [
+                "io:Other"
+              ],
+              "debug": "Error { inner: Error { inner: Custom { kind: Other, error: UnexpectedEof } } }"
+            },
+            "sourcePolls": 2
+          }
+        ],
+        "observations": [],
+        "sourceDrops": 1
+      }
+    },
+    {
+      "kind": "validated-sse",
+      "name": "source-error",
+      "inputHex": "3a2070696e670a0a6576656e743a2064656c74612e666f6f0a69643a20370a72657472793a20330a646174613a207b2278223a312c2274657874223a226869227d0a0a646174613a205b444f4e455d0a0a",
+      "chunkSizes": [
+        81
+      ],
+      "limit": 4096,
+      "sourceError": true,
+      "trailer": false,
+      "expected": {
+        "frames": [
+          {
+            "dataHex": "",
+            "sourcePolls": 1
+          },
+          {
+            "dataHex": "",
+            "sourcePolls": 1
+          },
+          {
+            "dataHex": "6576656e743a2064656c74612e666f6f0a646174613a207b2278223a312c2274657874223a226869227d0a0a",
+            "sourcePolls": 1
+          },
+          {
+            "dataHex": "646174613a205b444f4e455d0a0a",
+            "sourcePolls": 1
+          },
+          {
+            "error": {
+              "causes": [
+                "i/o error while reading stream",
+                "i/o error while reading stream",
+                "i/o error while reading stream",
+                "fixture source reset",
+                "fixture source reset"
+              ],
+              "kinds": [
+                "io:Other",
+                "io:Other",
+                "io:ConnectionReset"
+              ],
+              "debug": "Error { inner: Error { inner: Custom { kind: Other, error: Io(Custom { kind: Other, error: Error { inner: Custom { kind: ConnectionReset, error: \"fixture source reset\" } } }) } } }"
+            },
+            "sourcePolls": 2
+          }
+        ],
+        "observations": [],
+        "sourceDrops": 1
+      }
+    },
+    {
+      "kind": "validated-sse",
+      "name": "trailers",
+      "inputHex": "3a2070696e670a0a6576656e743a2064656c74612e666f6f0a69643a20370a72657472793a20330a646174613a207b2278223a312c2274657874223a226869227d0a0a646174613a205b444f4e455d0a0a",
+      "chunkSizes": [
+        81
+      ],
+      "limit": 4096,
+      "sourceError": false,
+      "trailer": true,
+      "expected": {
+        "frames": [
+          {
+            "dataHex": "",
+            "sourcePolls": 1
+          },
+          {
+            "dataHex": "",
+            "sourcePolls": 1
+          },
+          {
+            "dataHex": "6576656e743a2064656c74612e666f6f0a646174613a207b2278223a312c2274657874223a226869227d0a0a",
+            "sourcePolls": 1
+          },
+          {
+            "dataHex": "646174613a205b444f4e455d0a0a",
+            "sourcePolls": 1
+          },
+          {
+            "eof": true,
+            "sourcePolls": 3
+          }
+        ],
+        "observations": [],
+        "sourceDrops": 1
+      }
+    }
+  ]
+}

@@ -36,6 +36,17 @@ pub fn is_runtime_shutdown(e: &Error) -> bool {
 pub struct WatchedFiles {
 	paths: Vec<PathBuf>,
 	changes: mpsc::Receiver<FileWatchChange>,
+	forwarder: tokio::task::AbortHandle,
+}
+
+#[cfg(test)]
+#[path = "util_watch_tests.rs"]
+mod watch_tests;
+
+impl Drop for WatchedFiles {
+	fn drop(&mut self) {
+		self.forwarder.abort();
+	}
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -138,7 +149,7 @@ pub fn watch_files_with_options(
 	let (change_tx, change_rx) = mpsc::channel(1);
 	let watched_paths = paths.clone();
 	let mut targets = resolve_targets(&paths);
-	tokio::task::spawn(async move {
+	let forwarder = tokio::task::spawn(async move {
 		while let Some(events) = raw_rx.recv().await {
 			match events {
 				Ok(events) => {
@@ -174,6 +185,7 @@ pub fn watch_files_with_options(
 	Ok(WatchedFiles {
 		paths: watched_paths,
 		changes: change_rx,
+		forwarder: forwarder.abort_handle(),
 	})
 }
 

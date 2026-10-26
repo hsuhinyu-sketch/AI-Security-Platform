@@ -330,7 +330,7 @@ pub(super) async fn client_registration(
 	client: PolicyClient,
 ) -> Result<Response, ProxyError> {
 	if let Some(client_id) = &auth.client_id {
-		return build_mock_dcr_response(req, client_id).await;
+		return build_pre_registered_client_response(req, client_id).await;
 	}
 
 	// Normalize issuer URL by removing trailing slashes to avoid double-slash in path
@@ -396,15 +396,15 @@ pub(super) async fn client_registration(
 	Ok(upstream)
 }
 
-const MOCK_DCR_CLIENT_ID_ISSUED_AT: u64 = 0;
+const PRE_REGISTERED_CLIENT_ID_ISSUED_AT: u64 = 0;
 
-/// Build the mock Dynamic Client Registration response used when
+/// Build registration metadata for an existing IdP client when
 /// `MCPAuthentication.clientId` is configured.
 ///
 /// This path is for pre-registered IdP clients. The gateway is not creating
 /// a client upstream, so return deterministic registration metadata and carry
 /// forward only the requested redirect URIs that strict MCP clients validate.
-async fn build_mock_dcr_response(
+async fn build_pre_registered_client_response(
 	req: &mut Request,
 	client_id: &str,
 ) -> Result<Response, ProxyError> {
@@ -421,7 +421,7 @@ async fn build_mock_dcr_response(
 
 	let response_json = serde_json::json!({
 		"client_id": client_id,
-		"client_id_issued_at": MOCK_DCR_CLIENT_ID_ISSUED_AT,
+		"client_id_issued_at": PRE_REGISTERED_CLIENT_ID_ISSUED_AT,
 		"token_endpoint_auth_method": "none",
 		"grant_types": ["authorization_code"],
 		"response_types": ["code"],

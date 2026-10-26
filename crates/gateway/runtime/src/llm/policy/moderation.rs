@@ -23,7 +23,6 @@ pub async fn send_request(
 		crate::http::backendtls::SYSTEM_TRUST.clone(),
 	)];
 	pols.extend(moderation.policies.iter().cloned());
-	// let auth = BackendAuth::from(moderation.auth.clone());
 	let content = req
 		.get_messages()
 		.into_iter()
@@ -42,13 +41,13 @@ pub async fn send_request(
 			"model": model,
 		}),
 	)?))?;
-	let mock_be = Backend::Dynamic(
+	let backend = Backend::Dynamic(
 		ResourceName::new(strng::literal!("_openai-moderation"), strng::literal!("")),
 		(),
 	);
 	let resp = client
 		.with_outbound(OutboundCallKind::Policy, OutboundCallSubtype::Guardrail)
-		.call_with_explicit_policies_list(with_default_timeout(req), mock_be, pols)
+		.call_with_explicit_policies_list(with_default_timeout(req), backend, pols)
 		.await?;
 	let resp: async_openai::types::moderations::CreateModerationResponse =
 		json::from_response_body(resp).await?;

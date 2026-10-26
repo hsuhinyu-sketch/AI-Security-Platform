@@ -11,50 +11,8 @@ use tokio::io::AsyncReadExt;
 // Global across AI systems. Try-acquire only: no unbounded transfer/wait queue.
 static TRANSFERS: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(8);
 
-pub(super) struct FileReference {
-	url: reqwest::Url,
-	sha256: [u8; 32],
-	size: usize,
-}
-impl FileReference {
-	pub(super) fn parse(part: &Value) -> Result<Self, ObjectError> {
-		let uri = part["file"]["uri"]
-			.as_str()
-			.filter(|s| s.len() <= 2048)
-			.ok_or(ObjectError::DownloadSource)?;
-		let url = reqwest::Url::parse(uri).map_err(|_| ObjectError::DownloadSource)?;
-		if url.as_str() != uri
-			|| url.scheme() != "https"
-			|| !url.username().is_empty()
-			|| url.password().is_some()
-			|| url.query().is_some()
-			|| url.fragment().is_some()
-		{
-			return Err(ObjectError::DownloadSource);
-		}
-		let manifest = &part["metadata"]["aispDownload"];
-		object(manifest, &["sha256", "sizeBytes"])?;
-		let hash = manifest["sha256"]
-			.as_str()
-			.filter(|s| {
-				s.len() == 64
-					&& s
-						.bytes()
-						.all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
-			})
-			.ok_or(ObjectError::DownloadIntegrity)?;
-		let mut sha256 = [0; 32];
-		for (i, byte) in sha256.iter_mut().enumerate() {
-			*byte = u8::from_str_radix(&hash[i * 2..i * 2 + 2], 16)
-				.map_err(|_| ObjectError::DownloadIntegrity)?;
-		}
-		let size = manifest["sizeBytes"]
-			.as_u64()
-			.and_then(|n| usize::try_from(n).ok())
-			.ok_or(ObjectError::DownloadIntegrity)?;
-		Ok(Self { url, sha256, size })
-	}
-}
+use gateway_a2a::downloads::FileReference;
+
 struct Plan {
 	artifact: usize,
 	part: usize,
@@ -65,14 +23,6 @@ struct Plan {
 }
 
 impl AuthorizedCall {
-	pub(crate) fn set_download_constraints(
-		&mut self,
-		flow: Option<crate::security_flow::FlowAccess>,
-		guards: Option<crate::proxy::RoutingGuards>,
-	) {
-		self.flow = flow;
-		self.download_guards = guards;
-	}
 	fn download_live(&self, plan: &Plan) -> Result<(), ProxyError> {
 		self.check_credential().map_err(|e| deny(&plan.action, e))?;
 		self
@@ -197,7 +147,7 @@ impl AuthorizedCall {
 					),
 				);
 				action.action.action_type = security_types::ActionType::AgentArtifactDownload;
-				let reference = FileReference::parse(part).map_err(|e| deny(&action, e))?;
+				let reference = FileReference::parse(part).map_err(|e| deny(&action, object_error(e)))?;
 				total = total
 					.checked_add(reference.size)
 					.ok_or_else(|| deny(&action, ObjectError::DownloadLimit))?;

@@ -1,7 +1,7 @@
 use platform_core::prelude::Strng;
 use platform_core::strng;
 
-use crate::llm::{InputFormat, RouteType};
+use crate::llm::InputFormat;
 use crate::*;
 
 #[apply(schema!)]
@@ -19,26 +19,21 @@ pub struct Provider {
 
 impl Provider {
 	pub fn supports(&self, format: ProviderFormat) -> bool {
-		self
-			.formats
-			.iter()
-			.any(|supported| supported.format == format)
+		gateway_llm::provider::custom::supports(self.formats.iter().map(|f| f.format), format)
 	}
 
 	pub fn native_format_for(&self, input_format: InputFormat) -> Option<ProviderFormat> {
-		input_format
-			.provider_format_preferences()
-			.iter()
-			.copied()
-			.find(|format| self.supports(*format))
+		gateway_llm::provider::custom::native_format_for(
+			self.formats.iter().map(|f| f.format),
+			input_format,
+		)
 	}
 
 	pub fn path_for(&self, format: ProviderFormat) -> Option<&str> {
-		self
-			.formats
-			.iter()
-			.find(|supported| supported.format == format)
-			.and_then(|supported| supported.path.as_deref())
+		gateway_llm::provider::custom::path_for(
+			self.formats.iter().map(|f| (f.format, f.path.as_deref())),
+			format,
+		)
 	}
 }
 
@@ -46,47 +41,6 @@ impl super::Provider for Provider {
 	const NAME: Strng = strng::literal!("custom");
 }
 
-#[apply(schema!)]
-pub struct ProviderFormatConfig {
-	#[serde(rename = "type")]
-	pub format: ProviderFormat,
-	pub path: Option<Strng>,
-}
+pub use gateway_llm::provider::custom::ProviderFormatConfig;
 
-#[apply(schema!)]
-#[derive(Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum ProviderFormat {
-	Completions,
-	Messages,
-	Responses,
-	Embeddings,
-	AnthropicTokenCount,
-	Realtime,
-	Rerank,
-}
-
-impl ProviderFormat {
-	pub fn input_format(self) -> InputFormat {
-		match self {
-			Self::Completions => InputFormat::Completions,
-			Self::Messages => InputFormat::Messages,
-			Self::Responses => InputFormat::Responses,
-			Self::Embeddings => InputFormat::Embeddings,
-			Self::AnthropicTokenCount => InputFormat::CountTokens,
-			Self::Realtime => InputFormat::Realtime,
-			Self::Rerank => InputFormat::Rerank,
-		}
-	}
-
-	pub fn route_type(self) -> RouteType {
-		match self {
-			Self::Completions => RouteType::Completions,
-			Self::Messages => RouteType::Messages,
-			Self::Responses => RouteType::Responses,
-			Self::Embeddings => RouteType::Embeddings,
-			Self::AnthropicTokenCount => RouteType::AnthropicTokenCount,
-			Self::Realtime => RouteType::Realtime,
-			Self::Rerank => RouteType::Rerank,
-		}
-	}
-}
+pub use gateway_llm::provider::ProviderFormat;

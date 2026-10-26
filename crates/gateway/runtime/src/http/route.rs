@@ -182,7 +182,6 @@ pub fn select_best_route(
 				hostnames: vec![],
 				matches: vec![],
 				inline_policies: vec![],
-				llm_router: None,
 				backends: vec![RouteBackendReference {
 					weight: 1,
 					target: BackendReference::Service {

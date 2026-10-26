@@ -1,3 +1,5 @@
+#[cfg(feature = "providers-aws")]
+use crate::types::agent::Target;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
@@ -14,18 +16,18 @@ use crate::telemetry::metrics::TCPLabels;
 use crate::transport::stream::{Socket, TCPConnectionInfo, TLSConnectionInfo, WaypointTLSInfo};
 use crate::types::agent::{
 	BackendTrafficPolicy, BindKey, Listener, ListenerProtocol, SimpleBackend, SimpleBackendReference,
-	SimpleBackendWithPolicies, TCPRoute, TCPRouteBackend, TCPRouteBackendReference, Target,
+	SimpleBackendWithPolicies, TCPRoute, TCPRouteBackend, TCPRouteBackendReference,
 	TransportProtocol,
 };
 use crate::types::discovery::gatewayaddress::Destination;
 use crate::types::discovery::{NetworkAddress, WaypointIdentity};
 use crate::types::{agent, frontend};
-use crate::{ProxyInputs, Stores, *};
+use crate::{RuntimeContext, Stores, *};
 
 #[derive(Clone)]
 pub struct TCPProxy {
 	pub(super) bind_name: BindKey,
-	pub(super) inputs: Arc<ProxyInputs>,
+	pub(super) inputs: Arc<RuntimeContext>,
 	pub(super) selected_listener: Arc<Listener>,
 	#[allow(unused)]
 	pub(super) target_address: SocketAddr,
@@ -49,13 +51,14 @@ impl TCPProxy {
 			tls.and_then(|t| t.src_identity.clone()),
 			unverified_workload,
 		);
-		let mut log: DropOnLog = RequestLog::new(
+		let mut log: DropOnLog = RequestLog::new_with_catalog(
 			log::CelLogging::new(
 				self.inputs.cfg.logging.clone(),
 				self.inputs.cfg.metrics.clone(),
 			),
 			self.inputs.metrics.clone(),
-			self.inputs.model_catalog.clone(),
+			#[cfg(feature = "gateway-llm")]
+			None,
 			start,
 			tcp.clone(),
 		)
@@ -219,7 +222,7 @@ impl TCPProxy {
 	pub fn build_backend_call(
 		log: &mut Option<&mut RequestLog>,
 		sni: Option<String>,
-		inputs: &ProxyInputs,
+		inputs: &RuntimeContext,
 		selected_backend: &SimpleBackend,
 		backend_policies: BackendPolicies,
 		hbone_source: Option<crate::client::HboneSourceRole>,
@@ -236,6 +239,7 @@ impl TCPProxy {
 				hbone_source,
 			)?,
 			SimpleBackend::Opaque(_, target) => BackendCall::new(target.clone(), backend_policies),
+			#[cfg(feature = "providers-aws")]
 			SimpleBackend::Aws(_, config) => {
 				let default_policies = BackendPolicies {
 					backend_tls: Some(http::backendtls::SYSTEM_TRUST.clone()),
@@ -254,6 +258,8 @@ impl TCPProxy {
 					default_policies.merge(backend_policies),
 				)
 			},
+			#[cfg(not(feature = "providers-aws"))]
+			SimpleBackend::Aws(..) => return Err(ProxyError::AuthorizationFailed),
 			SimpleBackend::Invalid => return Err(ProxyError::BackendDoesNotExist),
 		};
 		Ok(backend_call)
@@ -420,7 +426,7 @@ fn select_tcp_backend(route: &TCPRoute) -> Option<TCPRouteBackendReference> {
 
 fn resolve_backend(
 	b: TCPRouteBackendReference,
-	pi: &ProxyInputs,
+	pi: &RuntimeContext,
 ) -> Result<TCPRouteBackend, ProxyError> {
 	let backend = super::resolve_simple_backend(&b.backend, pi)?;
 	Ok(TCPRouteBackend {
@@ -431,7 +437,7 @@ fn resolve_backend(
 }
 
 pub fn get_backend_policies(
-	inputs: &ProxyInputs,
+	inputs: &RuntimeContext,
 	backend: &SimpleBackendWithPolicies,
 	inline_policies: &[BackendTrafficPolicy],
 	route_path: Option<RoutePath>,

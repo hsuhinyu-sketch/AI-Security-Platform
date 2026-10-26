@@ -1,20 +1,42 @@
+#[cfg(feature = "gateway-mcp")]
 pub(crate) mod auth;
+#[cfg(feature = "gateway-mcp")]
+pub(crate) mod dispatch;
+#[cfg(feature = "gateway-mcp")]
+mod execution_bridge;
 pub(crate) mod guardrails;
+#[cfg(feature = "gateway-mcp")]
 mod handler;
+#[cfg(feature = "gateway-mcp")]
 mod mergestream;
+#[cfg(feature = "gateway-mcp")]
 pub(crate) use mergestream::Messages;
 mod rbac;
+#[cfg(feature = "gateway-mcp")]
 mod router;
+#[cfg(feature = "gateway-mcp")]
+mod service;
+#[cfg(feature = "gateway-mcp")]
+pub use service::{Service, ServiceHandle};
+#[cfg(feature = "gateway-mcp")]
 pub(crate) mod security;
+#[cfg(feature = "gateway-mcp")]
 mod session;
+#[cfg(feature = "gateway-mcp")]
 pub(crate) mod session_security;
+#[cfg(feature = "gateway-mcp")]
 mod sse;
+#[cfg(feature = "gateway-mcp")]
 mod streamablehttp;
+#[cfg(feature = "gateway-mcp")]
 mod upstream;
+#[cfg(feature = "gateway-mcp")]
 mod wire;
+#[cfg(feature = "gateway-mcp")]
 pub(crate) use upstream::IncomingRequestContext;
 
 use std::fmt::{Display, Write};
+#[cfg(feature = "gateway-mcp")]
 use std::io;
 use std::sync::Arc;
 use std::time::Duration;
@@ -22,10 +44,13 @@ use std::time::Duration;
 use axum_core::BoxError;
 use prometheus_client::encoding::{EncodeLabelValue, LabelValueEncoder};
 pub use rbac::{McpAuthorization, McpAuthorizationSet, ResourceId, ResourceType};
+#[cfg(feature = "gateway-mcp")]
 use rmcp::model::{ErrorCode, ErrorData, JsonRpcError, RequestId};
+#[cfg(feature = "gateway-mcp")]
 pub use router::App;
 use thiserror::Error;
 
+#[cfg(feature = "gateway-mcp")]
 use crate::http::SendDirectResponse;
 use crate::proxy::ProxyError;
 use crate::{apply, schema};
@@ -47,7 +72,10 @@ pub enum FailureMode {
 pub(crate) const DEFAULT_SESSION_IDLE_TTL: Duration = Duration::from_mins(30);
 
 #[derive(Error, Debug)]
+#[cfg(feature = "gateway-mcp")]
 pub enum Error {
+	#[error("security check failed: {}", .1.as_str())]
+	Security(Option<RequestId>, security_types::SecurityFailureKind),
 	#[error("method not allowed; must be GET, POST, or DELETE")]
 	MethodNotAllowed,
 	#[error("GET event stream is not supported by any upstream")]
@@ -107,9 +135,18 @@ pub enum Error {
 	NoBackends,
 }
 
+#[cfg(feature = "gateway-mcp")]
 impl Error {
 	pub fn jsonrpc_error_body(&self) -> Option<String> {
 		let (id, error) = match self {
+			Error::Security(Some(id), kind) => (
+				id.clone(),
+				ErrorData {
+					code: ErrorCode::INTERNAL_ERROR,
+					message: "Security check failed".into(),
+					data: Some(serde_json::json!({ "code": kind.as_str() })),
+				},
+			),
 			Error::SendError(Some(id), _) => (
 				id.clone(),
 				ErrorData {
@@ -127,13 +164,18 @@ impl Error {
 				},
 			),
 			Error::McpGuardrails(id, rejection) => (id.clone(), rejection.clone()),
-			Error::UnsupportedVersion(Some(id), _)
-			| Error::UnsupportedVersionForInitialize(Some(id), _) => (
+			Error::UnsupportedVersion(Some(id), requested)
+			| Error::UnsupportedVersionForInitialize(Some(id), requested) => (
 				id.clone(),
 				ErrorData {
 					code: ErrorCode::UNSUPPORTED_PROTOCOL_VERSION,
 					message: self.to_string().into(),
-					data: None,
+					data: Some(serde_json::json!({
+						"requested": requested,
+						"supported": gateway_mcp::protocol::SUPPORTED_VERSIONS.iter()
+							.filter(|v| !matches!(self, Error::UnsupportedVersionForInitialize(..)) || **v != rmcp::model::ProtocolVersion::V_2026_07_28)
+							.map(|v| v.as_str()).collect::<Vec<_>>()
+					})),
 				},
 			),
 			Error::VersionMismatch(Some(id)) => (
@@ -172,11 +214,30 @@ impl Error {
 	}
 }
 
+#[cfg(feature = "gateway-mcp")]
 impl From<Error> for ProxyError {
 	fn from(value: Error) -> Self {
 		ProxyError::MCP(value)
 	}
 }
+
+#[cfg(feature = "gateway-mcp")]
+impl From<gateway_mcp::protocol::Error> for ProxyError {
+	fn from(value: gateway_mcp::protocol::Error) -> Self {
+		use gateway_mcp::protocol::Error as Wire;
+		Self::MCP(match value {
+			Wire::InvalidProtocolVersion => Error::InvalidProtocolVersion,
+			Wire::UnsupportedVersion(id, version) => Error::UnsupportedVersion(id, version),
+			Wire::UnsupportedVersionForInitialize(id, version) => {
+				Error::UnsupportedVersionForInitialize(id, version)
+			},
+			Wire::VersionMismatch(id) => Error::VersionMismatch(id),
+			Wire::HeaderBodyMismatch(id, header) => Error::HeaderBodyMismatch(id, header),
+			Wire::InvalidRoutingHeader(id, header) => Error::InvalidRoutingHeader(id, header),
+		})
+	}
+}
+#[cfg(feature = "gateway-mcp")]
 impl<T> From<Error> for Result<T, ProxyError> {
 	fn from(val: Error) -> Self {
 		Err(ProxyError::MCP(val))
@@ -373,4 +434,11 @@ impl From<&ResourceType> for MCPInfo {
 			},
 		}
 	}
+}
+
+#[derive(Clone)]
+pub(crate) struct McpEgressContext {
+	pub server: String,
+	pub action: security_types::ActionRequest,
+	pub supported: bool,
 }

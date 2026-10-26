@@ -1,0 +1,80 @@
+name: Release candidate
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Candidate version tag, for example v0.1.0-rc.1 (does not create a tag)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  candidate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - profile: llm
+            acceptance: llm routing security-content
+          - profile: mcp
+            acceptance: mcp mcp-wire
+          - profile: a2a
+            acceptance: a2a a2a-durable
+          - profile: rag
+            acceptance: rag
+          - profile: full
+            acceptance: full routing sampling mcp-wire rag rag-llm security-content workflow workflow-durable a2a a2a-durable
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@efa25f7f19611383d5b0ccf2d1c8914531636bf9
+        with:
+          toolchain: '1.96'
+          components: rustfmt
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32
+        with:
+          key: release-${{ matrix.profile }}
+      - name: Validate source and packaging contracts
+        run: |
+          cargo fmt --all -- --check
+          python3 tests/docs/check_docs.py --public
+          python3 -m unittest discover -s tests/release -p 'test_*.py' -v
+      - name: Build and package the selected candidate
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+          RELEASE_PROFILE: ${{ matrix.profile }}
+        run: python3 scripts/prepare_release.py --version "$RELEASE_VERSION" --profile "$RELEASE_PROFILE"
+      - name: Run protocol and security regressions against this release binary
+        env:
+          ACCEPTANCE_PROFILES: ${{ matrix.acceptance }}
+        run: |
+          target=$(rustc -vV | sed -n 's/^host: //p')
+          for profile in $ACCEPTANCE_PROFILES; do
+            python3 tests/protocol/run_full_tcp.py --launcher sudo --profile "$profile" --rounds 3 --binary "target/$target/release/ai-security-platform" --report "target/release-evidence/$profile.json"
+          done
+      - name: Audit feed contains real events only
+        if: matrix.profile == 'llm' || matrix.profile == 'full'
+        run: |
+          target=$(rustc -vV | sed -n 's/^host: //p')
+          sudo -n unshare --net -- sh -eu -c 'ip link set lo up; exec setpriv --reuid="$SUDO_UID" --regid="$SUDO_GID" --clear-groups python3 tests/release/check_event_origin.py --binary "$1" --report target/release-evidence/audit-origin.json' sh "target/$target/release/ai-security-platform"
+      - name: Upload verified candidate
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: candidate-${{ matrix.profile }}
+          path: target/release-dist/*
+          if-no-files-found: error
+          retention-days: 14
+      - name: Preserve acceptance evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: evidence-${{ matrix.profile }}
+          path: target/release-evidence/
+          if-no-files-found: ignore
+          retention-days: 14

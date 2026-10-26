@@ -19,18 +19,28 @@ use crate::telemetry::log::RequestLog;
 use crate::types::agent::{
 	BackendTargetRef, McpBackend, McpTargetSpec, ResourceName, SimpleBackend, SimpleBackendReference,
 };
-use crate::{ProxyInputs, cel, mcp};
+use crate::{cel, mcp};
 
 #[derive(Debug, Clone)]
 pub struct App {
 	state: Stores,
 	session: Arc<SessionManager>,
+	pub(super) closed: tokio_util::sync::CancellationToken,
 }
 
 impl App {
 	pub fn new(state: Stores, encoder: Encoder) -> Self {
 		let session = crate::mcp::session::SessionManager::new(encoder);
-		Self { state, session }
+		Self {
+			state,
+			session,
+			closed: Default::default(),
+		}
+	}
+
+	pub(super) fn shutdown(&self) {
+		self.closed.cancel();
+		self.session.shutdown();
 	}
 
 	pub fn should_passthrough(
@@ -59,13 +69,18 @@ impl App {
 	#[allow(clippy::too_many_arguments)]
 	pub async fn serve(
 		&self,
-		pi: Arc<ProxyInputs>,
+		pi: impl crate::IntoRuntimeContext,
 		backend_group_name: ResourceName,
 		backend: McpBackend,
 		backend_policies: BackendPolicies,
 		mut req: MustSnapshot<'_>,
 		mut log: &mut RequestLog,
 	) -> Result<Response, ProxyError> {
+		let pi = pi.into_runtime_context();
+		if self.closed.is_cancelled() {
+			return Err(ProxyError::MCP(mcp::Error::UnknownSession));
+		}
+
 		let backends = {
 			let binds = self.state.read_binds();
 			let nt = backend

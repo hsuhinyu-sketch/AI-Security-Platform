@@ -1,26 +1,41 @@
+#[cfg(feature = "gateway-llm")]
 pub mod bedrock;
+#[cfg(feature = "gateway-llm")]
 pub mod completions;
+#[cfg(feature = "gateway-llm")]
+pub(crate) mod content_guard;
+#[cfg(feature = "gateway-llm")]
 pub mod count_tokens;
+#[cfg(feature = "gateway-llm")]
 pub mod detect;
+#[cfg(feature = "gateway-llm")]
 pub mod embeddings;
+#[cfg(feature = "gateway-llm")]
 pub mod messages;
+#[cfg(feature = "gateway-llm")]
 pub mod rerank;
+#[cfg(feature = "gateway-llm")]
 pub mod responses;
+#[cfg(feature = "gateway-llm")]
 pub mod vertex;
 
 use platform_core::prelude::Strng;
+#[cfg(feature = "gateway-llm")]
 use platform_core::strng;
+#[cfg(feature = "gateway-llm")]
 use serde::Serialize;
 
 use crate::apply;
+#[cfg(feature = "gateway-llm")]
 use crate::llm::{AIError, LLMRequest, LLMResponse};
 use crate::serdes::schema;
 
 /// ResponseType is an abstraction over provider/endpoint specific response formats that enables
 /// uniform policy enforcement and observability
+#[cfg(feature = "gateway-llm")]
 pub trait ResponseType: Send + Sync {
 	fn to_llm_response(&self, include_completion_in_log: bool) -> LLMResponse;
-	fn to_webhook_choices(&self) -> Vec<crate::llm::policy::webhook::ResponseChoice>;
+	fn to_webhook_choices(&self) -> anyhow::Result<Vec<crate::llm::policy::webhook::ResponseChoice>>;
 	fn set_webhook_choices(
 		&mut self,
 		resp: Vec<crate::llm::policy::webhook::ResponseChoice>,
@@ -30,6 +45,7 @@ pub trait ResponseType: Send + Sync {
 
 /// RequestType is an abstraction over provider/endpoint specific request formats that enables
 /// uniform policy enforcement and observability
+#[cfg(feature = "gateway-llm")]
 pub trait RequestType: Send + Sync {
 	fn supports_model(&self) -> bool {
 		true
@@ -83,6 +99,7 @@ pub struct SimpleChatCompletionMessage {
 	pub content: Strng,
 }
 
+#[cfg(feature = "gateway-llm")]
 pub fn serialize_str<T: Serialize>(value: &T) -> Option<Strng> {
 	serde_json::to_value(value).ok()?.as_str().map(Into::into)
 }

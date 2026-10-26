@@ -18,9 +18,5 @@ pub const DEFAULT_HOST_STR: &str = "generativelanguage.googleapis.com";
 pub const DEFAULT_HOST: Strng = strng::literal!(DEFAULT_HOST_STR);
 
 pub fn path(route: RouteType) -> &'static str {
-	match route {
-		RouteType::Embeddings => "/v1beta/openai/embeddings",
-		RouteType::Rerank => "/rerank",
-		_ => "/v1beta/openai/chat/completions",
-	}
+	gateway_llm::provider::gemini::path(route.provider_format())
 }

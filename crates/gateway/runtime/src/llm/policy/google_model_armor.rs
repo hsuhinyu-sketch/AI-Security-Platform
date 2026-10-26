@@ -369,14 +369,14 @@ async fn send_model_armor_request<T: Serialize>(
 
 	let req = rb.body(crate::http::Body::from(serde_json::to_vec(request_body)?))?;
 
-	let mock_be = Backend::Dynamic(
+	let backend = Backend::Dynamic(
 		ResourceName::new(strng::literal!("_google-model-armor"), strng::literal!("")),
 		(),
 	);
 
 	let resp = client
 		.with_outbound(OutboundCallKind::Policy, OutboundCallSubtype::Guardrail)
-		.call_with_explicit_policies_list(with_default_timeout(req), mock_be, pols)
+		.call_with_explicit_policies_list(with_default_timeout(req), backend, pols)
 		.await?;
 
 	let resp: SanitizeResponse = json::from_response_body(resp).await?;

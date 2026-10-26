@@ -347,6 +347,7 @@ impl WsFrameAccumulator {
 ///   subsequent deltas for that response are dropped.
 /// - Preserves existing telemetry on `response.done`.
 /// - All non-text frames (audio, control, etc.) are forwarded immediately.
+#[cfg(feature = "gateway-llm")]
 pub async fn guarded_realtime_proxy<C, S>(
 	client: C,
 	server: S,

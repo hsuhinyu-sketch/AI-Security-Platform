@@ -11,8 +11,13 @@ use std::sync::Weak;
 #[path = "reverse_task_response.rs"]
 mod task_response;
 pub(crate) use task_response::ResponseTicket;
+#[cfg(feature = "gateway-llm")]
 #[path = "task_sampling.rs"]
 pub(crate) mod sampling;
+
+#[cfg(test)]
+#[path = "reverse_tests.rs"]
+mod tests;
 
 #[derive(Debug, Default)]
 pub(super) struct Registry {
@@ -85,20 +90,6 @@ struct Pending {
 fn key(server: &str, id: &RequestId) -> String {
 	serde_json::to_string(&(server, id)).expect("strings serialize")
 }
-fn allowed(value: &Value, fields: &[&str]) -> bool {
-	value
-		.as_object()
-		.is_some_and(|v| v.keys().all(|k| fields.contains(&k.as_str())))
-}
-fn bounded_text(value: &Value, max: usize) -> bool {
-	value.as_str().is_some_and(|s| s.len() <= max)
-}
-fn text_content(content: &Value) -> bool {
-	allowed(content, &["type", "text"])
-		&& content["type"] == "text"
-		&& bounded_text(&content["text"], 8192)
-}
-
 /// Called only for the real initialize request, never `_meta` capability updates.
 pub(crate) fn negotiate(
 	binding: &SessionBinding,
@@ -111,7 +102,7 @@ pub(crate) fn negotiate(
 		.as_object_mut()
 		.ok_or(ProxyError::AuthorizationFailed)?;
 	map.retain(|name, capability| match name.as_str() {
-		"sampling" => !config.sampling_models.is_empty(),
+		"sampling" => cfg!(feature = "gateway-llm") && !config.sampling_models.is_empty(),
 		"elicitation" => {
 			config.elicitation
 				&& capability
@@ -381,92 +372,6 @@ fn check_business(access: &SessionAccess, parent: &Parent) -> Result<(), ProxyEr
 	Ok(())
 }
 
-fn valid_schema(schema: &Value) -> bool {
-	if !allowed(
-		schema,
-		&[
-			"type",
-			"properties",
-			"required",
-			"additionalProperties",
-			"title",
-			"description",
-		],
-	) || schema["type"] != "object"
-		|| schema
-			.get("additionalProperties")
-			.is_some_and(|v| v != false)
-	{
-		return false;
-	}
-	let Some(properties) = schema["properties"].as_object() else {
-		return false;
-	};
-	if properties.len() > 16 {
-		return false;
-	}
-	if schema.get("required").is_some_and(|r| {
-		!r.as_array().is_some_and(|a| {
-			a.len() <= 16
-				&& a
-					.iter()
-					.all(|s| s.as_str().is_some_and(|s| properties.contains_key(s)))
-		})
-	}) {
-		return false;
-	}
-	properties.iter().all(|(key, p)| {
-		!key.is_empty()
-			&& key.len() <= 128
-			&& allowed(
-				p,
-				&[
-					"type",
-					"title",
-					"description",
-					"enum",
-					"enumNames",
-					"minLength",
-					"maxLength",
-					"minimum",
-					"maximum",
-					"default",
-				],
-			) && matches!(
-			p["type"].as_str(),
-			Some("string" | "number" | "integer" | "boolean")
-		) && p.get("enum").is_none_or(|e| {
-			e.as_array()
-				.is_some_and(|e| e.len() <= 64 && e.iter().all(|v| primitive(p, v)))
-		}) && ["minLength", "maxLength"].iter().all(|k| {
-			p.get(*k)
-				.is_none_or(|v| v.as_u64().is_some_and(|n| n <= 8192))
-		}) && ["minimum", "maximum"]
-			.iter()
-			.all(|k| p.get(*k).is_none_or(Value::is_number))
-	})
-}
-fn primitive(schema: &Value, value: &Value) -> bool {
-	match schema["type"].as_str() {
-		Some("string") => value.as_str().is_some_and(|s| {
-			s.len() <= 8192
-				&& schema["minLength"]
-					.as_u64()
-					.is_none_or(|n| s.chars().count() as u64 >= n)
-				&& schema["maxLength"]
-					.as_u64()
-					.is_none_or(|n| s.chars().count() as u64 <= n)
-		}),
-		Some("boolean") => value.is_boolean(),
-		Some("number" | "integer") => value.as_f64().is_some_and(|n| {
-			(schema["type"] != "integer" || value.is_i64() || value.is_u64())
-				&& schema["minimum"].as_f64().is_none_or(|v| n >= v)
-				&& schema["maximum"].as_f64().is_none_or(|v| n <= v)
-		}),
-		_ => false,
-	}
-}
-
 pub(crate) fn request(
 	access: &SessionAccess,
 	parent: Option<&ParentLease>,
@@ -539,68 +444,27 @@ pub(crate) fn request(
 	}
 	let capability = match method.as_str() {
 		"sampling/createMessage" => {
-			if !allowed(
-				&params,
-				&[
-					"messages",
-					"modelPreferences",
-					"maxTokens",
-					"includeContext",
-					"systemPrompt",
-					"stopSequences",
-					"_meta",
-				],
-			) || params.get("includeContext").is_some_and(|v| v != "none")
-				|| !params["maxTokens"]
-					.as_u64()
-					.is_some_and(|n| n > 0 && n <= cfg.max_sampling_tokens)
-				|| !params["messages"].as_array().is_some_and(|a| {
-					!a.is_empty()
-						&& a.len() <= 16
-						&& a.iter().all(|m| {
-							allowed(m, &["role", "content"])
-								&& matches!(m["role"].as_str(), Some("user" | "assistant"))
-								&& text_content(&m["content"])
-						})
-				}) || !allowed(&params["modelPreferences"], &["hints"])
-				|| !params["modelPreferences"]["hints"]
-					.as_array()
-					.is_some_and(|a| {
-						!a.is_empty()
-							&& a.len() <= 8
-							&& a.iter().all(|m| {
-								allowed(m, &["name"])
-									&& m["name"]
-										.as_str()
-										.is_some_and(|m| cfg.sampling_models.iter().any(|x| x == m))
-							})
-					}) || params
-				.get("systemPrompt")
-				.is_some_and(|v| !bounded_text(v, 8192))
-				|| params.get("stopSequences").is_some_and(|v| {
-					!v.as_array()
-						.is_some_and(|a| a.len() <= 16 && a.iter().all(|v| bounded_text(v, 256)))
-				}) {
-				return Err(access.denial("reverse-sampling-contract"));
+			if !cfg!(feature = "gateway-llm") {
+				return Err(access.denial("sampling-not-compiled"));
 			}
+			gateway_mcp::sampling::Request::validate(
+				&params,
+				&cfg.sampling_models,
+				cfg.max_sampling_tokens,
+			)
+			.map_err(|_| access.denial("reverse-sampling-contract"))?;
 			"sampling"
 		},
 		"elicitation/create" => {
 			if !cfg.elicitation
-				|| !allowed(&params, &["mode", "message", "requestedSchema", "_meta"])
-				|| params.get("mode").is_some_and(|v| v != "form")
-				|| !bounded_text(&params["message"], 8192)
-				|| !valid_schema(&params["requestedSchema"])
-				|| !params["requestedSchema"]["properties"]
-					.as_object()
-					.is_some_and(|p| p.keys().all(|k| cfg.elicitation_fields.contains(k)))
+				|| !gateway_mcp::reverse::valid_form_request(&params, &cfg.elicitation_fields)
 			{
 				return Err(access.denial("reverse-elicitation-contract"));
 			}
 			"elicitation"
 		},
 		"roots/list" => {
-			if cfg.roots.is_empty() || !allowed(&params, &["_meta"]) {
+			if cfg.roots.is_empty() || !gateway_mcp::reverse::valid_roots_request(&params) {
 				return Err(access.denial("reverse-roots-contract"));
 			}
 			"roots"
@@ -757,66 +621,16 @@ fn response_inner(
 		let result = &mut rpc["result"];
 		let valid = match pending.method.as_str() {
 			"sampling/createMessage" => {
-				allowed(result, &["role", "content", "model", "stopReason", "_meta"])
-					&& result["role"] == "assistant"
-					&& text_content(&result["content"])
-					&& result["model"]
-						.as_str()
-						.is_some_and(|m| cfg.sampling_models.iter().any(|x| x == m))
-					&& result
-						.get("stopReason")
-						.is_none_or(|s| matches!(s.as_str(), Some("endTurn" | "stopSequence" | "maxTokens")))
+				if !cfg!(feature = "gateway-llm") {
+					return Err(access.denial("sampling-not-compiled"));
+				}
+				gateway_mcp::reverse::valid_sampling_response(result, &cfg.sampling_models)
 			},
 			"elicitation/create" => {
-				allowed(result, &["action", "content", "_meta"])
-					&& match result["action"].as_str() {
-						Some("decline" | "cancel") => result.get("content").is_none(),
-						Some("accept") => {
-							let schema = &pending.params["requestedSchema"];
-							result["content"].as_object().is_some_and(|content| {
-								content.iter().all(|(k, v)| {
-									schema["properties"].get(k).is_some_and(|p| {
-										primitive(p, v)
-											&& p
-												.get("enum")
-												.is_none_or(|e| e.as_array().is_some_and(|e| e.contains(v)))
-									})
-								}) && schema["required"].as_array().is_none_or(|r| {
-									r.iter()
-										.all(|k| k.as_str().is_some_and(|k| content.contains_key(k)))
-								})
-							})
-						},
-						_ => false,
-					}
+				gateway_mcp::reverse::valid_form_response(result, &pending.params["requestedSchema"])
 			},
 			"roots/list" => {
-				let valid = allowed(result, &["roots", "_meta"])
-					&& result["roots"].as_array().is_some_and(|r| {
-						r.len() <= 32
-							&& r.iter().all(|r| {
-								allowed(r, &["uri", "name"])
-									&& bounded_text(&r["uri"], 512)
-									&& r.get("name").is_none_or(|n| bounded_text(n, 256))
-							})
-					});
-				if valid {
-					result["roots"]
-						.as_array_mut()
-						.expect("checked")
-						.retain(|r| {
-							r["uri"]
-								.as_str()
-								.is_some_and(|uri| cfg.roots.iter().any(|r| r == uri))
-						});
-					if parent.task.is_some() {
-						// A display name is unconstrained client text, not part of the URI grant.
-						for root in result["roots"].as_array_mut().expect("checked") {
-							root.as_object_mut().expect("checked").remove("name");
-						}
-					}
-				}
-				valid
+				gateway_mcp::reverse::filter_roots_response(result, &cfg.roots, parent.task.is_some())
 			},
 			_ => false,
 		};

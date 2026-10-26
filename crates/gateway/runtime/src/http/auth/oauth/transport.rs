@@ -19,7 +19,7 @@ use crate::http::oauth::{
 use crate::http::{self, Body};
 use crate::json;
 use crate::proxy::ProxyError;
-use crate::proxy::httpproxy::PolicyClient;
+use gateway_protocol_core::execution::BoundHttpExecution;
 
 /// Default token-endpoint timeout, overridable by backend request-timeout policy
 const DEFAULT_TOKEN_ENDPOINT_TIMEOUT: Duration = Duration::from_secs(10);
@@ -118,7 +118,11 @@ impl TokenResponse {
 }
 
 pub(super) async fn request_token(
-	client: &PolicyClient,
+	client: &impl BoundHttpExecution<
+		RequestBody = Body,
+		ResponseBody = Body,
+		Error = crate::proxy::ProxyError,
+	>,
 	auth: &OAuthTokenExchangeAuth,
 	req: &ExchangeRequest,
 ) -> Result<TokenEndpointResponse, FetchError> {
@@ -129,7 +133,7 @@ pub(super) async fn request_token(
 		.insert(BackendRequestTimeout(DEFAULT_TOKEN_ENDPOINT_TIMEOUT));
 
 	let resp = client
-		.call_reference_with_policies(req, &auth.target, &auth.policies)
+		.execute(req)
 		.await
 		.map_err(|e| FetchError::Upstream(anyhow!("token exchange request failed: {e}")))?;
 
@@ -148,6 +152,48 @@ pub(super) async fn request_token(
 		.await
 		.map_err(|e| FetchError::Upstream(anyhow!("token exchange response decode failed: {e}")))?
 		.into_token(auth.expected_issued_token_type())
+}
+
+#[cfg(test)]
+mod execution_tests {
+	use super::*;
+	use crate::proxy::httpproxy::{
+		PolicyClient,
+		execution_tests::{Server, inputs},
+	};
+	use crate::telemetry::metrics::{OutboundCallKind, OutboundCallSubtype};
+	use std::sync::atomic::Ordering;
+
+	#[tokio::test]
+	async fn token_exchange_consumer_preserves_success_and_denied_destination() {
+		let server = Server::new(r#"{"access_token":"local-token","token_type":"Bearer","expires_in":60,"issued_token_type":"urn:ietf:params:oauth:token-type:access_token"}"#).await;
+		let auth: OAuthTokenExchangeAuth = serde_json::from_value(serde_json::json!({
+			"host":server.address.to_string(),"tokenEndpointPath":"/token"
+		}))
+		.unwrap();
+		for allowed in [true, false] {
+			let targets = if allowed {
+				vec![server.address]
+			} else {
+				vec![]
+			};
+			let execution = PolicyClient::new(inputs(&targets))
+				.with_outbound(OutboundCallKind::Policy, OutboundCallSubtype::Oidc)
+				.bind_reference(&auth.target, &auth.policies);
+			let req = ExchangeRequest {
+				subject_token: "subject".into(),
+				..Default::default()
+			};
+			let result = request_token(&execution, &auth, &req).await;
+			if allowed {
+				use secrecy::ExposeSecret;
+				assert_eq!(result.unwrap().access_token.expose_secret(), "local-token");
+			} else {
+				assert!(matches!(result, Err(FetchError::Upstream(_))));
+			}
+		}
+		assert_eq!(server.calls.load(Ordering::SeqCst), 1);
+	}
 }
 
 fn classify_token_endpoint_error(status: StatusCode, err: anyhow::Error) -> FetchError {

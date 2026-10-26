@@ -14,3 +14,23 @@
 *.local
 var/
 coverage/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Local agent handoff, development plans, reports and measurement evidence.
+# Keep the public usage/reference documentation below in the source distribution.
+/AGENTS.md
+/docs/*
+!/docs/README.md
+!/docs/CHANGELOG.md
+!/docs/architecture/
+/docs/architecture/*
+!/docs/architecture/README.md
+!/docs/protocol/
+!/docs/reference/
+!/docs/examples/
+!/docs/third-party/
+!/docs/release/
+/docs/release/*
+!/docs/release/README.md

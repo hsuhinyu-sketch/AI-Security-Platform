@@ -1,7 +1,10 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+pub mod a2a;
 mod documents;
+mod protocol;
 pub use documents::{DocumentKey, DocumentVersion, DocumentVersionValidator};
+pub use protocol::{CheckStage, RequestContext, SecurityFailureKind};
 
 /// Ordered sensitivity used by data-flow controls. Legacy/missing metadata defaults to the
 /// most restrictive class, so an old or incomplete index entry cannot silently downgrade data.

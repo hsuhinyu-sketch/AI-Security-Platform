@@ -20,12 +20,5 @@ pub const DEFAULT_HOST: Strng = strng::literal!(DEFAULT_HOST_STR);
 pub const DEFAULT_BASE_PATH: &str = "/v1";
 
 pub fn path_suffix(route: RouteType) -> &'static str {
-	match route {
-		RouteType::Responses => "/responses",
-		RouteType::Embeddings => "/embeddings",
-		RouteType::Rerank => "/rerank",
-		RouteType::Realtime => "/realtime",
-		// All others get translated down to completions
-		_ => "/chat/completions",
-	}
+	gateway_llm::provider::openai::path_suffix(route.provider_format())
 }

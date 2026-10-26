@@ -16,7 +16,6 @@ pub struct PatternRecognizer {
 	#[allow(dead_code)]
 	context: Vec<String>,
 	entity_type: String,
-	// validator: Option<&'a dyn PatternValidator>,
 }
 
 impl PatternRecognizer {
@@ -25,13 +24,8 @@ impl PatternRecognizer {
 			patterns: Vec::new(),
 			context,
 			entity_type: entity_type.to_string(),
-			// validator: None,
 		}
 	}
-	// pub fn with_validator(mut self, validator: &'a dyn PatternValidator) -> Self {
-	//     self.validator = Some(validator);
-	//     self
-	// }
 
 	pub fn add_pattern(&mut self, name: &str, regex: &str, score: f32) {
 		let pattern = Pattern {
@@ -51,26 +45,13 @@ impl Recognizer for PatternRecognizer {
 				if let Some(matched) = cap.get(0) {
 					let candidate = matched.as_str();
 					let score = pattern.score;
-					let valid = true;
-					// if let Some(validator) = self.validator {
-					//     if let Some(false) = validator.validate(candidate) {
-					//         valid = false;
-					//         score = 0.0;
-					//     }
-					//     if let Some(true) = validator.invalidate(candidate) {
-					//         valid = false;
-					//         score = 0.0;
-					//     }
-					// }
-					if valid {
-						results.push(RecognizerResult {
-							entity_type: self.entity_type.clone(),
-							matched: candidate.to_string(),
-							start: matched.start(),
-							end: matched.end(),
-							score,
-						});
-					}
+					results.push(RecognizerResult {
+						entity_type: self.entity_type.clone(),
+						matched: candidate.to_string(),
+						start: matched.start(),
+						end: matched.end(),
+						score,
+					});
 				}
 			}
 		}
@@ -80,5 +61,3 @@ impl Recognizer for PatternRecognizer {
 		&self.entity_type
 	}
 }
-
-// Tests are now in the parent module's tests.rs file

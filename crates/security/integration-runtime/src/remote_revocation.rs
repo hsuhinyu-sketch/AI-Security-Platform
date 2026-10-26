@@ -10,7 +10,7 @@ use crate::trusted_https;
 /// queried for every request that carries a verified `delegationId`; this deliberately has no
 /// allow cache, so revocation is visible across gateway instances on the next protected action.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct RemoteDelegationRevocationConfig {
 	pub endpoint: String,
 	#[serde(default = "default_timeout_millis")]

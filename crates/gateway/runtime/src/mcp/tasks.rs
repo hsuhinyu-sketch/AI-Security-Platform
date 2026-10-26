@@ -11,6 +11,10 @@ static OWNERS: OnceLock<Mutex<Vec<std::sync::Weak<SessionBinding>>>> = OnceLock:
 #[path = "task_interaction.rs"]
 pub(crate) mod interaction;
 
+#[cfg(test)]
+#[path = "task_tests.rs"]
+mod tests;
+
 // Reclaim expired rows across idle sessions before taking the global admission slot.
 // Weak indexing never keeps a session/config alive; no policy/network call under these locks.
 fn prune_owners() -> Result<(), UpstreamError> {
@@ -218,7 +222,6 @@ fn operation(access: &SessionAccess, name: &str, server: &str, id: &str) -> Acti
 impl Ticket {
 	pub(crate) fn before_send(&self) -> Result<(), ProxyError> {
 		if self.method == "tasks/cancel"
-			&& self.record.execution.is_some()
 			&& self
 				.record
 				.cancel_sent
@@ -249,6 +252,15 @@ impl Ticket {
 			return Err(access.denial("task-dispatch"));
 		}
 		if self.method == "tools/call" {
+			if rpc["params"]["name"].as_str() != Some(&self.record.tool)
+				|| rpc["params"]
+					.get("arguments")
+					.cloned()
+					.unwrap_or_else(|| json!({}))
+					!= self.record.arguments
+			{
+				return Err(access.denial("task-dispatch-arguments"));
+			}
 			if rpc["params"]
 				.get("_meta")
 				.and_then(|m| m.get(RELATED))
@@ -681,7 +693,7 @@ pub(crate) fn route(
 	ticket.check(&access)?;
 	interaction::reserve_result(&mut ticket, &access, ctx)?;
 	if ticket.method == "tasks/cancel" {
-		if ticket.record.execution.is_some() && ticket.record.cancel_sent.load(Ordering::Acquire) {
+		if ticket.record.cancel_sent.load(Ordering::Acquire) {
 			return Err(fail(&access, "task-cancel-already-sent"));
 		}
 		if ticket

@@ -1,15 +1,21 @@
+#[cfg(feature = "providers-aws")]
 pub mod aws;
+#[cfg(feature = "providers-azure")]
 pub mod azure;
 mod copilot;
+#[cfg(feature = "providers-gcp")]
 pub mod gcp;
 pub mod oauth;
 
 use std::borrow::Cow;
 
 use ::http::HeaderValue;
+#[cfg(feature = "providers-aws")]
 pub use aws::{AwsAssumeRole, AwsAuth};
+#[cfg(feature = "providers-azure")]
 pub use azure::AzureAuth;
 use cookie::Cookie;
+#[cfg(feature = "providers-gcp")]
 pub use gcp::GcpAuth;
 pub use oauth::{OAuthClientAuth, OAuthClientAuthMethod, OAuthGrantType, OAuthTokenExchangeAuth};
 use secrecy::{ExposeSecret, SecretString};
@@ -46,12 +52,15 @@ pub enum BackendAuth {
 	},
 	/// Authenticate to Google Cloud services.
 	#[serde(rename = "gcp")]
+	#[cfg(feature = "providers-gcp")]
 	Gcp(gcp::GcpAuth),
 	/// Sign backend requests with AWS credentials.
 	#[serde(rename = "aws")]
+	#[cfg(feature = "providers-aws")]
 	Aws(aws::AwsAuth),
 	/// Authenticate to Azure services.
 	#[serde(rename = "azure")]
+	#[cfg(feature = "providers-azure")]
 	Azure(azure::AzureAuth),
 	/// Authenticate to GitHub Copilot.
 	#[serde(rename = "copilot")]
@@ -75,7 +84,7 @@ pub struct AppliedBackendAuthLocation {
 pub struct BackendInfo {
 	pub target: BackendTarget,
 	pub call_target: Target,
-	pub inputs: Arc<ProxyInputs>,
+	pub inputs: Arc<RuntimeContext>,
 }
 
 pub fn apply_tunnel_auth(auth: &BackendAuth) -> Result<HeaderValue, ProxyError> {
@@ -140,14 +149,17 @@ pub async fn apply_backend_auth(
 				.extensions_mut()
 				.insert(AppliedBackendAuthLocation { explicit });
 		},
+		#[cfg(feature = "providers-gcp")]
 		BackendAuth::Gcp(g) => {
 			gcp::insert_token(g, &backend_info.call_target, req.headers_mut())
 				.await
 				.map_err(ProxyError::BackendAuthenticationFailed)?;
 		},
+		#[cfg(feature = "providers-aws")]
 		BackendAuth::Aws(_) => {
 			// We handle this in 'apply_late_backend_auth' since it must come at the end (due to request signing)!
 		},
+		#[cfg(feature = "providers-azure")]
 		BackendAuth::Azure(azure_auth) => {
 			let token = azure::get_token(
 				&backend_info.inputs.upstream,
@@ -173,6 +185,7 @@ pub async fn apply_backend_auth(
 	Ok(())
 }
 
+#[cfg(feature = "providers-aws")]
 pub async fn apply_late_backend_auth(
 	auth: Option<&BackendAuth>,
 	req: &mut Request,
@@ -180,7 +193,6 @@ pub async fn apply_late_backend_auth(
 	let Some(BackendAuth::Aws(aws_auth)) = auth else {
 		return Ok(());
 	};
-
 	aws::sign_request(req, aws_auth)
 		.await
 		.map_err(ProxyError::BackendAuthenticationFailed)
@@ -358,4 +370,10 @@ fn set_request_cookie(
 		req.headers_mut().insert(http::header::COOKIE, header_value);
 	}
 	Ok(())
+}
+
+/// Region hint used by Host SigV4 signing, independent of LLM selection.
+#[derive(Debug, Clone)]
+pub struct AwsRegion {
+	pub region: String,
 }

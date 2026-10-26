@@ -1,38 +1,41 @@
-use http::{Request, Uri, header};
+#[cfg(feature = "gateway-a2a")]
+use http::{Request, header};
 use platform_core::strng::Strng;
-use serde::Deserialize;
+#[cfg(feature = "gateway-a2a")]
 use serde_json::Value;
+#[cfg(feature = "gateway-a2a")]
 use tracing::warn;
 
+#[cfg(feature = "gateway-a2a")]
 use crate::http::{Body, Response, filters};
+#[cfg(feature = "gateway-a2a")]
 use crate::json;
+#[cfg(feature = "gateway-a2a")]
 use crate::types::agent::A2aPolicy;
 
+#[cfg(feature = "gateway-a2a")]
 pub(crate) mod objects;
-pub(crate) mod revision;
 /// Internal marker installed only by an object-protected backend's response path.
 #[derive(Clone)]
+#[cfg(feature = "gateway-a2a")]
 pub(crate) struct ProtectedCard;
 #[derive(Clone)]
+#[cfg(feature = "gateway-a2a")]
 pub(crate) struct PushEnabled;
 
+#[cfg(feature = "gateway-a2a")]
 pub async fn apply_to_request(_: &A2aPolicy, req: &mut Request<Body>) -> RequestType {
 	// Possible options are POST a JSON-RPC message or GET /.well-known/agent.json
 	// For agent card, we will process only on the response
 	classify_request(req).await
 }
 
+#[cfg(feature = "gateway-a2a")]
 async fn classify_request(req: &mut Request<Body>) -> RequestType {
 	// Possible options are POST a JSON-RPC message or GET /.well-known/agent.json
 	// For agent card, we will process only on the response
-	match (req.method(), req.uri().path()) {
-		// agent-card.json: v0.3.0+
-		// agent.json: older versions
-		(m, path)
-			if m == http::Method::GET
-				&& (path.ends_with("/.well-known/agent.json")
-					|| path.ends_with("/.well-known/agent-card.json")) =>
-		{
+	match gateway_a2a::classify_http(req.method(), req.uri().path()) {
+		gateway_a2a::HttpKind::AgentCard => {
 			// In case of rewrite, use the original so we know where to send them back to
 			let uri = req
 				.extensions()
@@ -42,20 +45,23 @@ async fn classify_request(req: &mut Request<Body>) -> RequestType {
 			let uri = crate::http::x_headers::apply_forwarded_scheme(uri, req.headers());
 			RequestType::AgentCard(uri)
 		},
-		(m, _) if m == http::Method::POST => match crate::http::classify_content_type(req.headers()) {
-			crate::http::WellKnownContentTypes::Json => match inspect_method(req).await {
-				Ok(method) => RequestType::Call(method),
-				Err(e) => {
-					warn!("failed to read a2a request: {e}");
+		gateway_a2a::HttpKind::Rpc => {
+			if !matches!(
+				crate::http::classify_content_type(req.headers()),
+				crate::http::WellKnownContentTypes::Json
+			) {
+				return RequestType::Invalid;
+			}
+			match inspect_method(req).await {
+				Ok(method) if gateway_a2a::supported_method(&method) => RequestType::Call(method),
+				Ok(_) => RequestType::Unknown,
+				Err(error) => {
+					warn!(%error, "invalid A2A envelope");
 					RequestType::Invalid
 				},
-			},
-			_ => {
-				warn!("unknown content type from A2A");
-				RequestType::Invalid
-			},
+			}
 		},
-		_ => RequestType::Unknown,
+		gateway_a2a::HttpKind::Unknown => RequestType::Unknown,
 	}
 }
 
@@ -63,12 +69,12 @@ async fn classify_request(req: &mut Request<Body>) -> RequestType {
 pub enum RequestType {
 	#[default]
 	Unknown,
-	/// An apparent RPC call that cannot be safely mapped to a protocol action.
 	Invalid,
 	AgentCard(http::Uri),
 	Call(Strng),
 }
 
+#[cfg(feature = "gateway-a2a")]
 pub async fn apply_to_response(
 	pol: Option<&A2aPolicy>,
 	a2a_type: RequestType,
@@ -87,33 +93,13 @@ pub async fn apply_to_response(
 			let Ok(mut agent_card) = json::from_body_with_limit::<Value>(body, buffer_limit).await else {
 				anyhow::bail!("agent card invalid JSON");
 			};
-			let gateway_base = build_agent_path(uri);
+			gateway_a2a::rewrite_card(
+				&mut agent_card,
+				uri,
+				protected,
+				resp.extensions().get::<PushEnabled>().is_some(),
+			)?;
 			if protected {
-				// Do not advertise protocols/callbacks which the protected adapter refuses.
-				if agent_card.get("supportedInterfaces").is_some()
-					|| agent_card
-						.get("protocolVersion")
-						.is_some_and(|v| v != "0.3.0")
-				{
-					anyhow::bail!("protected Agent Card requires the adapted v0.3 JSON-RPC binding");
-				}
-				if let Some(capabilities) = agent_card
-					.get_mut("capabilities")
-					.and_then(Value::as_object_mut)
-				{
-					let push = resp.extensions().get::<PushEnabled>().is_some()
-						&& capabilities.get("pushNotifications") == Some(&Value::Bool(true));
-					capabilities.insert("pushNotifications".into(), Value::Bool(push));
-					capabilities.insert("stateTransitionHistory".into(), Value::Bool(false));
-					capabilities.remove("extensions");
-				}
-				agent_card
-					.as_object_mut()
-					.ok_or_else(|| anyhow::anyhow!("invalid card"))?
-					.insert(
-						"supportsAuthenticatedExtendedCard".into(),
-						Value::Bool(false),
-					);
 				resp.headers_mut().insert(
 					header::CACHE_CONTROL,
 					"private, no-store".parse().expect("constant"),
@@ -121,30 +107,6 @@ pub async fn apply_to_response(
 				for header in ["etag", "digest", "content-digest", "content-md5"] {
 					resp.headers_mut().remove(header);
 				}
-			}
-
-			if let Some(interfaces) = agent_card.get_mut("supportedInterfaces") {
-				// A2A v1.0: rewrite url inside each AgentInterface entry.
-				let arr = interfaces
-					.as_array_mut()
-					.ok_or_else(|| anyhow::anyhow!("agent card supportedInterfaces is not an array"))?;
-				for iface in arr.iter_mut() {
-					if let Some(url_val) = iface.get_mut("url")
-						&& let Some(s) = url_val.as_str()
-						&& let Ok(iface_uri) = s.parse::<Uri>()
-					{
-						let path_and_query = iface_uri
-							.path_and_query()
-							.map(|pq| pq.as_str())
-							.unwrap_or_else(|| iface_uri.path());
-						*url_val = Value::String(format!("{gateway_base}{path_and_query}"));
-					}
-				}
-			} else if let Some(url_field) = json::traverse_mut(&mut agent_card, &["url"]) {
-				// A2A v0.3: rewrite the single top-level url.
-				*url_field = Value::String(gateway_base);
-			} else {
-				anyhow::bail!("agent card missing URL (no 'url' or 'supportedInterfaces' field)");
 			}
 
 			resp.headers_mut().remove(header::CONTENT_LENGTH);
@@ -159,30 +121,14 @@ pub async fn apply_to_response(
 	}
 }
 
-#[derive(Deserialize)]
-struct JsonRpcMethod {
-	jsonrpc: String,
-	method: Strng,
-}
-
+#[cfg(feature = "gateway-a2a")]
 async fn inspect_method(req: &mut Request<Body>) -> anyhow::Result<Strng> {
-	let rpc = json::inspect_body::<JsonRpcMethod>(req).await?;
-	anyhow::ensure!(rpc.jsonrpc == "2.0", "unsupported JSON-RPC version");
-	anyhow::ensure!(
-		!rpc.method.is_empty() && rpc.method.trim() == rpc.method.as_str(),
-		"invalid JSON-RPC method"
-	);
-	Ok(rpc.method)
+	// Bounded inspection preserves the original wire body for dispatch.
+	let rpc: gateway_a2a::RequestEnvelope = json::inspect_body(req).await?;
+	rpc.validated_method().map(Into::into)
 }
 
-fn build_agent_path(uri: Uri) -> String {
-	// Keep the original URL the found the agent at, but strip the agent card suffix.
-	// Note: this won't work in the case they are hosting their agent in other locations.
-	let path = uri.path();
-	let path = path.strip_suffix("/.well-known/agent.json").unwrap_or(path);
-	let path = path
-		.strip_suffix("/.well-known/agent-card.json")
-		.unwrap_or(path);
-
-	uri.to_string().replace(uri.path(), path)
-}
+#[cfg(test)]
+#[path = "tests.rs"]
+#[cfg(feature = "gateway-a2a")]
+mod tests;

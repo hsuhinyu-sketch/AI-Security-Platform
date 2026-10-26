@@ -1,11 +1,10 @@
 use bytes::Bytes;
 use http::HeaderMap;
-use percent_encoding::percent_decode_str;
 use platform_core::prelude::Strng;
-use platform_core::strng;
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
 use tracing::debug;
+#[cfg(feature = "providers-aws")]
 use x509_parser::nom::AsBytes;
 
 use crate::llm::bedrock::Provider;
@@ -156,35 +155,7 @@ pub fn amend_request_info(llm_info: &mut LLMRequest, path: &str) {
 	}
 }
 
-pub(crate) fn extract_model_from_path(path: &str) -> Option<Strng> {
-	let model = if path.ends_with(":streamRawPredict") || path.ends_with(":rawPredict") {
-		path
-			.split_once("/publishers/anthropic/models/")
-			.and_then(|(_, rest)| rest.split_once(':').map(|(model, _)| model))
-	} else if path.ends_with("/invoke-with-response-stream")
-		|| path.ends_with("/invoke")
-		|| path.ends_with("/converse-stream")
-		|| path.ends_with("/converse")
-	{
-		path
-			.split_once("/model/")
-			.and_then(|(_, rest)| strip_bedrock_model_suffix(rest))
-	} else {
-		None
-	};
-	model.map(|model| strng::new(percent_decode_str(model).decode_utf8_lossy()))
-}
-
-fn strip_bedrock_model_suffix(rest: &str) -> Option<&str> {
-	[
-		"/invoke-with-response-stream",
-		"/invoke",
-		"/converse-stream",
-		"/converse",
-	]
-	.into_iter()
-	.find_map(|suffix| rest.strip_suffix(suffix))
-}
+pub(crate) use gateway_llm::routing::path::extract_model_from_path;
 
 #[derive(Debug, Clone)]
 pub enum Response {
@@ -327,16 +298,12 @@ impl ResponseType for Response {
 		}
 	}
 
-	fn to_webhook_choices(&self) -> Vec<ResponseChoice> {
-		unimplemented!(
-			"to_webhook_choices is used for prompt guard; prompt guard is disabled for detect."
-		)
+	fn to_webhook_choices(&self) -> anyhow::Result<Vec<crate::llm::policy::webhook::ResponseChoice>> {
+		anyhow::bail!("content guard unsupported for detect response")
 	}
 
 	fn set_webhook_choices(&mut self, _resp: Vec<ResponseChoice>) -> anyhow::Result<()> {
-		unimplemented!(
-			"set_webhook_choices is used for prompt guard; prompt guard is disabled for detect."
-		)
+		anyhow::bail!("content rewrite unsupported for detect response")
 	}
 
 	fn serialize(&self) -> serde_json::Result<Vec<u8>> {
@@ -483,6 +450,7 @@ pub fn passthrough_stream(
 	})
 }
 
+#[cfg(feature = "providers-aws")]
 pub fn passthrough_aws_stream(
 	mut log: AmendOnDrop,
 	resp: crate::http::Response,

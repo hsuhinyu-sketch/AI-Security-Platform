@@ -17,6 +17,12 @@ bench = false
 required-features = ["gateway-llm"]
 
 [[bin]]
+name = "ai-security-platform-mcp"
+path = "src/bin/ai-mcp-gateway.rs"
+bench = false
+required-features = ["gateway-mcp"]
+
+[[bin]]
 name = "ai-security-platform-routing"
 path = "src/bin/ai-llm-routing-gateway.rs"
 bench = false
@@ -45,6 +51,9 @@ default = [
 	"mimalloc",
 	"tls-aws-lc",
 ]
+# LLM-only edge composition. Choose one TLS feature explicitly with --no-default-features.
+llm-edge = ["gateway-llm", "security-s1", "database", "telemetry-otlp"]
+mcp-edge = ["gateway-mcp", "security-s1", "database", "telemetry-otlp"]
 runtime-base = ["ai-security-platform-runtime/runtime-base"]
 gateway-llm = ["ai-security-platform-runtime/gateway-llm"]
 gateway-a2a = ["ai-security-platform-runtime/gateway-a2a"]

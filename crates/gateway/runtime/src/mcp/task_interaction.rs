@@ -120,7 +120,7 @@ impl Link {
 		let enabled = access.limits.tasks.as_ref().is_some_and(|t| match method {
 			"elicitation/create" => t.elicitation,
 			"roots/list" => t.roots,
-			"sampling/createMessage" => t.sampling.is_some(),
+			"sampling/createMessage" => cfg!(feature = "gateway-llm") && t.sampling.is_some(),
 			_ => false,
 		}) && access
 			.limits
@@ -174,9 +174,11 @@ impl Link {
 			Some(self.ticket.record.arguments.clone()),
 		))
 	}
+	#[cfg(feature = "gateway-llm")]
 	pub(crate) fn model_guards(&self) -> Option<crate::proxy::RoutingGuards> {
 		self.ticket.record.guards.clone()
 	}
+	#[cfg(feature = "gateway-llm")]
 	pub(crate) fn correlate_model(
 		&self,
 		access: &SessionAccess,

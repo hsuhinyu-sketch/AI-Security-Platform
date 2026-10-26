@@ -11,6 +11,7 @@ pub(crate) struct CleanupCall {
 	credential: TaskCredential,
 	scope: CleanupScope,
 	object_scope: String,
+	binding: String,
 	permit: TaskPermit,
 	invocation: ActionRequest,
 	action: ActionRequest,
@@ -57,6 +58,8 @@ pub(crate) async fn authorize(
 	request_id: String,
 	credential: Option<TaskCredential>,
 	scope: CleanupScope,
+	flow: Option<crate::security_flow::FlowAccess>,
+	guards: Option<crate::proxy::RoutingGuards>,
 ) -> Result<Authorization, ProxyError> {
 	scope.authorize(&config)?;
 	let credential = credential.ok_or(ProxyError::AuthorizationFailed)?;
@@ -114,8 +117,13 @@ pub(crate) async fn authorize(
 			TaskOperation::Read,
 		)
 		.map_err(|e| deny(&action, e))?;
+	if config.cross_component.is_some() && flow.is_none() {
+		return Err(deny(&action, ObjectError::ExecutionBinding));
+	}
+	let binding = task_binding(Some(scope.binding()), flow.as_ref(), guards.as_ref())?
+		.ok_or(ProxyError::AuthorizationFailed)?;
 	permit
-		.bind_execution(Some(&scope.binding()))
+		.bind_execution(Some(&binding))
 		.map_err(|e| deny(&action, e))?;
 	let key = crate::security::digest(&permit.cleanup_key().map_err(|e| deny(&action, e))?);
 	let terminal = permit.snapshot_state().filter(|state| state.terminal());
@@ -142,6 +150,7 @@ pub(crate) async fn authorize(
 				credential,
 				scope,
 				object_scope,
+				binding,
 				permit,
 				invocation,
 				action,
@@ -189,7 +198,7 @@ impl CleanupCall {
 			)
 			.map_err(|e| deny(&self.action, e))?;
 		latest
-			.bind_execution(Some(&self.scope.binding()))
+			.bind_execution(Some(&self.binding))
 			.map_err(|e| deny(&self.action, e))?;
 		if crate::security::digest(&latest.cleanup_key().map_err(|e| deny(&self.action, e))?)
 			!= self.key
@@ -261,39 +270,23 @@ impl CleanupCall {
 	}
 	fn process(&mut self, rpc: &Value, success: bool) -> CleanupResult {
 		let unknown = CleanupResult::new(CleanupOutcome::Unknown);
-		if rpc["jsonrpc"] != "2.0"
-			|| rpc["id"].as_str() != Some(self.scope.rpc_id())
-			|| rpc.get("result").is_some() == rpc.get("error").is_some()
-			|| object(rpc, &["jsonrpc", "id", "result", "error"]).is_err()
-		{
-			return unknown;
-		}
-		if let Some(error) = rpc.get("error") {
-			return if error["code"].is_i64() && error["message"].is_string() {
-				CleanupResult::new(CleanupOutcome::Rejected)
-			} else {
-				unknown
-			};
-		}
-		let result = &rpc["result"];
-		if !success
-			|| result["kind"] != "task"
-			|| result["id"].as_str() != Some(self.scope.task())
-			|| result["contextId"].as_str() != self.permit.context_id.as_deref()
-		{
-			return unknown;
-		}
-		let Ok(state) = serde_json::from_value::<TaskState>(result["status"]["state"].clone()) else {
-			return unknown;
+		use gateway_a2a::execution::CleanupReply;
+		let state = match gateway_a2a::execution::cleanup_reply(
+			rpc,
+			success,
+			self.scope.rpc_id(),
+			self.scope.task(),
+			self.permit.context_id.as_deref(),
+		) {
+			CleanupReply::Unknown => return unknown,
+			CleanupReply::Rejected => return CleanupResult::new(CleanupOutcome::Rejected),
+			CleanupReply::Terminal(state) => state,
 		};
-		if !state.terminal() {
-			return unknown;
-		}
 		if let Err(error) = self.config.a2a_task_store.finish(
 			self.config.a2a_objects.as_ref().expect("enabled"),
 			&mut self.permit,
 			self.scope.task(),
-			result["contextId"].as_str().expect("matched"),
+			rpc["result"]["contextId"].as_str().expect("matched"),
 			state,
 		) {
 			let _ = deny(&self.action, error);

@@ -574,7 +574,4 @@ fn prune(
 		*bytes -= size;
 	}
 }
-pub fn valid_cursor(cursor: &str) -> bool {
-	uuid::Uuid::parse_str(cursor)
-		.is_ok_and(|id| id.get_version_num() == 4 && id.to_string() == cursor)
-}
+pub use security_types::a2a::valid_event_cursor as valid_cursor;

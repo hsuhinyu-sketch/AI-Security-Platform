@@ -1,9 +1,13 @@
 pub(crate) mod dtrace;
 mod gateway;
 pub mod httpproxy;
+#[cfg(all(feature = "gateway-mcp", feature = "gateway-llm"))]
+pub(crate) mod model_execution;
+mod policy_client;
 pub mod proxy_protocol;
 pub mod request_builder;
 mod routing_security;
+#[cfg(any(feature = "gateway-mcp", feature = "gateway-a2a"))]
 pub(crate) use routing_security::Guards as RoutingGuards;
 pub mod tcpproxy;
 
@@ -68,6 +72,7 @@ impl ProxyResponse {
 			ProxyError::BasicAuthenticationFailure(_) => ProxyResponseReason::BasicAuth,
 			ProxyError::APIKeyAuthenticationFailure(_) => ProxyResponseReason::APIKeyAuth,
 			ProxyError::ExternalAuthorizationFailed(_) => ProxyResponseReason::ExtAuth,
+			#[cfg(feature = "gateway-mcp")]
 			ProxyError::MCP(_) => ProxyResponseReason::MCP,
 			ProxyError::AuthorizationFailed | ProxyError::CsrfValidationFailed => {
 				ProxyResponseReason::Authorization
@@ -218,6 +223,7 @@ pub enum ProxyError {
 	#[error("request upgrade failed, backend tried {1:?} but {0:?} was requested")]
 	UpgradeFailed(Option<HeaderValue>, Option<HeaderValue>),
 	#[error("mcp: {0}")]
+	#[cfg(feature = "gateway-mcp")]
 	MCP(mcp::Error),
 }
 
@@ -314,34 +320,69 @@ impl ProxyError {
 			// Shouldn't happen on this path
 			ProxyError::UpstreamTCPCallFailed(_) => StatusCode::INTERNAL_SERVER_ERROR,
 			ProxyError::UpstreamTCPProxy(_) => StatusCode::INTERNAL_SERVER_ERROR,
+			#[cfg(feature = "gateway-mcp")]
 			ProxyError::MCP(mcp::Error::MethodNotAllowed) => StatusCode::METHOD_NOT_ALLOWED,
+			#[cfg(feature = "gateway-mcp")]
+			ProxyError::MCP(mcp::Error::Security(_, kind)) => match kind {
+				security_types::SecurityFailureKind::CapabilityUnavailable => {
+					StatusCode::SERVICE_UNAVAILABLE
+				},
+				_ => StatusCode::FORBIDDEN,
+			},
+			#[cfg(feature = "gateway-mcp")]
 			ProxyError::MCP(mcp::Error::GetStreamNotSupported) => StatusCode::METHOD_NOT_ALLOWED,
+			#[cfg(feature = "gateway-mcp")]
 			ProxyError::MCP(mcp::Error::InvalidAccept) => StatusCode::NOT_ACCEPTABLE,
+			#[cfg(feature = "gateway-mcp")]
 			ProxyError::MCP(mcp::Error::InvalidAcceptGet) => StatusCode::NOT_ACCEPTABLE,
+			#[cfg(feature = "gateway-mcp")]
 			ProxyError::MCP(mcp::Error::InvalidContentType) => StatusCode::UNSUPPORTED_MEDIA_TYPE,
+			#[cfg(feature = "gateway-mcp")]
 			ProxyError::MCP(mcp::Error::Deserialize(_)) => StatusCode::BAD_REQUEST,
+			#[cfg(feature = "gateway-mcp")]
 			ProxyError::MCP(mcp::Error::StartSession(_)) => StatusCode::INTERNAL_SERVER_ERROR,
+			#[cfg(feature = "gateway-mcp")]
 			ProxyError::MCP(mcp::Error::UnknownSession) => StatusCode::NOT_FOUND,
+			#[cfg(feature = "gateway-mcp")]
 			ProxyError::MCP(mcp::Error::MissingSessionHeader) => StatusCode::BAD_REQUEST,
+			#[cfg(feature = "gateway-mcp")]
 			ProxyError::MCP(mcp::Error::SessionIdRequired) => StatusCode::BAD_REQUEST,
+			#[cfg(feature = "gateway-mcp")]
 			ProxyError::MCP(mcp::Error::InvalidSessionIdQuery) => StatusCode::UNPROCESSABLE_ENTITY,
+			#[cfg(feature = "gateway-mcp")]
 			ProxyError::MCP(mcp::Error::InvalidSessionIdHeader) => StatusCode::BAD_REQUEST,
+			#[cfg(feature = "gateway-mcp")]
 			ProxyError::MCP(mcp::Error::InvalidProtocolVersion) => StatusCode::BAD_REQUEST,
+			#[cfg(feature = "gateway-mcp")]
 			ProxyError::MCP(mcp::Error::UnsupportedVersion(_, _)) => StatusCode::BAD_REQUEST,
+			#[cfg(feature = "gateway-mcp")]
 			ProxyError::MCP(mcp::Error::UnsupportedVersionForInitialize(_, _)) => StatusCode::BAD_REQUEST,
+			#[cfg(feature = "gateway-mcp")]
 			ProxyError::MCP(mcp::Error::VersionMismatch(_)) => StatusCode::BAD_REQUEST,
+			#[cfg(feature = "gateway-mcp")]
 			ProxyError::MCP(mcp::Error::HeaderBodyMismatch(_, _)) => StatusCode::BAD_REQUEST,
+			#[cfg(feature = "gateway-mcp")]
 			ProxyError::MCP(mcp::Error::InvalidRoutingHeader(_, _)) => StatusCode::BAD_REQUEST,
+			#[cfg(feature = "gateway-mcp")]
 			ProxyError::MCP(mcp::Error::CreateSseUrl(_)) => StatusCode::BAD_REQUEST,
+			#[cfg(feature = "gateway-mcp")]
 			ProxyError::MCP(mcp::Error::EstablishGetStream(_)) => StatusCode::INTERNAL_SERVER_ERROR,
+			#[cfg(feature = "gateway-mcp")]
 			ProxyError::MCP(mcp::Error::ForwardLegacySse(_)) => StatusCode::INTERNAL_SERVER_ERROR,
+			#[cfg(feature = "gateway-mcp")]
 			ProxyError::MCP(mcp::Error::Stdio(_)) => StatusCode::INTERNAL_SERVER_ERROR,
+			#[cfg(feature = "gateway-mcp")]
 			ProxyError::MCP(mcp::Error::OpenAPI(_)) => StatusCode::INTERNAL_SERVER_ERROR,
+			#[cfg(feature = "gateway-mcp")]
 			ProxyError::MCP(mcp::Error::NoBackends) => StatusCode::SERVICE_UNAVAILABLE,
+			#[cfg(feature = "gateway-mcp")]
 			ProxyError::MCP(mcp::Error::UpstreamError(e)) => return e.0.map(http::Body::from),
+			#[cfg(feature = "gateway-mcp")]
 			ProxyError::MCP(mcp::Error::SendError(_, _)) => StatusCode::INTERNAL_SERVER_ERROR,
 			// Note: we do not return a 401/403 here, as the obscure that it was rejected due to auth
+			#[cfg(feature = "gateway-mcp")]
 			ProxyError::MCP(mcp::Error::Authorization(_, _, _)) => StatusCode::BAD_REQUEST,
+			#[cfg(feature = "gateway-mcp")]
 			ProxyError::MCP(mcp::Error::McpGuardrails(_, _)) => StatusCode::OK,
 		};
 		let grpc_status = is_grpc_request.then(|| proxy_error_to_grpc_status(&self, code));
@@ -402,6 +443,7 @@ impl ProxyError {
 				)))
 				.unwrap();
 		}
+		#[cfg(feature = "gateway-mcp")]
 		if let ProxyError::MCP(e) = self
 			&& let Some(body) = e.jsonrpc_error_body()
 		{
@@ -465,7 +507,7 @@ impl WaypointService {
 
 pub fn resolve_backend(
 	b: &BackendReference,
-	pi: &ProxyInputs,
+	pi: &RuntimeContext,
 ) -> Result<BackendWithPolicies, ProxyError> {
 	let backend = match b {
 		BackendReference::Service { name, port } => {
@@ -492,14 +534,14 @@ pub fn resolve_backend(
 
 pub fn resolve_simple_backend(
 	b: &SimpleBackendReference,
-	pi: &ProxyInputs,
+	pi: &RuntimeContext,
 ) -> Result<SimpleBackendWithPolicies, ProxyError> {
 	resolve_simple_backend_with_policies(b, pi)
 }
 
 pub fn resolve_simple_backend_with_policies(
 	b: &SimpleBackendReference,
-	pi: &ProxyInputs,
+	pi: &RuntimeContext,
 ) -> Result<SimpleBackendWithPolicies, ProxyError> {
 	let (backend, inline_policies) = match b {
 		SimpleBackendReference::Service { name, port } => {

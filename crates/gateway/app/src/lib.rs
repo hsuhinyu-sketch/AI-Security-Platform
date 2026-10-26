@@ -9,25 +9,30 @@ use pprof_alloc::Allocator;
 
 mod commands;
 
+// Use the same compile-time fallback for allocation and startup configuration.
+// The musl/aarch64 target keeps its existing mimalloc preference when available.
 cfg_select! {
-	all(target_os = "linux", target_env = "musl", target_arch = "aarch64") => {
-		#[global_allocator]
-		static GLOBAL:  pprof_alloc::PprofAlloc = pprof_alloc::PprofAlloc::new()
-							.with_default(pprof_alloc::Allocator::Mimalloc);
-	}
-	target_os = "linux" => {
-		#[global_allocator]
-		static GLOBAL:  pprof_alloc::PprofAlloc = pprof_alloc::PprofAlloc::new()
-							.with_default(pprof_alloc::Allocator::Jemalloc)
-							.with_pprof()
-							.with_stats();
-	}
-	_ => {
-		#[global_allocator]
-		static GLOBAL:  pprof_alloc::PprofAlloc = pprof_alloc::PprofAlloc::new()
-							.with_default(pprof_alloc::Allocator::System);
-	}
+		all(feature = "jemalloc", target_os = "linux", not(all(target_env = "musl", target_arch = "aarch64"))) => {
+				const DEFAULT_ALLOCATOR: Allocator = Allocator::Jemalloc;
+		}
+		all(feature = "mimalloc", target_os = "linux") => {
+				const DEFAULT_ALLOCATOR: Allocator = Allocator::Mimalloc;
+		}
+		_ => {
+				const DEFAULT_ALLOCATOR: Allocator = Allocator::System;
+		}
 }
+
+#[global_allocator]
+static GLOBAL: pprof_alloc::PprofAlloc = {
+	let allocator = pprof_alloc::PprofAlloc::new().with_default(DEFAULT_ALLOCATOR);
+	cfg_select! {
+			all(feature = "jemalloc", target_os = "linux", not(all(target_env = "musl", target_arch = "aarch64"))) => {
+					allocator.with_pprof().with_stats()
+			}
+			_ => { allocator }
+	}
+};
 
 #[cfg(all(feature = "jemalloc", target_os = "linux", target_env = "musl"))]
 #[allow(non_upper_case_globals)]
@@ -115,17 +120,7 @@ struct Cli {
 }
 
 pub fn run() -> anyhow::Result<()> {
-	cfg_select! {
-		all(target_os = "linux", target_env = "musl", target_arch = "aarch64") => {
-			pprof_alloc::configure_with_default(Allocator::Mimalloc)?;
-		}
-		target_os = "linux" => {
-			pprof_alloc::configure_with_default(Allocator::Jemalloc)?;
-		}
-		_ => {
-			pprof_alloc::configure_with_default(Allocator::System)?;
-		}
-	}
+	pprof_alloc::configure_with_default(DEFAULT_ALLOCATOR)?;
 	let args = Cli::parse();
 	match args.command {
 		#[cfg(target_os = "linux")]

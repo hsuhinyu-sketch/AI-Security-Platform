@@ -1,263 +1,69 @@
+//! Host adapter for the protocol-owned aggregation stream.
+//!
+//! The state machine, terminal fan-in and list projection live in `gateway-mcp`.
+//! This module only supplies the Host error type, transport decoding and the
+//! request-scoped CEL context used by the trusted admission hooks.
 use anyhow::anyhow;
-use futures_core::Stream;
-use futures_core::stream::BoxStream;
 use futures_util::StreamExt;
-use itertools::Itertools;
-use rmcp::model::{RequestId, ServerJsonRpcMessage, ServerResult};
-use tracing::warn;
+use rmcp::model::ServerJsonRpcMessage;
 
 use crate::mcp::rbac::CelExecWrapper;
 use crate::mcp::streamablehttp::StreamableHttpPostResponse;
 use crate::mcp::{ClientError, FailureMode};
-use crate::*;
 
-pub(crate) struct Messages(BoxStream<'static, Result<ServerJsonRpcMessage, ClientError>>);
+pub(crate) use gateway_mcp::merge::MergeFailureMode;
 
-impl Messages {
-	/// pending returns a stream that never returns any messages. It is not an empty stream that closes immediately; it hangs forever.
-	pub fn pending() -> Self {
-		Messages(futures::stream::pending().boxed())
+pub(crate) type Messages = gateway_mcp::merge::MessageStream<ClientError>;
+pub(crate) type MergeStream = gateway_mcp::merge::MergeStream<ClientError>;
+pub(crate) type MergeFn = gateway_mcp::merge::MergeFn<ClientError>;
+
+/// A host-built factory. It receives the request CEL only after the fanout
+/// guardrail hook has run, then returns the terminal merge closure.
+pub(crate) type MergePlan =
+	Box<dyn FnOnce(&CelExecWrapper) -> Box<MergeFn> + Send + Sync + 'static>;
+
+impl From<gateway_mcp::merge::MergeError> for ClientError {
+	fn from(error: gateway_mcp::merge::MergeError) -> Self {
+		ClientError::new(anyhow!(error))
 	}
-	/// empty returns a stream that never returns any messages. It immediately returns none.
-	pub fn empty() -> Self {
-		Messages(futures::stream::empty().boxed())
-	}
+}
 
-	pub fn from_stream<S>(stream: S) -> Self
-	where
-		S: Stream<Item = Result<ServerJsonRpcMessage, ClientError>> + Send + 'static,
-	{
-		Messages(stream.boxed())
+impl From<FailureMode> for MergeFailureMode {
+	fn from(value: FailureMode) -> Self {
+		match value {
+			FailureMode::FailClosed => Self::FailClosed,
+			FailureMode::FailOpen => Self::FailOpen,
+		}
 	}
+}
 
-	pub fn from_result<T: Into<ServerResult>>(id: RequestId, result: T) -> Self {
-		Self::from(ServerJsonRpcMessage::response(result.into(), id))
-	}
+/// Convert a Host SSE receiver into the protocol message stream. The channel is
+/// transport ownership; it does not expose an upstream connection.
+pub(crate) fn from_receiver(rx: tokio::sync::mpsc::Receiver<ServerJsonRpcMessage>) -> Messages {
+	Messages::from_stream(tokio_stream::wrappers::ReceiverStream::new(rx).map(Ok))
+}
 
-	pub fn map_server_messages(
-		self,
-		mut f: impl FnMut(ServerJsonRpcMessage) -> ServerJsonRpcMessage + Send + 'static,
-	) -> Self {
-		Messages(
-			self
-				.0
-				.map(move |message| match message {
-					Ok(message) => Ok(f(message)),
-					Err(err) => Err(err),
+/// Decode a bounded HTTP response body into protocol messages.
+pub(crate) fn from_post_response(
+	response: StreamableHttpPostResponse,
+) -> Result<Messages, ClientError> {
+	match response {
+		StreamableHttpPostResponse::Accepted => {
+			Err(ClientError::new(anyhow!("unexpected 'accepted' response")))
+		},
+		StreamableHttpPostResponse::Json(message, _) => Ok(message.into()),
+		StreamableHttpPostResponse::Sse(stream, _) => Ok(Messages::from_stream(
+			stream
+				.filter_map(|item| async {
+					item
+						.map_err(ClientError::new)
+						.and_then(|item| {
+							gateway_mcp::streamable_http::decode_sse_data(item.data.as_deref())
+								.map_err(ClientError::new)
+						})
+						.transpose()
 				})
 				.boxed(),
-		)
-	}
-}
-
-impl Stream for Messages {
-	type Item = Result<ServerJsonRpcMessage, ClientError>;
-	fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-		self.0.poll_next_unpin(cx)
-	}
-}
-
-impl From<ServerJsonRpcMessage> for Messages {
-	fn from(value: ServerJsonRpcMessage) -> Self {
-		Messages(futures::stream::once(async { Ok(value) }).boxed())
-	}
-}
-
-impl From<Result<ServerJsonRpcMessage, ClientError>> for Messages {
-	fn from(value: Result<ServerJsonRpcMessage, ClientError>) -> Self {
-		Messages(futures::stream::once(async { value }).boxed())
-	}
-}
-
-impl From<tokio::sync::mpsc::Receiver<ServerJsonRpcMessage>> for Messages {
-	fn from(value: tokio::sync::mpsc::Receiver<ServerJsonRpcMessage>) -> Self {
-		Messages(
-			tokio_stream::wrappers::ReceiverStream::new(value)
-				.map(Ok)
-				.boxed(),
-		)
-	}
-}
-
-impl TryFrom<StreamableHttpPostResponse> for Messages {
-	type Error = ClientError;
-	fn try_from(value: StreamableHttpPostResponse) -> Result<Self, Self::Error> {
-		match value {
-			StreamableHttpPostResponse::Accepted => {
-				Err(ClientError::new(anyhow!("unexpected 'accepted' response")))
-			},
-			StreamableHttpPostResponse::Json(r, _) => Ok(r.into()),
-			StreamableHttpPostResponse::Sse(sse, _) => Ok(Messages(
-				sse
-					.filter_map(|item| async {
-						item
-							.map_err(ClientError::new)
-							.and_then(|item| {
-								item
-									.data
-									.filter(|data| !data.is_empty())
-									.map(|data| {
-										serde_json::from_str(&data)
-											.and_then(super::wire::decode_server)
-											.map_err(ClientError::new)
-									})
-									.transpose()
-							})
-							.transpose()
-					})
-					.boxed(),
-			)),
-		}
-	}
-}
-
-pub type MergeFn = dyn FnOnce(
-		Vec<(Strng, ServerResult)>,
-		// Request CEL context, shared across all upstreams.
-		&CelExecWrapper,
-	) -> Result<ServerResult, ClientError>
-	+ Send
-	+ Sync
-	+ 'static;
-
-// Custom stream that merges multiple streams with terminal message handling
-pub struct MergeStream {
-	streams: Vec<Option<(Strng, Messages)>>,
-	terminal_messages: Vec<Option<(Strng, ServerResult)>>,
-	complete: bool,
-	req_id: RequestId,
-	merge: Option<Box<MergeFn>>,
-	// Present iff `merge` is; supplied to the merge fn for RBAC filtering.
-	cel: Option<CelExecWrapper>,
-	failure_mode: FailureMode,
-}
-
-impl MergeStream {
-	pub fn new_without_merge(streams: Vec<(Strng, Messages)>, failure_mode: FailureMode) -> Self {
-		Self::new_internal(streams, RequestId::Number(0), None, None, failure_mode)
-	}
-	pub fn new(
-		streams: Vec<(Strng, Messages)>,
-		req_id: RequestId,
-		merge: Box<MergeFn>,
-		cel: CelExecWrapper,
-		failure_mode: FailureMode,
-	) -> Self {
-		Self::new_internal(streams, req_id, Some(merge), Some(cel), failure_mode)
-	}
-	fn new_internal(
-		streams: Vec<(Strng, Messages)>,
-		req_id: RequestId,
-		merge: Option<Box<MergeFn>>,
-		cel: Option<CelExecWrapper>,
-		failure_mode: FailureMode,
-	) -> Self {
-		let terminal_messages = streams.iter().map(|_| None).collect::<Vec<_>>();
-		Self {
-			streams: streams.into_iter().map(Some).collect_vec(),
-			terminal_messages,
-			req_id,
-			complete: false,
-			merge,
-			cel,
-			failure_mode,
-		}
-	}
-
-	fn merge_terminal_messages(
-		mut self: Pin<&mut Self>,
-	) -> Result<ServerJsonRpcMessage, ClientError> {
-		let msgs = self
-			.terminal_messages
-			.iter_mut()
-			.filter_map(Option::take)
-			.collect_vec();
-
-		let merge = self
-			.merge
-			.take()
-			.expect("merge_terminal_messages called twice");
-		let cel = self.cel.as_ref().expect("merge is present iff cel is");
-		let res = merge(msgs, cel)?;
-		Ok(ServerJsonRpcMessage::response(res, self.req_id.clone()))
-	}
-}
-
-impl Stream for MergeStream {
-	type Item = Result<ServerJsonRpcMessage, ClientError>;
-
-	fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-		if self.complete {
-			return Poll::Ready(None);
-		}
-		// Poll all active streams
-		let mut any_pending = false;
-
-		for i in 0..self.streams.len() {
-			let (k, res) = {
-				let msg_idx = self.streams[i].as_mut();
-				let Some(msg_stream) = msg_idx else {
-					continue;
-				};
-				(msg_stream.0.clone(), msg_stream.1.0.as_mut().poll_next(cx))
-			};
-
-			let mut drop = false;
-			match res {
-				Poll::Ready(Some(msg)) => {
-					match msg {
-						Ok(ServerJsonRpcMessage::Response(r)) => {
-							drop = true;
-							self.terminal_messages[i] = Some((k, r.result));
-							// This stream is done, never look at it again
-						},
-						Err(e) => {
-							if self.failure_mode == FailureMode::FailOpen {
-								warn!(
-									"upstream stream error, skipping (failure_mode=FailOpen): {}",
-									e
-								);
-								drop = true;
-							} else {
-								self.complete = true;
-								return Poll::Ready(Some(Err(e)));
-							}
-						},
-						_ => return Poll::Ready(Some(msg)),
-					}
-				},
-				Poll::Ready(None) => {
-					// Stream ended without terminal message (shouldn't happen in this design)
-					if self.failure_mode == FailureMode::FailOpen {
-						warn!("upstream stream ended unexpectedly, skipping (failure_mode=FailOpen)");
-						drop = true;
-					} else {
-						self.complete = true;
-						return Poll::Ready(Some(Err(ClientError::new(anyhow::anyhow!(
-							"upstream stream ended unexpectedly"
-						)))));
-					}
-				},
-
-				Poll::Pending => {
-					any_pending = true;
-				},
-			}
-			if drop {
-				self.streams[i] = None;
-			}
-		}
-		if any_pending {
-			// Still waiting for some
-			return Poll::Pending;
-		}
-
-		self.complete = true;
-
-		if self.merge.is_some() {
-			Poll::Ready(Some(self.merge_terminal_messages()))
-		} else {
-			Poll::Ready(None)
-		}
+		)),
 	}
 }

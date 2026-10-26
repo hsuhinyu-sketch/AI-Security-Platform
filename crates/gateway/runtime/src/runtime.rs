@@ -7,3 +7,6 @@
 pub use crate::config;
 pub use crate::resource_manager;
 pub use crate::state_manager;
+
+#[path = "runtime_services.rs"]
+pub mod services;

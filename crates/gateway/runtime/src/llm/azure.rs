@@ -1,20 +1,12 @@
 use platform_core::strng;
 use platform_core::strng::Strng;
 
+#[cfg(feature = "providers-azure")]
 use crate::http::auth::azure::AzureCredentialCache;
 use crate::llm::RouteType;
 use crate::*;
 
-/// The type of Azure endpoint to connect to.
-#[apply(schema!)]
-pub enum AzureResourceType {
-	/// Azure OpenAI Service endpoint: `{resourceName}.openai.azure.com`
-	OpenAI,
-	/// Azure AI Foundry (project) endpoint: `{resourceName}.services.ai.azure.com`
-	/// Requires `project_name` to construct paths like `/api/projects/{project}/openai/v1/...`
-	#[serde(alias = "aiServices")]
-	Foundry,
-}
+pub use gateway_llm::provider::azure::AzureResourceType;
 
 #[apply(schema!)]
 #[cfg_attr(feature = "schema", schemars(rename = "AzureProvider"))]
@@ -35,6 +27,7 @@ pub struct Provider {
 	/// Per-provider credential cache, shared across requests via Arc.
 	#[serde(skip)]
 	#[cfg_attr(feature = "schema", schemars(skip))]
+	#[cfg(feature = "providers-azure")]
 	pub cached_cred: AzureCredentialCache,
 }
 
@@ -46,73 +39,26 @@ impl Provider {
 	/// Returns true if `model` (or the provider's configured default model) is a Claude model.
 	/// Used to select between Foundry's Anthropic-native and OpenAI-compatible endpoints.
 	pub fn is_anthropic_model(&self, model: Option<&str>) -> bool {
-		let effective = self.model.as_deref().or(model).unwrap_or_default();
-		effective.to_ascii_lowercase().starts_with("claude")
+		self.endpoint().is_anthropic_model(model)
 	}
 
 	pub fn get_path_for_model(&self, route: RouteType, model: &str) -> Strng {
-		// Foundry exposes both OpenAI-compatible and Anthropic-native endpoints.
-		// Route to the Anthropic-native path only for Claude models; GPT and other
-		// models use the project-scoped OpenAI-compatible path.
-		if matches!(self.resource_type, AzureResourceType::Foundry) {
-			if self.is_anthropic_model(Some(model)) {
-				if route == RouteType::Messages {
-					return strng::literal!("/anthropic/v1/messages");
-				}
-				if route == RouteType::AnthropicTokenCount {
-					return strng::literal!("/anthropic/v1/messages/count_tokens");
-				}
-			}
-			let t = if route == RouteType::Embeddings {
-				strng::literal!("embeddings")
-			} else if route == RouteType::Responses {
-				strng::literal!("responses")
-			} else {
-				strng::literal!("chat/completions")
-			};
-			let project = self
-				.project_name
-				.as_deref()
-				.unwrap_or(self.resource_name.as_str());
-			return strng::format!("/api/projects/{project}/openai/v1/{t}");
-		}
-
-		let t = if route == RouteType::Embeddings {
-			strng::literal!("embeddings")
-		} else if route == RouteType::Responses {
-			strng::literal!("responses")
-		} else {
-			strng::literal!("chat/completions")
-		};
-
-		let api_version = self.api_version();
-		if api_version == "v1" {
-			strng::format!("/openai/v1/{t}")
-		} else if api_version == "preview" {
-			// v1 preview API
-			strng::format!("/openai/v1/{t}?api-version=preview")
-		} else {
-			let model = self.model.as_deref().unwrap_or(model);
-			strng::format!(
-				"/openai/deployments/{}/{t}?api-version={}",
-				model,
-				api_version
-			)
-		}
+		self
+			.endpoint()
+			.get_path_for_model(route.provider_format(), model)
 	}
 
 	pub fn get_host(&self) -> Strng {
-		match &self.resource_type {
-			AzureResourceType::OpenAI => {
-				strng::format!("{}.openai.azure.com", self.resource_name)
-			},
-			AzureResourceType::Foundry => {
-				strng::format!("{}.services.ai.azure.com", self.resource_name)
-			},
-		}
+		self.endpoint().get_host()
 	}
 
-	fn api_version(&self) -> &str {
-		self.api_version.as_deref().unwrap_or("v1")
+	pub(super) fn endpoint(&self) -> gateway_llm::provider::azure::Endpoint<'_> {
+		gateway_llm::provider::azure::Endpoint {
+			model: self.model.as_deref(),
+			resource_name: &self.resource_name,
+			resource_type: &self.resource_type,
+			api_version: self.api_version.as_deref(),
+			project_name: self.project_name.as_deref(),
+		}
 	}
 }

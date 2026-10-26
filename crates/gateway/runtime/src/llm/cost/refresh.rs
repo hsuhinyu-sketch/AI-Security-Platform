@@ -31,9 +31,7 @@ pub async fn refresh_models_dev_base_catalog(
 		fs_err::tokio::create_dir_all(parent).await?;
 	}
 	fs_err::tokio::write(file, &json).await?;
-	model_catalog.replace(CatalogSnapshot {
-		catalog: Some(catalog),
-	});
+	model_catalog.replace(CatalogSnapshot::from_catalogs([catalog]))?;
 	Ok(RefreshBaseCatalogResponse { providers, models })
 }
 

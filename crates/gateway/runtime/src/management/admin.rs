@@ -63,7 +63,8 @@ struct AdminState {
 	resource_manager: crate::resource_manager::ResourceManager,
 	config: Arc<Config>,
 	#[cfg_attr(not(feature = "ui"), allow(dead_code))]
-	model_catalog: Arc<crate::llm::cost::ModelCatalog>,
+	#[cfg(feature = "gateway-llm")]
+	model_catalog: crate::llm::cost::CatalogAdmin,
 	shutdown_trigger: signal::ShutdownTrigger,
 	#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 	dataplane_handle: Handle,
@@ -110,7 +111,7 @@ pub struct CertsDump {
 impl Service {
 	pub async fn new(
 		config: Arc<Config>,
-		model_catalog: Arc<crate::llm::cost::ModelCatalog>,
+		#[cfg(feature = "gateway-llm")] model_catalog: impl Into<crate::llm::cost::CatalogAdmin>,
 		stores: crate::store::Stores,
 		resource_manager: crate::resource_manager::ResourceManager,
 		shutdown_trigger: signal::ShutdownTrigger,
@@ -120,7 +121,8 @@ impl Service {
 		config.management.validate(&config.admin_addr)?;
 		let state = Arc::new(AdminState {
 			config,
-			model_catalog,
+			#[cfg(feature = "gateway-llm")]
+			model_catalog: model_catalog.into(),
 			stores,
 			resource_manager,
 			shutdown_trigger,
@@ -183,6 +185,7 @@ fn admin_router(state: Arc<AdminState>) -> Router {
 	#[cfg(feature = "ui")]
 	let router = router.merge(crate::ui::router(
 		state.config.clone(),
+		#[cfg(feature = "gateway-llm")]
 		state.model_catalog.clone(),
 		state.resource_manager.clone(),
 	));

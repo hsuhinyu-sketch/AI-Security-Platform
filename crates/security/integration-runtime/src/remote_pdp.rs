@@ -9,7 +9,7 @@ use security_pipeline::{DynamicPdpError, RemotePdpRequest, RemotePdpResponse, Re
 /// certificate and private-key PEM used for mTLS; it is deliberately a file reference rather
 /// than inline configuration, so private key material cannot enter an AI-system config.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct RemotePdpConfig {
 	pub endpoint: String,
 	#[serde(default = "default_timeout_millis")]

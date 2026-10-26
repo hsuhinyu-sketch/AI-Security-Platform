@@ -1,3 +1,12 @@
+#[cfg(feature = "telemetry-otlp")]
+mod otlp;
+#[cfg(feature = "telemetry-otlp")]
+use opentelemetry::{KeyValue, trace::SpanKind};
+#[cfg(feature = "telemetry-otlp")]
+pub use otlp::OtelAccessLogger;
+#[cfg(feature = "telemetry-otlp")]
+use platform_core::telemetry::OtelLogSink;
+
 use std::borrow::Cow;
 use std::fmt::Debug;
 use std::net::SocketAddr;
@@ -12,16 +21,10 @@ use frozen_collections::FzHashSet;
 use http_body::{Body, Frame, SizeHint};
 use indexmap::IndexMap;
 use itertools::Itertools;
-use opentelemetry::logs::{AnyValue, LogRecord as _, Logger, LoggerProvider as _, Severity};
-use opentelemetry::trace::SpanKind;
-use opentelemetry::{Key, KeyValue};
-use opentelemetry_otlp::{WithExportConfig, WithHttpConfig};
-use opentelemetry_sdk::Resource;
-use opentelemetry_sdk::logs::SdkLoggerProvider;
 use platform_core::metrics::CustomField;
 use platform_core::strng::{RichStrng, Strng};
 use platform_core::telemetry::{
-	OptionExt, OtelLogSink, ValueBag, current_connection_id, current_request_id, debug, display,
+	OptionExt, ValueBag, current_connection_id, current_request_id, debug, display,
 };
 use platform_core::{Timestamp, strng};
 use rust_decimal::prelude::ToPrimitive;
@@ -34,7 +37,9 @@ use tracing::{Level, debug, trace};
 use crate::cel::{ContextBuilder, Expression, LLMContext};
 use crate::http::{Request, health};
 use crate::llm::InputFormat;
-use crate::llm::cost::{CostLookupStatus, ModelCatalog};
+use crate::llm::cost::CostLookupStatus;
+#[cfg(feature = "gateway-llm")]
+use crate::llm::cost::ModelCatalog;
 use crate::mcp::{MCPInfo, MCPOperation};
 use crate::proxy::{ProxyResponseReason, dtrace};
 use crate::telemetry::metrics::{
@@ -811,6 +816,7 @@ fn proxy_context(log: &RequestLog) -> cel::ProxyContext {
 }
 
 impl RequestLog {
+	#[cfg(feature = "gateway-llm")]
 	pub fn new(
 		cel: CelLogging,
 		metrics: Arc<Metrics>,
@@ -818,9 +824,20 @@ impl RequestLog {
 		start: Timestamp,
 		tcp_info: TCPConnectionInfo,
 	) -> Self {
+		Self::new_with_catalog(cel, metrics, Some(model_catalog.into()), start, tcp_info)
+	}
+
+	pub fn new_with_catalog(
+		cel: CelLogging,
+		metrics: Arc<Metrics>,
+		#[cfg(feature = "gateway-llm")] model_catalog: Option<crate::llm::cost::CatalogReader>,
+		start: Timestamp,
+		tcp_info: TCPConnectionInfo,
+	) -> Self {
 		RequestLog {
 			cel,
 			metrics,
+			#[cfg(feature = "gateway-llm")]
 			model_catalog,
 			start,
 			request_processing_start: Instant::now(),
@@ -833,8 +850,11 @@ impl RequestLog {
 			security_request_id: None,
 			tcp_info,
 			tls_info: None,
+			#[cfg(feature = "telemetry-otlp")]
 			tracer: None,
+			#[cfg(feature = "telemetry-otlp")]
 			trace_spans: Arc::new(Mutex::new(Default::default())),
+			#[cfg(feature = "telemetry-otlp")]
 			otel_logger: None,
 			endpoint: None,
 			bind_name: None,
@@ -872,9 +892,13 @@ impl RequestLog {
 	}
 
 	pub fn span_writer(&self) -> SpanWriter {
+		#[cfg(feature = "telemetry-otlp")]
 		let inner = self.span_writer_inner();
+		#[cfg(not(feature = "telemetry-otlp"))]
+		let inner = None;
 		SpanWriter { inner }
 	}
+	#[cfg(feature = "telemetry-otlp")]
 	fn span_writer_inner(&self) -> Option<SpanWriterInner> {
 		// Early return if there is no tracer enabled at all
 		self.tracer.as_ref()?;
@@ -955,7 +979,8 @@ impl RequestLog {
 pub struct RequestLog {
 	pub cel: CelLogging,
 	pub metrics: Arc<Metrics>,
-	pub model_catalog: Arc<ModelCatalog>,
+	#[cfg(feature = "gateway-llm")]
+	pub model_catalog: Option<crate::llm::cost::CatalogReader>,
 	pub start: Timestamp,
 	pub request_processing_start: Instant,
 	pub request_processing_duration: Option<Duration>,
@@ -972,12 +997,15 @@ pub struct RequestLog {
 	pub tls_info: Option<TLSConnectionInfo>,
 
 	// Set only if the trace is sampled
+	#[cfg(feature = "telemetry-otlp")]
 	pub tracer: Option<std::sync::Arc<trc::Tracer>>,
 	/// Additional spans created during the request (e.g. upstream call spans).
 	/// These are flushed on drop when tracing is enabled.
+	#[cfg(feature = "telemetry-otlp")]
 	pub trace_spans: Arc<Mutex<Vec<BufferedSpan>>>,
 
 	// Set only if OTLP logging is configured
+	#[cfg(feature = "telemetry-otlp")]
 	pub otel_logger: Option<std::sync::Arc<OtelAccessLogger>>,
 
 	pub endpoint: Option<Target>,
@@ -1086,12 +1114,18 @@ impl Drop for DropOnLog {
 			// even when logging/tracing/metrics are disabled.
 			let end_time = Timestamp::now();
 			let duration = end_time.duration_since(&log.start);
+			#[cfg(feature = "telemetry-otlp")]
 			let enable_trace = log.tracer.is_some();
+			#[cfg(not(feature = "telemetry-otlp"))]
+			let enable_trace = false;
 
+			#[cfg(feature = "gateway-llm")]
 			let mut llm_response: Option<LLMContext> = log
 				.llm_response
 				.take()
-				.map(|llm_info| LLMContext::from_llm_info(llm_info, Some(log.model_catalog.as_ref())));
+				.map(|llm_info| LLMContext::from_catalog(llm_info, log.model_catalog.as_ref()));
+			#[cfg(not(feature = "gateway-llm"))]
+			let mut llm_response: Option<LLMContext> = log.llm_response.take().map(Into::into);
 			if let Some(llm_response) = llm_response.as_mut() {
 				llm_response.set_token_timing(log.start.as_instant(), end_time.as_instant());
 			}
@@ -1209,7 +1243,10 @@ impl Drop for DropOnLog {
 			}
 
 			let maybe_enable_log = platform_core::telemetry::enabled("request", &Level::INFO);
+			#[cfg(feature = "telemetry-otlp")]
 			let otlp_log_enabled = log.otel_logger.is_some();
+			#[cfg(not(feature = "telemetry-otlp"))]
+			let otlp_log_enabled = false;
 			// For now we only enable this log for LLM requests to keep cost/performance appropriate.
 			let log_store_enabled = log_store::enabled() && llm_response.is_some();
 			if !maybe_enable_log && !enable_trace && !log_store_enabled && !otlp_log_enabled {
@@ -1489,6 +1526,7 @@ impl Drop for DropOnLog {
 			}
 			kv.reserve_exact(extra_kv_capacity);
 
+			#[cfg(feature = "telemetry-otlp")]
 			if enable_trace && let Some(t) = &log.tracer {
 				let base_len = kv.len();
 				if let Some(trace_cost_fields) = &trace_cost_fields {
@@ -1511,6 +1549,7 @@ impl Drop for DropOnLog {
 					}
 				}
 			};
+			#[cfg(feature = "telemetry-otlp")]
 			if let Some(otel) = &log.otel_logger
 				&& cel_exec.eval_otlp_filter()
 			{
@@ -1555,6 +1594,7 @@ impl Drop for DropOnLog {
 					platform_core::telemetry::log("info", "request", &kv);
 				}
 
+				#[cfg(feature = "database")]
 				if log_store_enabled {
 					let original_model = original_model_from_metadata(
 						log.request_snapshot.as_deref(),
@@ -1736,269 +1776,6 @@ where
 	}
 }
 
-pub struct OtelAccessLogger {
-	provider: SdkLoggerProvider,
-	logger: opentelemetry_sdk::logs::SdkLogger,
-}
-
-impl std::fmt::Debug for OtelAccessLogger {
-	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		f.debug_struct("OtelAccessLogger").finish()
-	}
-}
-
-fn to_any_value(v: &ValueBag) -> AnyValue {
-	if let Some(b) = v.to_str() {
-		AnyValue::String(b.to_string().into())
-	} else if let Some(b) = v.to_i64() {
-		AnyValue::Int(b)
-	} else if let Some(b) = v.to_f64() {
-		AnyValue::Double(b)
-	} else if let Some(b) = v.to_bool() {
-		AnyValue::Boolean(b)
-	} else {
-		AnyValue::String(v.to_string().into())
-	}
-}
-
-/// Policy-aware OTLP gRPC log exporter that routes via `GrpcReferenceChannel`, ensuring
-/// backend policies are looked up and applied by `PolicyClient::call_reference`.
-#[derive(Clone)]
-struct PolicyGrpcLogExporter {
-	tonic_client:
-		opentelemetry_proto::tonic::collector::logs::v1::logs_service_client::LogsServiceClient<
-			crate::http::ext_proc::GrpcReferenceChannel,
-		>,
-	is_shutdown: Arc<bool>,
-	resource: Resource,
-	runtime: tokio::runtime::Handle,
-}
-
-impl std::fmt::Debug for PolicyGrpcLogExporter {
-	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		f.debug_struct("PolicyGrpcLogExporter").finish()
-	}
-}
-
-impl PolicyGrpcLogExporter {
-	fn new(
-		inputs: Arc<crate::ProxyInputs>,
-		target: Arc<crate::types::agent::SimpleBackendReference>,
-		policies: Vec<crate::types::agent::BackendTrafficPolicy>,
-		runtime: tokio::runtime::Handle,
-	) -> Self {
-		use crate::http::ext_proc::GrpcReferenceChannel;
-		let channel = GrpcReferenceChannel {
-			target,
-			policies: Arc::new(policies),
-			client: crate::proxy::httpproxy::PolicyClient::new(inputs),
-		};
-		let tonic_client =
-			opentelemetry_proto::tonic::collector::logs::v1::logs_service_client::LogsServiceClient::new(
-				channel,
-			);
-		Self {
-			tonic_client,
-			is_shutdown: Arc::new(false),
-			resource: Resource::builder().build(),
-			runtime,
-		}
-	}
-}
-
-impl opentelemetry_sdk::logs::LogExporter for PolicyGrpcLogExporter {
-	fn export(
-		&self,
-		batch: opentelemetry_sdk::logs::LogBatch<'_>,
-	) -> impl std::future::Future<Output = opentelemetry_sdk::error::OTelSdkResult> + Send {
-		use opentelemetry_proto::transform::logs::tonic::group_logs_by_resource_and_scope;
-		use opentelemetry_sdk::error::{OTelSdkError, OTelSdkResult};
-
-		let is_shutdown = self.is_shutdown.clone();
-		let mut client = self.tonic_client.clone();
-		let resource: opentelemetry_proto::transform::common::tonic::ResourceAttributesWithSchema =
-			(&self.resource).into();
-		let resource_logs = group_logs_by_resource_and_scope(&batch, &resource);
-		let handle = self.runtime.clone();
-
-		async move {
-			if *is_shutdown {
-				return Err(OTelSdkError::AlreadyShutdown);
-			}
-			let req =
-				opentelemetry_proto::tonic::collector::logs::v1::ExportLogsServiceRequest { resource_logs };
-			// Drop tonic Response inside the spawned task so guard is released on the Tokio runtime, not on
-			// the BatchProcessor OS thread which has no Tokio context.
-			handle
-				.spawn(async move {
-					client
-						.export(req)
-						.await
-						.map(|_| ())
-						.map_err(|e| e.message().to_string())
-				})
-				.await
-				.map_err(|e| OTelSdkError::InternalFailure(e.to_string()))?
-				.map_err(OTelSdkError::InternalFailure) as OTelSdkResult
-		}
-	}
-
-	fn shutdown(&self) -> opentelemetry_sdk::error::OTelSdkResult {
-		Ok(())
-	}
-
-	fn set_resource(&mut self, resource: &opentelemetry_sdk::Resource) {
-		self.resource = resource.clone();
-	}
-}
-
-fn build_resource(defaults: Option<&trc::GlobalResourceDefaults>) -> Resource {
-	let mut resource_builder = Resource::builder();
-	if let Some(d) = defaults {
-		for kv in &d.attrs {
-			resource_builder = resource_builder.with_attribute(kv.clone());
-		}
-	}
-	resource_builder = resource_builder.with_service_name(
-		defaults
-			.and_then(|d| d.service_name.clone())
-			.unwrap_or_else(|| "agentgateway".to_string()),
-	);
-	resource_builder = resource_builder.with_attribute(KeyValue::new(
-		"service.version",
-		platform_core::version::BuildInfo::new().version,
-	));
-	resource_builder.build()
-}
-
-impl OtelAccessLogger {
-	pub fn new(
-		policy_client: crate::proxy::httpproxy::PolicyClient,
-		backend_ref: crate::types::agent::SimpleBackendReference,
-		policies: Vec<crate::types::agent::BackendTrafficPolicy>,
-		protocol: crate::types::agent::TracingProtocol,
-		path: String,
-	) -> anyhow::Result<Self> {
-		let defaults = trc::global_resource_defaults();
-		let resource = build_resource(defaults);
-
-		let exporter_runtime = policy_client
-			.inputs
-			.cfg
-			.admin_runtime_handle
-			.clone()
-			.unwrap_or_else(tokio::runtime::Handle::current);
-
-		let provider = if protocol == crate::types::agent::TracingProtocol::Grpc {
-			let exporter = PolicyGrpcLogExporter::new(
-				policy_client.inputs.clone(),
-				Arc::new(backend_ref),
-				policies,
-				exporter_runtime,
-			);
-			SdkLoggerProvider::builder()
-				.with_resource(resource)
-				.with_batch_exporter(exporter)
-				.build()
-		} else {
-			let http_client = trc::PolicyOtelHttpClient {
-				policy_client,
-				backend_ref,
-				policies,
-				runtime: exporter_runtime,
-			};
-			let exporter = opentelemetry_otlp::LogExporter::builder()
-				.with_http()
-				.with_http_client(http_client)
-				.with_endpoint(path)
-				.build()?;
-			SdkLoggerProvider::builder()
-				.with_resource(resource)
-				.with_batch_exporter(exporter)
-				.build()
-		};
-
-		let logger = provider.logger("agentgateway.access");
-
-		Ok(Self { provider, logger })
-	}
-
-	pub fn shutdown(&self) {
-		let _ = self.provider.shutdown();
-	}
-}
-
-impl OtelLogSink for OtelAccessLogger {
-	fn emit<'v>(&self, level: &str, target: &str, kv: &[(&str, Option<ValueBag<'v>>)]) {
-		let severity = match level {
-			"error" => Severity::Error,
-			"warn" => Severity::Warn,
-			"info" => Severity::Info,
-			"debug" => Severity::Debug,
-			"trace" => Severity::Trace,
-			_ => Severity::Info,
-		};
-		let severity_text: &'static str = match level {
-			"error" => "ERROR",
-			"warn" => "WARN",
-			"info" => "INFO",
-			"debug" => "DEBUG",
-			"trace" => "TRACE",
-			_ => "INFO",
-		};
-
-		let mut record = self.logger.create_log_record();
-		record.set_severity_number(severity);
-		record.set_severity_text(severity_text);
-		record.set_target(target.to_string());
-
-		let mut trace_id_val: Option<u128> = None;
-		let mut span_id_val: Option<u64> = None;
-
-		for &(k, ref v) in kv {
-			let Some(v) = v else { continue };
-
-			match k {
-				"trace.id" => {
-					if let Some(s) = v.to_str()
-						&& let Ok(id) = u128::from_str_radix(&s, 16)
-					{
-						trace_id_val = Some(id);
-					}
-					record.add_attribute(Key::new(k.to_string()), to_any_value(v));
-				},
-				"span.id" => {
-					if let Some(s) = v.to_str()
-						&& let Ok(id) = u64::from_str_radix(&s, 16)
-					{
-						span_id_val = Some(id);
-					}
-					record.add_attribute(Key::new(k.to_string()), to_any_value(v));
-				},
-				_ => {
-					record.add_attribute(Key::new(k.to_string()), to_any_value(v));
-				},
-			}
-		}
-
-		if let Some(tid) = trace_id_val {
-			record.set_trace_context(
-				opentelemetry::trace::TraceId::from(tid),
-				span_id_val
-					.map(opentelemetry::trace::SpanId::from)
-					.unwrap_or(opentelemetry::trace::SpanId::INVALID),
-				None,
-			);
-		}
-
-		self.logger.emit(record);
-	}
-
-	fn shutdown(&self) {
-		let _ = self.provider.shutdown();
-	}
-}
-
 // SpanWriter is a construct that can start otel spans
 #[derive(Debug, Default, Clone)]
 pub struct SpanWriter {
@@ -2063,9 +1840,11 @@ impl Drop for SpanWriteOnDrop {
 		if let Ok(mut spans) = self.inner.lock() {
 			spans.push(BufferedSpan {
 				name,
+				#[cfg(feature = "telemetry-otlp")]
 				span_kind: SpanKind::Server,
 				start_time: self.start_time.unwrap_or(end_time),
 				end_time,
+				#[cfg(feature = "telemetry-otlp")]
 				attributes: Vec::new(),
 				parent,
 				span,
@@ -2077,14 +1856,17 @@ impl Drop for SpanWriteOnDrop {
 #[derive(Debug)]
 pub struct BufferedSpan {
 	name: Cow<'static, str>,
+	#[cfg(feature = "telemetry-otlp")]
 	span_kind: SpanKind,
 	start_time: SystemTime,
 	end_time: SystemTime,
+	#[cfg(feature = "telemetry-otlp")]
 	attributes: Vec<KeyValue>,
 	parent: trc::TraceParent,
 	span: trc::TraceParent,
 }
 
+#[cfg(feature = "telemetry-otlp")]
 impl BufferedSpan {
 	fn into_span_data(self) -> opentelemetry_sdk::trace::SpanData {
 		trc::trace_span_data(

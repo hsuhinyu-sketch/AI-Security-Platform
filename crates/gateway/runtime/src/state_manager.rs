@@ -15,6 +15,9 @@ pub struct StateManager {
 
 	#[serde(skip_serializing)]
 	resource_manager: crate::resource_manager::ResourceManager,
+	#[cfg(feature = "gateway-rag")]
+	#[serde(skip_serializing)]
+	rag: Arc<crate::rag::Runtime>,
 }
 
 impl StateManager {
@@ -25,6 +28,8 @@ impl StateManager {
 			config.dynamic_ca_cert_cache.clone(),
 		);
 		let resource_manager = crate::resource_manager::ResourceManager::new(client.clone())?;
+		#[cfg(feature = "gateway-rag")]
+		let rag = Arc::new(crate::rag::Runtime::default());
 		if let Some(cfg) = &config.local_config {
 			let local_client = LocalClient {
 				config: config.clone(),
@@ -33,13 +38,22 @@ impl StateManager {
 				client,
 				resource_manager: resource_manager.clone(),
 				gateway: config.gateway(),
+				#[cfg(feature = "gateway-rag")]
+				rag: rag.clone(),
 			};
 			Box::pin(local_client.run()).await?;
 		}
 		Ok(Self {
 			stores,
 			resource_manager,
+			#[cfg(feature = "gateway-rag")]
+			rag,
 		})
+	}
+
+	#[cfg(feature = "gateway-rag")]
+	pub(crate) fn rag(&self) -> Arc<crate::rag::Runtime> {
+		self.rag.clone()
 	}
 
 	pub fn stores(&self) -> Stores {
@@ -60,6 +74,8 @@ pub struct LocalClient {
 	pub client: Client,
 	pub resource_manager: crate::resource_manager::ResourceManager,
 	pub gateway: ListenerTarget,
+	#[cfg(feature = "gateway-rag")]
+	rag: Arc<crate::rag::Runtime>,
 }
 
 impl LocalClient {
@@ -136,7 +152,8 @@ impl LocalClient {
 		let config_content = self.cfg.read_to_string().await?;
 		let resources =
 			crate::resource_manager::ResourceFetcher::managed(self.resource_manager.clone());
-		let config = crate::types::local::NormalizedLocalConfig::from(
+		let resource_scope = resources.scope_full_computation();
+		let config = crate::types::local::NormalizedLocalConfig::compute(
 			&self.config,
 			&resources,
 			self.gateway.clone(),
@@ -144,6 +161,12 @@ impl LocalClient {
 		)
 		.await?;
 		info!("loaded config from {:?}", self.cfg);
+
+		#[cfg(feature = "gateway-rag")]
+		let rag = self
+			.rag
+			.prepare(&self.config, &resources, config.rag_systems)
+			.await?;
 
 		// Sync the state
 		let next_binds = self.stores.binds.sync_local(
@@ -160,6 +183,10 @@ impl LocalClient {
 				.stores
 				.discovery
 				.sync_local(config.services, config.workloads, prev.discovery)?;
+
+		#[cfg(feature = "gateway-rag")]
+		self.rag.commit(rag);
+		resource_scope.finish(true);
 
 		Ok(PreviousState {
 			binds: next_binds,

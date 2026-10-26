@@ -12,7 +12,7 @@ use aws_types::region::Region;
 use secrecy::{ExposeSecret, SecretString};
 use tokio::sync::{Mutex, OnceCell};
 
-use crate::llm::bedrock::AwsRegion;
+use crate::http::auth::AwsRegion;
 use crate::*;
 
 #[derive(Clone, Debug)]

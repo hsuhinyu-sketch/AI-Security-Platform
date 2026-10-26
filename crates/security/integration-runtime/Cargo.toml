@@ -16,6 +16,7 @@ security-pipeline = { path = "../pipeline" }
 security-types = { path = "../types" }
 serde.workspace = true
 serde_json.workspace = true
+serde_json_path_to_error.workspace = true
 tracing.workspace = true
 reqwest = { workspace = true, features = ["blocking", "json"] }
 chrono.workspace = true
@@ -24,3 +25,7 @@ tokio-util.workspace = true
 uuid.workspace = true
 sqlx = { workspace = true, optional = true }
 sha2 = { workspace = true, optional = true }
+
+[dev-dependencies]
+security-rag = { path = "../rag" }
+libc.workspace = true

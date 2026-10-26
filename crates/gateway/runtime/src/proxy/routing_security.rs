@@ -1,16 +1,18 @@
 //! Request-local authorization gates, independent of shared load-balancer health.
-use crate::{
-	ProxyInputs,
-	http::Request,
-	llm,
-	proxy::ProxyError,
-	store::BackendPolicies,
-	types::agent::{BackendTargetRef, ResourceName, SimpleBackend, Target},
-};
+use crate::{http::Request, proxy::ProxyError, store::BackendPolicies, types::agent::Target};
 use security_integration_runtime::SecurityConfig;
-use security_types::{ActionRequest, Decision, DecisionEffect};
+use security_types::{ActionRequest, CheckStage, Decision, DecisionEffect};
 
+#[cfg(feature = "gateway-llm")]
+use crate::{
+	RuntimeContext, llm,
+	types::agent::{BackendTargetRef, ResourceName, SimpleBackend},
+};
 use std::sync::Arc;
+
+#[cfg(test)]
+#[path = "routing_security_tests.rs"]
+mod tests;
 
 #[derive(Clone, Copy, Default)]
 pub(crate) struct Attempt(pub usize);
@@ -81,6 +83,16 @@ impl Guards {
 		}
 		Ok(())
 	}
+	/// Context identities installed by this request's inherited gates, never grants.
+	pub fn context_bindings(&self) -> Result<Vec<String>, ProxyError> {
+		self
+			.0
+			.iter()
+			.filter_map(|guard| guard.flow.as_ref())
+			.map(|flow| flow.recovery_binding())
+			.collect()
+	}
+
 	/// Stable lineage, not a credential. A leaf cannot remove a parent from recovered events.
 	pub fn a2a_recovery_binding(&self) -> Result<String, ProxyError> {
 		let declarations = self
@@ -200,6 +212,40 @@ impl Guards {
 		Ok(())
 	}
 
+	/// Guard both raw provider bytes and the final adapted output. Dropping either body
+	/// releases its upstream; no background reader outlives downstream demand.
+	pub fn protect_response(
+		&self,
+		response: crate::http::Response,
+		target: &Target,
+	) -> Result<crate::http::Response, ProxyError> {
+		let guards = Self(
+			self
+				.0
+				.iter()
+				.filter(|g| {
+					g.config.mode == security_integration_runtime::SecurityMode::Enforce
+						&& (g.model.is_some() || g.inference)
+				})
+				.cloned()
+				.collect(),
+		);
+		if guards.0.is_empty() {
+			return Ok(response);
+		}
+		for guard in &guards.0 {
+			guard.current()?;
+		}
+		Ok(response.map(|body| {
+			crate::http::Body::new(ResponseBody {
+				body: Some(body),
+				guards,
+				target: target.clone(),
+				reauthorize: tokio::time::sleep(REAUTHORIZE_INTERVAL),
+			})
+		}))
+	}
+
 	pub fn covers(&self, config: &Arc<SecurityConfig>) -> bool {
 		self
 			.0
@@ -238,7 +284,7 @@ pub(crate) struct Guard {
 	inference: bool,
 	agent: bool,
 	expires: Option<i64>,
-	revision: Option<crate::a2a::revision::ConfigLease>,
+	revision: Option<gateway_contracts::ConfigLease>,
 	attempt: usize,
 }
 impl Guard {
@@ -249,7 +295,7 @@ impl Guard {
 		let Some(config) = &policies.security_audit else {
 			return Ok(None);
 		};
-		if policies.llm_provider.is_none()
+		if policies.model_name().is_none()
 			&& policies.inference_routing.is_none()
 			&& policies.a2a.is_none()
 		{
@@ -261,7 +307,7 @@ impl Guard {
 			flow: crate::security_flow::prepare(config, request.headers(), request.extensions())?,
 			identity: crate::security::identity_from_extensions(request.extensions()),
 			request_id: crate::security::request_id(&mut extensions),
-			model: policies.llm_provider.as_ref().map(|p| p.name.to_string()),
+			model: policies.model_name().map(str::to_owned),
 			inference: policies.inference_routing.is_some(),
 			agent: policies.a2a.is_some(),
 			expires: request
@@ -271,7 +317,7 @@ impl Guard {
 				.and_then(|v| v.as_i64()),
 			revision: request
 				.extensions()
-				.get::<crate::a2a::revision::ConfigLease>()
+				.get::<gateway_contracts::ConfigLease>()
 				.cloned(),
 			attempt: request
 				.extensions()
@@ -282,12 +328,37 @@ impl Guard {
 		})))
 	}
 	pub fn prefilter(&self, target: Option<&Target>) -> Result<(), ProxyError> {
-		self.check(target, false)
+		self.check(target, CheckStage::Candidate)
 	}
 	pub fn dispatch(&self, target: &Target) -> Result<(), ProxyError> {
-		self.check(Some(target), true)
+		self.check(Some(target), CheckStage::Dispatch)
 	}
-	fn check(&self, target: Option<&Target>, dispatch: bool) -> Result<(), ProxyError> {
+	fn check_response_current(&self, target: &Target) -> Result<(), ProxyError> {
+		self.current().inspect_err(|_| {
+			let action = security_pipeline::inference_route_for_identity(
+				&self.request_id,
+				self.identity.clone(),
+				target.to_string(),
+			);
+			self.record_check(&action, CheckStage::Continuation, false);
+		})
+	}
+
+	fn current(&self) -> Result<(), ProxyError> {
+		if self
+			.expires
+			.is_some_and(|e| e <= chrono::Utc::now().timestamp())
+			|| self.revision.as_ref().is_some_and(|r| !r.is_current())
+		{
+			return Err(ProxyError::AuthorizationFailed);
+		}
+		if let Some(flow) = &self.flow {
+			flow.current()?;
+		}
+		Ok(())
+	}
+
+	fn check(&self, target: Option<&Target>, stage: CheckStage) -> Result<(), ProxyError> {
 		let destination = target
 			.map(ToString::to_string)
 			.unwrap_or_else(|| "unresolved-endpoint".into());
@@ -297,24 +368,16 @@ impl Guard {
 			destination.clone(),
 		);
 		let result = (|| {
-			if self
-				.expires
-				.is_some_and(|e| e <= chrono::Utc::now().timestamp())
-				|| self.revision.as_ref().is_some_and(|r| !r.is_current())
-			{
-				return Err(ProxyError::AuthorizationFailed);
-			}
+			self.current()?;
 			let check = |action: ActionRequest, authorize: bool| {
 				if authorize {
-					if dispatch {
-						crate::security::evaluate(&self.config, &action)
-					} else {
-						security_integration_runtime::prefilter_with_audit(
-							&self.config,
-							&action,
-							&crate::security_events::UiSecurityAuditSink,
-						)
-					}
+					security_integration_runtime::evaluate_at_stage(
+						&self.config,
+						stage,
+						&action,
+						None,
+						&crate::security_events::UiSecurityAuditSink,
+					)
 					.map_err(|_| ProxyError::AuthorizationFailed)?;
 				}
 				if target.is_some() {
@@ -324,7 +387,7 @@ impl Guard {
 						}
 					}
 					if let Some(flow) = &self.flow {
-						if dispatch {
+						if stage != CheckStage::Candidate {
 							flow.check(&action, &destination)?;
 						} else if !flow.permits(&action, &destination)? {
 							return Err(ProxyError::AuthorizationFailed);
@@ -358,13 +421,17 @@ impl Guard {
 					false,
 				)?;
 			}
-			Ok(())
+			self.current()
 		})();
+		self.record_check(&route, stage, result.is_ok());
+		result
+	}
+	fn record_check(&self, route: &ActionRequest, stage: CheckStage, allowed: bool) {
 		use security_audit::AuditSink;
-		let phase = if dispatch { "dispatch" } else { "candidate" };
+		let phase = stage.as_str();
 		let decision = Decision {
 			request_id: self.request_id.clone(),
-			effect: if result.is_ok() {
+			effect: if allowed {
 				DecisionEffect::Allow
 			} else {
 				DecisionEffect::Deny
@@ -375,17 +442,17 @@ impl Guard {
 		};
 		crate::security_events::UiSecurityAuditSink.record(security_audit::event_from_decision(
 			uuid::Uuid::new_v4().to_string(),
-			&route,
+			route,
 			&decision,
 		));
-		result
 	}
 }
 
 /// Resolve only configuration, not a connection or a health handle. Unknown service endpoints
 /// are filtered later with their concrete workload destination, not against a service alias.
+#[cfg(feature = "gateway-llm")]
 pub(crate) fn provider(
-	inputs: &ProxyInputs,
+	inputs: &RuntimeContext,
 	name: &ResourceName,
 	provider: &Arc<llm::NamedAIProvider>,
 	base: &BackendPolicies,
@@ -474,4 +541,85 @@ pub(crate) fn provider(
 		target
 	};
 	Ok((guards, target))
+}
+
+const REAUTHORIZE_INTERVAL: std::time::Duration = std::time::Duration::from_secs(5);
+
+pin_project_lite::pin_project! {
+		struct ResponseBody {
+				#[pin] body: Option<crate::http::Body>,
+				guards: Guards,
+				target: Target,
+				#[pin] reauthorize: tokio::time::Sleep,
+		}
+}
+impl http_body::Body for ResponseBody {
+	type Data = bytes::Bytes;
+	type Error = axum_core::BoxError;
+	fn poll_frame(
+		self: std::pin::Pin<&mut Self>,
+		cx: &mut std::task::Context<'_>,
+	) -> std::task::Poll<Option<Result<http_body::Frame<Self::Data>, Self::Error>>> {
+		use std::{future::Future, task::Poll};
+		let mut this = self.project();
+		if this.body.is_none() {
+			return Poll::Ready(None);
+		}
+		let result = (|| {
+			for guard in &this.guards.0 {
+				guard.check_response_current(this.target)?;
+			}
+
+			if this.reauthorize.as_mut().poll(cx).is_ready() {
+				for guard in &this.guards.0 {
+					guard.check(Some(this.target), CheckStage::Continuation)?;
+				}
+				this
+					.reauthorize
+					.as_mut()
+					.reset(tokio::time::Instant::now() + REAUTHORIZE_INTERVAL);
+			}
+			Ok::<_, ProxyError>(())
+		})();
+		if let Err(error) = result {
+			this.body.set(None);
+			return Poll::Ready(Some(Err(error.into())));
+		}
+		match this
+			.body
+			.as_mut()
+			.as_pin_mut()
+			.expect("active response body")
+			.poll_frame(cx)
+		{
+			Poll::Ready(None) => {
+				this.body.set(None);
+				Poll::Ready(None)
+			},
+			Poll::Ready(Some(Err(error))) => {
+				this.body.set(None);
+				Poll::Ready(Some(Err(error.into())))
+			},
+			Poll::Ready(Some(Ok(frame))) => {
+				// A provider/adapter may invalidate the lease while producing this frame.
+				for guard in &this.guards.0 {
+					if let Err(error) = guard.check_response_current(this.target) {
+						this.body.set(None);
+						return Poll::Ready(Some(Err(error.into())));
+					}
+				}
+				Poll::Ready(Some(Ok(frame)))
+			},
+			Poll::Pending => Poll::Pending,
+		}
+	}
+	fn is_end_stream(&self) -> bool {
+		self.body.is_none()
+	}
+	fn size_hint(&self) -> http_body::SizeHint {
+		self
+			.body
+			.as_ref()
+			.map_or_else(http_body::SizeHint::default, http_body::Body::size_hint)
+	}
 }

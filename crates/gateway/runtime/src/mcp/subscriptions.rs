@@ -2,10 +2,14 @@
 use super::*;
 use std::collections::hash_map::Entry;
 
+#[cfg(test)]
+#[path = "subscription_tests.rs"]
+mod tests;
+
 #[derive(Debug)]
 pub(super) enum State {
 	Pending(uuid::Uuid),
-	Active,
+	Active(uuid::Uuid),
 }
 
 #[derive(Clone)]
@@ -27,6 +31,15 @@ impl Drop for Pending {
 impl Ticket {
 	pub(super) fn commit(&self, access: &SessionAccess) -> Result<(), ClientError> {
 		access.check().map_err(ClientError::new)?;
+		if !access
+			.binding
+			.as_ref()
+			.is_some_and(|binding| Arc::ptr_eq(binding, &self.0.binding))
+		{
+			return Err(ClientError::new(access.denial("subscription-binding")));
+		}
+		authorize_resource(access, &self.0.key.0, &self.0.key.1).map_err(ClientError::new)?;
+		access.current().map_err(ClientError::new)?;
 		let mut entries = self
 			.0
 			.binding
@@ -36,7 +49,7 @@ impl Ticket {
 		match entries.entry(self.0.key.clone()) {
 			Entry::Occupied(mut entry) if matches!(entry.get(), State::Pending(n) if *n == self.0.nonce) =>
 			{
-				entry.insert(State::Active);
+				entry.insert(State::Active(self.0.nonce));
 				Ok(())
 			},
 			_ => Err(ClientError::new(access.denial("subscription-cancelled"))),
@@ -163,16 +176,29 @@ pub(super) fn notification(
 		.as_ref()
 		.ok_or_else(|| access.denial("subscription-requires-session"))?;
 	let key = (server.to_string(), n.params.uri.clone());
-	let active = binding
+	access.check()?;
+	let generation = {
+		let entries = binding
+			.subscriptions
+			.lock()
+			.map_err(|_| access.denial("store-unavailable"))?;
+		match entries.get(&key) {
+			Some(State::Active(generation)) => *generation,
+			_ => return Err(access.denial("unsolicited-resource-update")),
+		}
+	};
+	// Remote authorization must not hold the registry lock. A concurrent unsubscribe or
+	// replacement invalidates this notification even if the new subscription has the same URI.
+	authorize_resource(access, server, &n.params.uri)?;
+	access.current()?;
+	if !binding
 		.subscriptions
 		.lock()
 		.map_err(|_| access.denial("store-unavailable"))?
 		.get(&key)
-		.is_some_and(|s| matches!(s, State::Active));
-	if !active {
-		return Err(access.denial("unsolicited-resource-update"));
+		.is_some_and(|s| matches!(s, State::Active(current) if *current == generation))
+	{
+		return Err(access.denial("subscription-changed"));
 	}
-	// Never trust server-supplied _meta as routing, subscription, or security evidence.
-	authorize_resource(access, server, &n.params.uri)?;
 	Ok(true)
 }

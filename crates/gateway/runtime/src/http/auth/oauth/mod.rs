@@ -427,7 +427,7 @@ struct ExchangeRequest {
 }
 
 pub(super) async fn apply_token_exchange(
-	inputs: &Arc<crate::ProxyInputs>,
+	inputs: &Arc<crate::RuntimeContext>,
 	auth: &OAuthTokenExchangeAuth,
 	req: &mut Request,
 ) -> Result<bool, ProxyError> {
@@ -545,15 +545,16 @@ async fn fetch_token(
 	auth: &OAuthTokenExchangeAuth,
 	req: ExchangeRequest,
 ) -> Result<SecretString, FetchError> {
+	let execution = client.bind_reference(&auth.target, &auth.policies);
 	let result = match auth.cache.as_ref() {
 		Some(cache) => {
 			cache
-				.get_or_insert_with(&req, || transport::request_token(client, auth, &req))
+				.get_or_insert_with(&req, || transport::request_token(&execution, auth, &req))
 				.await?
 		},
 		None => {
 			let transport::TokenEndpointResponse { access_token, .. } =
-				transport::request_token(client, auth, &req).await?;
+				transport::request_token(&execution, auth, &req).await?;
 			TokenCacheResult::Miss(access_token)
 		},
 	};

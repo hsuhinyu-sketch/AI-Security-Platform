@@ -1,4 +1,7 @@
-use std::borrow::Cow;
+use gateway_mcp::execution::FanoutPlan;
+use gateway_mcp::merge::MessageStream;
+use gateway_mcp::routing::{rewrite_resource_update_message, set_subscription_ack_id};
+use gateway_mcp::wire::normalize_outbound_for_protocol;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -7,15 +10,12 @@ use futures_core::Stream;
 use futures_util::StreamExt;
 use http::StatusCode;
 use http::request::Parts;
-use itertools::Itertools;
 use platform_core::prelude::AssertSize;
 use platform_core::version::BuildInfo;
 use rmcp::ErrorData;
 use rmcp::model::{
-	CacheScope, ClientNotification, ClientRequest, DiscoverResult, Implementation,
-	JsonRpcNotification, JsonRpcRequest, ListPromptsResult, ListResourceTemplatesResult,
-	ListResourcesResult, ListToolsResult, Meta, ProtocolVersion, RequestId, ServerCapabilities,
-	ServerInfo, ServerJsonRpcMessage, ServerNotification, ServerResult, SubscriptionsListenResult,
+	CacheScope, ClientNotification, ClientRequest, Implementation, JsonRpcNotification,
+	JsonRpcRequest, ProtocolVersion, RequestId, ServerJsonRpcMessage, ServerResult,
 };
 use tracing::{debug, warn};
 
@@ -23,7 +23,7 @@ use crate::guardrails::{ResponseContext, ToolCallContext};
 use crate::http::Response;
 use crate::http::sessionpersistence::MCPSession;
 use crate::mcp;
-use crate::mcp::mergestream::{MergeFn, Messages};
+use crate::mcp::mergestream::{MergeFn, MergePlan, Messages};
 use crate::mcp::rbac::{CelExecWrapper, McpAuthorizationSet};
 use crate::mcp::router::McpBackendGroup;
 use crate::mcp::streamablehttp::{RequestProtocol, ServerSseMessage};
@@ -32,68 +32,12 @@ use crate::mcp::{ClientError, FailureMode, MCPInfo, mergestream, rbac, upstream}
 use crate::proxy::httpproxy::PolicyClient;
 use crate::telemetry::log::{AsyncLog, SpanWriteOnDrop, SpanWriter};
 
-const DELIMITER: &str = "_";
-
-fn resource_name(default_target_name: Option<&String>, target: &str, name: &str) -> String {
-	if default_target_name.is_none() {
-		format!("{target}{DELIMITER}{name}")
-	} else {
-		name.to_string()
-	}
-}
-
-fn resource_uri(default_target_name: Option<&String>, target: &str, uri: &str) -> String {
-	if default_target_name.is_none() {
-		// Transform URI to service+scheme:// format for multiplexing
-		// e.g., "http://example.com" becomes "service+http://example.com"
-		if let Some(scheme_end) = uri.find("://") {
-			let (scheme, rest) = uri.split_at(scheme_end);
-			format!("{target}+{scheme}{rest}")
-		} else {
-			// URI must have a scheme - if not, return as-is and let validation handle it
-			uri.to_string()
-		}
-	} else {
-		uri.to_string()
-	}
-}
-
-fn rewrite_resource_update_message(
-	default_target_name: Option<&String>,
-	target: &str,
-	mut message: ServerJsonRpcMessage,
-) -> ServerJsonRpcMessage {
-	if let ServerJsonRpcMessage::Notification(notification) = &mut message
-		&& let ServerNotification::ResourceUpdatedNotification(resource_updated) =
-			&mut notification.notification
-	{
-		resource_updated.params.uri = resource_uri(
-			default_target_name,
-			target,
-			resource_updated.params.uri.as_str(),
-		);
-	}
-	message
-}
-
-fn set_subscription_ack_id(
-	mut message: ServerJsonRpcMessage,
-	subscription_id: &RequestId,
-) -> ServerJsonRpcMessage {
-	if let ServerJsonRpcMessage::Notification(notification) = &mut message
-		&& let ServerNotification::SubscriptionsAcknowledgedNotification(ack) =
-			&mut notification.notification
-	{
-		let mut meta = ack.params.meta.take().unwrap_or_else(Meta::new);
-		meta.set_subscription_id(subscription_id.clone());
-		ack.params.meta = Some(meta);
-	}
-	message
-}
+#[path = "request.rs"]
+mod request;
 
 #[derive(Debug, Clone)]
 pub struct Relay {
-	pub(crate) upstreams: Arc<upstream::UpstreamGroup>,
+	upstreams: Arc<upstream::UpstreamGroup>,
 	pub policies: McpAuthorizationSet,
 	pub(crate) mcp_guardrails: Option<Arc<crate::mcp::guardrails::McpGuardrails>>,
 	pub(crate) security_pipeline: Option<Arc<security_pipeline::SecurityPipelineConfig>>,
@@ -123,6 +67,17 @@ impl RelayInputs {
 }
 
 impl Relay {
+	pub fn with_inputs(&self, inputs: RelayInputs) -> Self {
+		Self {
+			upstreams: self.upstreams.clone(),
+			policies: inputs.policies,
+			mcp_guardrails: inputs.mcp_guardrails,
+			security_pipeline: inputs.security_pipeline,
+			security_audit: inputs.security_audit,
+			policy_client: inputs.client,
+		}
+	}
+
 	fn permits_transport(&self, server: &str) -> bool {
 		self
 			.security_audit
@@ -189,44 +144,12 @@ impl Relay {
 		let target = target.to_string();
 		let default_target_name = self.upstreams.default_target_name.clone();
 		stream.map_server_messages(move |message| {
-			rewrite_resource_update_message(default_target_name.as_ref(), &target, message)
+			rewrite_resource_update_message(default_target_name.as_deref(), &target, message)
 		})
 	}
 
-	pub fn parse_resource_name<'a, 'b: 'a>(
-		&'a self,
-		res: &'b str,
-	) -> Result<(&'a str, &'b str), UpstreamError> {
-		if let Some(default) = self.upstreams.default_target_name.as_ref() {
-			Ok((default.as_str(), res))
-		} else {
-			res
-				.split_once(DELIMITER)
-				.ok_or(UpstreamError::InvalidRequest(
-					"invalid resource name".to_string(),
-				))
-		}
-	}
-
-	/// Reverse of `resource_uri`: extracts the service name and original URI from a
-	/// multiplexed URI of the form `service+scheme://rest`.
-	pub fn parse_resource_uri<'a>(&'a self, uri: &str) -> Result<(&'a str, String), UpstreamError> {
-		if let Some(default) = self.upstreams.default_target_name.as_ref() {
-			Ok((default.as_str(), uri.to_string()))
-		} else {
-			// URI format: "service+scheme://rest"
-			let plus_pos = uri
-				.find('+')
-				.ok_or_else(|| UpstreamError::InvalidRequest("invalid resource URI".to_string()))?;
-			let service_name = &uri[..plus_pos];
-			let original_uri = &uri[plus_pos + 1..];
-			// Validate that the extracted service name corresponds to a known upstream
-			let validated_name = self
-				.upstreams
-				.get_name(service_name)
-				.ok_or_else(|| UpstreamError::InvalidRequest(format!("unknown service {service_name}")))?;
-			Ok((validated_name, original_uri.to_string()))
-		}
+	pub(crate) fn default_target_name(&self) -> Option<&str> {
+		self.upstreams.default_target_name.as_deref()
 	}
 
 	pub fn get_sessions(&self) -> Option<Vec<MCPSession>> {
@@ -293,7 +216,7 @@ impl Relay {
 		&self,
 		r: &JsonRpcRequest<ClientRequest>,
 	) -> Result<(), UpstreamError> {
-		let Some(guardrails) = self.policy_client.inputs.guardrails.as_ref() else {
+		let Some(guardrails) = self.policy_client.guardrails() else {
 			return Ok(());
 		};
 		let ClientRequest::CallToolRequest(ctr) = &r.request else {
@@ -305,7 +228,7 @@ impl Relay {
 			arguments,
 		};
 		let decision = guardrails
-			.check_tool_call(&ctx, &self.policy_client.inputs.vehicle_state)
+			.check_tool_call(&ctx, self.policy_client.vehicle_state())
 			.await;
 		if decision.is_allowed() {
 			return Ok(());
@@ -352,10 +275,10 @@ impl Relay {
 	where
 		S: Stream<Item = Result<ServerJsonRpcMessage, ClientError>> + Send + 'static,
 	{
-		let Some(guardrails) = self.policy_client.inputs.guardrails.clone() else {
+		let Some(guardrails) = self.policy_client.guardrails().cloned() else {
 			return Messages::from_stream(stream);
 		};
-		let vehicle_state = self.policy_client.inputs.vehicle_state.clone();
+		let vehicle_state = self.policy_client.vehicle_state().clone();
 		Messages::from_stream(stream.then(move |msg| {
 			let guardrails = guardrails.clone();
 			let vehicle_state = vehicle_state.clone();
@@ -474,146 +397,85 @@ impl Relay {
 		Ok(())
 	}
 
+	fn merge_plan<F>(plan: F) -> MergePlan
+	where
+		F: FnOnce(&CelExecWrapper) -> Box<MergeFn> + Send + Sync + 'static,
+	{
+		Box::new(plan) as MergePlan
+	}
+
 	pub fn merge_tools(
 		&self,
 		request_id: String,
 		identity: security_pipeline::GatewayIdentity,
-	) -> Box<MergeFn> {
+	) -> MergePlan {
 		let policies = self.policies.clone();
 		let security = self.security_audit.clone();
 		let default_target_name = self.upstreams.default_target_name.clone();
-		Box::new(move |streams, cel| {
-			let tools = streams
-				.into_iter()
-				.flat_map(|(server_name, s)| {
-					let tools = match s {
-						ServerResult::ListToolsResult(ltr) => ltr.tools,
-						_ => vec![],
-					};
-					tools
-						.into_iter()
-						// Apply authorization policies, filtering tools that are not allowed.
-						.filter(|t| {
-							policies.validate(
-								&rbac::ResourceType::Tool(rbac::ResourceId::new(
-									server_name.to_string(),
-									t.name.to_string(),
-								)),
-								cel,
+		Self::merge_plan(move |cel: &CelExecWrapper| -> Box<MergeFn> {
+			let cel = cel.clone();
+			Box::new(move |streams| {
+				Ok(gateway_mcp::merge::merge_tools(
+					streams,
+					default_target_name.as_deref(),
+					|server_name, tool| {
+						// The same order as before: RBAC, then the S2 visibility check,
+						// then the multiplexed projection performed by the component.
+						policies.validate(
+							&rbac::ResourceType::Tool(rbac::ResourceId::new(
+								server_name.to_string(),
+								tool.name.to_string(),
+							)),
+							&cel,
+						) && security.as_ref().is_none_or(|security| {
+							crate::security::evaluate(
+								security,
+								&security_pipeline::tool_invoke_for_identity(
+									format!("{request_id}:{}", tool.name),
+									identity.clone(),
+									tool.name.to_string(),
+								),
 							)
+							.is_ok()
 						})
-						// S2: enforce mode exposes only tools the caller may invoke. Audit and
-						// shadow retain the complete discovery response while recording decisions.
-						.filter(|t| {
-							security.as_ref().is_none_or(|security| {
-								crate::security::evaluate(
-									security,
-									&security_pipeline::tool_invoke_for_identity(
-										format!("{request_id}:{}", t.name),
-										identity.clone(),
-										t.name.to_string(),
-									),
-								)
-								.is_ok()
-							})
-						})
-						// Rename to handle multiplexing
-						.map(|mut t| {
-							t.name = Cow::Owned(resource_name(
-								default_target_name.as_ref(),
-								server_name.as_str(),
-								&t.name,
-							));
-							t
-						})
-						.collect_vec()
-				})
-				.collect_vec();
-			Ok(
-				ListToolsResult {
-					tools,
-					..Default::default()
-				}
-				.with_ttl_ms(0)
-				.with_cache_scope(CacheScope::Private)
-				.into(),
-			)
+					},
+				))
+			})
 		})
 	}
 
-	pub fn merge_initialize(&self, pv: ProtocolVersion, multiplexing: bool) -> Box<MergeFn> {
+	pub fn merge_initialize(&self, pv: ProtocolVersion, multiplexing: bool) -> MergePlan {
 		let resource_subscribe = self.upstreams.stateful();
-		Box::new(move |s, _cel| {
-			if !multiplexing {
-				// Happy case: we can forward everything
-				let res = s.into_iter().next().and_then(|(_, r)| match r {
-					ServerResult::InitializeResult(ir) => Some(ir),
-					_ => None,
-				});
-				if let Some(ir) = res {
-					return Ok(ir.into());
-				}
-				// If we got here in FailOpen mode, it means the only target failed.
-				// Return a default info response to keep the client session alive.
-				return Ok(Self::get_info(pv, resource_subscribe, Vec::new()).into());
-			}
-
-			// Multiplexing is more complex. We need to find the lowest protocol version
-			// that all servers support and merge instructions from all upstreams.
-			let mut lowest_version = pv;
-			let mut upstream_instructions: Vec<(String, String)> = Vec::new();
-
-			for (server_name, v) in s {
-				if let ServerResult::InitializeResult(r) = v {
-					if r.protocol_version.to_string() < lowest_version.to_string() {
-						lowest_version = r.protocol_version;
-					}
-					if let Some(instructions) = r.instructions
-						&& !instructions.is_empty()
-					{
-						upstream_instructions.push((server_name.to_string(), instructions));
-					}
-				}
-			}
-
-			Ok(Self::get_info(lowest_version, resource_subscribe, upstream_instructions).into())
+		Self::merge_plan(move |_: &CelExecWrapper| -> Box<MergeFn> {
+			Box::new(move |results| {
+				Ok(
+					gateway_mcp::discovery::merge_initialize(
+						results,
+						pv,
+						multiplexing,
+						resource_subscribe,
+						gateway_implementation(),
+					)
+					.into(),
+				)
+			})
 		})
 	}
 
-	pub fn merge_discover(&self, multiplexing: bool) -> Box<MergeFn> {
+	pub fn merge_discover(&self, multiplexing: bool) -> MergePlan {
 		let resource_subscribe = self.upstreams.stateful();
-		Box::new(move |s, _cel| {
-			if !multiplexing {
-				let res = s.into_iter().next().and_then(|(_, r)| match r {
-					ServerResult::DiscoverResult(dr) => Some(dr),
-					_ => None,
-				});
-				if let Some(dr) = res {
-					// Cache hints describe the gateway's presented server, not the upstream.
-					// Gateway routing/backend config can change without client invalidation.
-					return Ok(dr.with_cache(0, CacheScope::Private).into());
-				}
-				// If we got here in FailOpen mode, it means the only target failed.
-				// Return a default discovery response so clients can continue negotiation.
-				return Ok(Self::get_discovery(resource_subscribe, Vec::new()).into());
-			}
-
-			let mut upstream_instructions: Vec<(String, String)> = Vec::new();
-			let mut supported_versions = ProtocolVersion::KNOWN_VERSIONS.to_vec();
-			for (server_name, v) in s {
-				if let ServerResult::DiscoverResult(r) = v {
-					supported_versions.retain(|version| r.supported_versions.contains(version));
-					if let Some(instructions) = r.instructions
-						&& !instructions.is_empty()
-					{
-						upstream_instructions.push((server_name.to_string(), instructions));
-					}
-				}
-			}
-
-			let mut discover = Self::get_discovery(resource_subscribe, upstream_instructions);
-			discover.supported_versions = supported_versions;
-			Ok(discover.into())
+		Self::merge_plan(move |_: &CelExecWrapper| -> Box<MergeFn> {
+			Box::new(move |results| {
+				Ok(
+					gateway_mcp::discovery::merge_discover(
+						results,
+						multiplexing,
+						resource_subscribe,
+						gateway_implementation(),
+					)
+					.into(),
+				)
+			})
 		})
 	}
 
@@ -621,196 +483,133 @@ impl Relay {
 		&self,
 		request_id: String,
 		identity: security_pipeline::GatewayIdentity,
-	) -> Box<MergeFn> {
+	) -> MergePlan {
 		let policies = self.policies.clone();
 		let security = self.security_audit.clone();
 		let legacy = self.security_pipeline.clone();
 		let default_target_name = self.upstreams.default_target_name.clone();
-		Box::new(move |streams, cel| {
-			let prompts = streams
-				.into_iter()
-				.flat_map(|(server_name, s)| {
-					let prompts = match s {
-						ServerResult::ListPromptsResult(lpr) => lpr.prompts,
-						_ => vec![],
-					};
-					prompts
-						.into_iter()
-						.filter(|p| {
-							policies.validate(
-								&rbac::ResourceType::Prompt(rbac::ResourceId::new(
-									server_name.to_string(),
-									p.name.to_string(),
-								)),
-								cel,
-							)
-						})
-						.filter(|p| {
-							crate::mcp::security::visible_object(
-								security.as_deref(),
-								legacy.as_deref(),
-								&request_id,
-								&identity,
-								server_name.as_str(),
-								security_types::ResourceType::McpPrompt,
-								&p.name,
-								"prompts/get",
-							)
-						})
-						.map(|mut p| {
-							p.name = resource_name(default_target_name.as_ref(), server_name.as_str(), &p.name);
-							p
-						})
-						.collect_vec()
-				})
-				.collect_vec();
-			Ok(
-				ListPromptsResult {
-					prompts,
-					..Default::default()
-				}
-				.with_ttl_ms(0)
-				.with_cache_scope(CacheScope::Private)
-				.into(),
-			)
+		Self::merge_plan(move |cel: &CelExecWrapper| -> Box<MergeFn> {
+			let cel = cel.clone();
+			Box::new(move |streams| {
+				Ok(gateway_mcp::merge::merge_prompts(
+					streams,
+					default_target_name.as_deref(),
+					|server_name, prompt| {
+						policies.validate(
+							&rbac::ResourceType::Prompt(rbac::ResourceId::new(
+								server_name.to_string(),
+								prompt.name.to_string(),
+							)),
+							&cel,
+						) && crate::mcp::security::visible_object(
+							security.as_deref(),
+							legacy.as_deref(),
+							&request_id,
+							&identity,
+							server_name,
+							security_types::ResourceType::McpPrompt,
+							&prompt.name,
+							"prompts/get",
+						)
+					},
+				))
+			})
 		})
 	}
+
 	pub fn merge_resources(
 		&self,
 		request_id: String,
 		identity: security_pipeline::GatewayIdentity,
-	) -> Box<MergeFn> {
+	) -> MergePlan {
 		let policies = self.policies.clone();
 		let security = self.security_audit.clone();
 		let legacy = self.security_pipeline.clone();
 		let default_target_name = self.upstreams.default_target_name.clone();
-		Box::new(move |streams, cel| {
-			let resources = streams
-				.into_iter()
-				.flat_map(|(server_name, s)| {
-					let resources = match s {
-						ServerResult::ListResourcesResult(lrr) => lrr.resources,
-						_ => vec![],
-					};
-					resources
-						.into_iter()
-						.filter(|r| {
-							policies.validate(
-								&rbac::ResourceType::Resource(rbac::ResourceId::new(
-									server_name.to_string(),
-									r.uri.to_string(),
-								)),
-								cel,
-							)
-						})
-						// Prefix URI with service name when multiplexing to avoid conflicts
-						.filter(|r| {
-							crate::mcp::security::visible_object(
-								security.as_deref(),
-								legacy.as_deref(),
-								&request_id,
-								&identity,
-								server_name.as_str(),
-								security_types::ResourceType::McpResource,
-								&r.uri,
-								"resources/read",
-							)
-						})
-						.map(|mut r| {
-							r.uri = resource_uri(default_target_name.as_ref(), server_name.as_str(), &r.uri);
-							r
-						})
-						.collect_vec()
-				})
-				.collect_vec();
-			Ok(
-				ListResourcesResult {
-					resources,
-					..Default::default()
-				}
-				.with_ttl_ms(0)
-				.with_cache_scope(CacheScope::Private)
-				.into(),
-			)
+		Self::merge_plan(move |cel: &CelExecWrapper| -> Box<MergeFn> {
+			let cel = cel.clone();
+			Box::new(move |streams| {
+				Ok(gateway_mcp::merge::merge_resources(
+					streams,
+					default_target_name.as_deref(),
+					|server_name, resource| {
+						policies.validate(
+							&rbac::ResourceType::Resource(rbac::ResourceId::new(
+								server_name.to_string(),
+								resource.uri.to_string(),
+							)),
+							&cel,
+						) && crate::mcp::security::visible_object(
+							security.as_deref(),
+							legacy.as_deref(),
+							&request_id,
+							&identity,
+							server_name,
+							security_types::ResourceType::McpResource,
+							&resource.uri,
+							"resources/read",
+						)
+					},
+				))
+			})
 		})
 	}
+
 	pub fn merge_resource_templates(
 		&self,
 		request_id: String,
 		identity: security_pipeline::GatewayIdentity,
-	) -> Box<MergeFn> {
+	) -> MergePlan {
 		let policies = self.policies.clone();
 		let security = self.security_audit.clone();
 		let legacy = self.security_pipeline.clone();
 		let default_target_name = self.upstreams.default_target_name.clone();
-		Box::new(move |streams, cel| {
-			let resource_templates = streams
-				.into_iter()
-				.flat_map(|(server_name, s)| {
-					let resource_templates = match s {
-						ServerResult::ListResourceTemplatesResult(lrr) => lrr.resource_templates,
-						_ => vec![],
-					};
-					resource_templates
-						.into_iter()
-						.filter(|rt| {
-							policies.validate(
-								&rbac::ResourceType::Resource(rbac::ResourceId::new(
-									server_name.to_string(),
-									rt.uri_template.to_string(),
-								)),
-								cel,
-							)
-						})
-						// Prefix uri_template with service name when multiplexing
-						.filter(|r| {
-							crate::mcp::security::visible_object(
-								security.as_deref(),
-								legacy.as_deref(),
-								&request_id,
-								&identity,
-								server_name.as_str(),
-								security_types::ResourceType::McpResource,
-								&r.uri_template,
-								"resources/read",
-							)
-						})
-						.map(|mut rt| {
-							rt.uri_template = resource_uri(
-								default_target_name.as_ref(),
-								server_name.as_str(),
-								&rt.uri_template,
-							);
-							rt
-						})
-						.collect_vec()
-				})
-				.collect_vec();
-			Ok(
-				ListResourceTemplatesResult {
-					resource_templates,
-					..Default::default()
-				}
-				.with_ttl_ms(0)
-				.with_cache_scope(CacheScope::Private)
-				.into(),
-			)
+		Self::merge_plan(move |cel: &CelExecWrapper| -> Box<MergeFn> {
+			let cel = cel.clone();
+			Box::new(move |streams| {
+				Ok(gateway_mcp::merge::merge_resource_templates(
+					streams,
+					default_target_name.as_deref(),
+					|server_name, template| {
+						policies.validate(
+							&rbac::ResourceType::Resource(rbac::ResourceId::new(
+								server_name.to_string(),
+								template.uri_template.to_string(),
+							)),
+							&cel,
+						) && crate::mcp::security::visible_object(
+							security.as_deref(),
+							legacy.as_deref(),
+							&request_id,
+							&identity,
+							server_name,
+							security_types::ResourceType::McpResource,
+							&template.uri_template,
+							"resources/read",
+						)
+					},
+				))
+			})
 		})
 	}
-	pub fn merge_empty(&self) -> Box<MergeFn> {
-		Box::new(move |_, _cel| Ok(rmcp::model::ServerResult::empty(())))
+
+	pub fn merge_empty(&self) -> MergePlan {
+		Self::merge_plan(|_: &CelExecWrapper| -> Box<MergeFn> {
+			Box::new(|_| Ok(rmcp::model::ServerResult::empty(())))
+		})
 	}
 
-	pub fn merge_subscriptions_listen(&self, subscription_id: RequestId) -> Box<MergeFn> {
-		Box::new(move |_, _cel| Ok(SubscriptionsListenResult::new(subscription_id).into()))
+	pub fn merge_subscriptions_listen(&self, subscription_id: RequestId) -> MergePlan {
+		Self::merge_plan(move |_: &CelExecWrapper| -> Box<MergeFn> {
+			Box::new(move |_| Ok(gateway_mcp::merge::subscription_ack(subscription_id)))
+		})
 	}
-	pub async fn send_single(
+	pub(crate) async fn prepare_single(
 		&self,
 		r: JsonRpcRequest<ClientRequest>,
 		mut ctx: IncomingRequestContext,
 		service_name: &str,
-		mcp_log: Option<AsyncLog<MCPInfo>>,
-	) -> Result<Response, UpstreamError> {
+	) -> Result<Messages, UpstreamError> {
 		// The opt-in security contract must not change a transparent gateway's
 		// request handling when no platform security has been installed.
 		if self.security_audit.is_some() {
@@ -854,6 +653,7 @@ impl Relay {
 			&ctx,
 			Some(&protected_request),
 			service_name,
+			#[cfg(feature = "gateway-llm")]
 			Some(super::session_security::reverse::sampling::Transport {
 				upstreams: self.upstreams.clone(),
 				context: ctx.clone(),
@@ -862,14 +662,24 @@ impl Relay {
 		let stream = crate::execution_budget::record_mcp_result(stream, &ctx, id.clone());
 
 		match guardrails {
-			Some(guardrails) => messages_to_response(
-				id,
-				wrap_with_guardrails(stream, guardrails),
-				mcp_log,
-				ctx_downstream_modern(&ctx),
-			),
-			None => messages_to_response(id, stream, mcp_log, ctx_downstream_modern(&ctx)),
+			Some(guardrails) => Ok(Messages::from_stream(wrap_with_guardrails(
+				stream, guardrails,
+			))),
+			None => Ok(stream),
 		}
+	}
+
+	pub async fn send_single(
+		&self,
+		r: JsonRpcRequest<ClientRequest>,
+		ctx: IncomingRequestContext,
+		service_name: &str,
+		mcp_log: Option<AsyncLog<MCPInfo>>,
+	) -> Result<Response, UpstreamError> {
+		let id = r.id.clone();
+		let downstream_modern = ctx_downstream_modern(&ctx);
+		let stream = self.prepare_single(r, ctx, service_name).await?;
+		messages_to_response(id, stream, mcp_log, downstream_modern)
 	}
 	pub async fn send_fanout_deletion(
 		&self,
@@ -941,7 +751,7 @@ impl Relay {
 				Ok(s) => {
 					let s = super::session_security::protect_messages(s, &ctx, None, name.as_str());
 					let s = self.rewrite_outbound_server_messages(name.as_str(), s);
-					streams.push((name, s));
+					streams.push((name.to_string(), s));
 				},
 				Err(e) => {
 					let is_405 = if let UpstreamError::Http(ClientError::Status(ref r)) = e
@@ -995,28 +805,19 @@ impl Relay {
 		} else {
 			self.upstreams.failure_mode
 		};
-		let ms = mergestream::MergeStream::new_without_merge(streams, failure_mode);
+		let ms = mergestream::MergeStream::new_without_merge(streams, failure_mode.into());
 		let ms = self.apply_vehicle_response_guardrails(ms);
 		messages_to_response(RequestId::Number(0), ms, None, ctx_downstream_modern(&ctx))
 	}
 
-	pub async fn send_fanout(
-		&self,
-		r: JsonRpcRequest<ClientRequest>,
-		ctx: IncomingRequestContext,
-		merge: Box<MergeFn>,
-	) -> Result<Response, UpstreamError> {
-		self.send_fanout_to(r, ctx, merge, None).await
-	}
-
-	pub async fn send_fanout_to(
+	pub(crate) async fn prepare_fanout(
 		&self,
 		r: JsonRpcRequest<ClientRequest>,
 		mut ctx: IncomingRequestContext,
-		merge: Box<MergeFn>,
+		merge: MergePlan,
 		target_names: Option<Vec<String>>,
-	) -> Result<Response, UpstreamError> {
-		let object_list = crate::mcp::security::is_object_list(&r.request);
+	) -> Result<(FanoutPlan<ClientError>, FanoutFinish), UpstreamError> {
+		let object_list = crate::mcp::security::is_discovery_list(&r.request);
 		let cross_component = self
 			.security_audit
 			.as_ref()
@@ -1051,7 +852,6 @@ impl Relay {
 			));
 		}
 		if object_list || cross_component {
-			// Check every actual server before fanout starts; fail-open transport cannot bypass it.
 			let mut last_denial = None;
 			selected_upstreams.retain(|(name, _)| {
 				match self
@@ -1066,7 +866,7 @@ impl Relay {
 				}
 			});
 			if selected_upstreams.is_empty() {
-				return Err(last_denial.expect("nonempty selection was rejected by security"));
+				return Err(last_denial.expect("nonempty selection rejected before dispatch"));
 			}
 		}
 
@@ -1127,7 +927,7 @@ impl Relay {
 							set_subscription_ack_id(message, &subscription_id)
 						});
 					}
-					streams.push((name, s));
+					streams.push((name.to_string(), s));
 				},
 				Err(e) => {
 					if self.upstreams.failure_mode == FailureMode::FailOpen {
@@ -1160,40 +960,28 @@ impl Relay {
 		} else {
 			self.upstreams.failure_mode
 		};
-		let ms = mergestream::MergeStream::new(streams, id.clone(), merge, cel, failure_mode);
-		// A multiplex merge can synthesize capabilities after the per-upstream checks.
-		// Apply the protected contract again to the merged initialization result.
-		let ms = ms.map({
-			let ctx = ctx.clone();
-			let protected = ctx
-				.as_request()
-				.extensions()
-				.get::<super::session_security::SessionAccess>()
-				.is_some();
-			move |result| {
-				result.map(|mut rpc| {
-					if protected
-						&& let ServerJsonRpcMessage::Response(response) = &mut rpc
-						&& let ServerResult::InitializeResult(init) = &mut response.result
-					{
-						super::session_security::restrict_for_context(&mut init.capabilities, &ctx);
-					}
-					rpc
-				})
-			}
-		});
-
-		// Response-phase hook runs once on the merged (muxed) result.
-		match service_names.and_then(|sn| self.build_guardrails_ctx(&r, &ctx, sn)) {
-			Some(guardrails) => messages_to_response(
-				id,
-				wrap_with_guardrails(ms, guardrails),
-				None,
-				ctx_downstream_modern(&ctx),
-			),
-			None => messages_to_response(id, ms, None, ctx_downstream_modern(&ctx)),
-		}
+		let merge = merge(&cel);
+		let protected_ctx = ctx.clone();
+		let protected = protected_ctx
+			.as_request()
+			.extensions()
+			.get::<super::session_security::SessionAccess>()
+			.is_some();
+		let guardrails = service_names.and_then(|sn| self.build_guardrails_ctx(&r, &ctx, sn));
+		Ok((
+			FanoutPlan {
+				streams,
+				merge,
+				failure_mode: failure_mode.into(),
+			},
+			FanoutFinish {
+				protected,
+				ctx: protected_ctx,
+				guardrails,
+			},
+		))
 	}
+
 	pub async fn send_notification(
 		&self,
 		r: JsonRpcNotification<ClientNotification>,
@@ -1269,62 +1057,10 @@ impl Relay {
 		us.generic_notification(r, &ctx).await?;
 		Ok(accepted_response())
 	}
+}
 
-	fn get_info(
-		pv: ProtocolVersion,
-		resource_subscribe: bool,
-		upstream_instructions: Vec<(String, String)>,
-	) -> ServerInfo {
-		let capabilities = {
-			// Prompts are supported with multiplexing using proxy-prefixed names.
-			// Resources are supported with multiplexing using service+scheme:// URI prefixing.
-			let mut builder = ServerCapabilities::builder()
-				.enable_tools()
-				.enable_tool_list_changed()
-				.enable_prompts()
-				.enable_prompts_list_changed()
-				.enable_resources()
-				.enable_resources_list_changed();
-			if resource_subscribe {
-				builder = builder.enable_resources_subscribe();
-			}
-			builder.build()
-		};
-		let gateway_preamble = "This server is a gateway to a set of mcp servers. It is responsible for routing requests to the correct server and aggregating the results.";
-		let instructions = if upstream_instructions.is_empty() {
-			Some(gateway_preamble.to_string())
-		} else {
-			let mut merged = String::from(gateway_preamble);
-			for (server_name, instruction) in &upstream_instructions {
-				merged.push_str(&format!("\n\n[{server_name}]\n{instruction}"));
-			}
-			Some(merged)
-		};
-		ServerInfo::new(capabilities)
-			.with_protocol_version(pv)
-			.with_server_info(Implementation::new(
-				"agentgateway",
-				BuildInfo::new().version.to_string(),
-			))
-			.with_instructions(instructions.unwrap_or_default())
-	}
-
-	fn get_discovery(
-		resource_subscribe: bool,
-		upstream_instructions: Vec<(String, String)>,
-	) -> DiscoverResult {
-		let info = Self::get_info(
-			ProtocolVersion::default(),
-			resource_subscribe,
-			upstream_instructions,
-		);
-		DiscoverResult::new(ProtocolVersion::KNOWN_VERSIONS.to_vec(), info.capabilities)
-			.with_server_info(info.server_info)
-			.with_instructions(info.instructions.unwrap_or_default())
-			// Discovery is immediately stale because the gateway has no way to
-			// invalidate clients when backend membership or routing config changes.
-			.with_cache(0, CacheScope::Private)
-	}
+fn gateway_implementation() -> Implementation {
+	Implementation::new("agentgateway", BuildInfo::new().version.to_string())
 }
 
 pub fn setup_request_log(
@@ -1347,6 +1083,43 @@ pub fn setup_request_log(
 	(_span, log, cel)
 }
 
+pub(crate) struct FanoutFinish {
+	protected: bool,
+	ctx: IncomingRequestContext,
+	guardrails: Option<GuardrailsCtx>,
+}
+
+impl FanoutFinish {
+	pub(crate) fn finish<E>(self, stream: MessageStream<E>) -> MessageStream<E>
+	where
+		E: Send + 'static,
+	{
+		let stream = if self.protected {
+			let ctx = self.ctx;
+			stream.map_server_messages(move |mut rpc| {
+				if let ServerJsonRpcMessage::Response(response) = &mut rpc {
+					match &mut response.result {
+						ServerResult::InitializeResult(init) => {
+							super::session_security::restrict_for_context(&mut init.capabilities, &ctx)
+						},
+						ServerResult::DiscoverResult(discovery) => {
+							super::session_security::restrict_for_context(&mut discovery.capabilities, &ctx)
+						},
+						_ => {},
+					}
+				}
+				rpc
+			})
+		} else {
+			stream
+		};
+		match self.guardrails {
+			Some(guardrails) => MessageStream::from_stream(wrap_with_guardrails(stream, guardrails)),
+			None => stream,
+		}
+	}
+}
+
 pub(crate) struct GuardrailsCtx {
 	pub ext: Arc<crate::mcp::guardrails::McpGuardrails>,
 	pub method: String,
@@ -1355,19 +1128,22 @@ pub(crate) struct GuardrailsCtx {
 	pub req_ctx: Arc<IncomingRequestContext>,
 }
 
-fn messages_to_response(
+pub(super) fn messages_to_response<E>(
 	id: RequestId,
-	stream: impl Stream<Item = Result<ServerJsonRpcMessage, ClientError>> + Send + 'static,
+	stream: impl Stream<Item = Result<ServerJsonRpcMessage, E>> + Send + 'static,
 	mcp_log: Option<AsyncLog<MCPInfo>>,
 	downstream_modern: bool,
-) -> Result<Response, UpstreamError> {
+) -> Result<Response, UpstreamError>
+where
+	E: std::fmt::Display + Send + 'static,
+{
 	Ok(mcp::session::sse_stream_response(
 		into_sse_stream(id, stream, mcp_log, downstream_modern),
 		None,
 	))
 }
 
-fn ctx_downstream_modern(ctx: &IncomingRequestContext) -> bool {
+pub(super) fn ctx_downstream_modern(ctx: &IncomingRequestContext) -> bool {
 	ctx
 		.as_request()
 		.extensions()
@@ -1375,10 +1151,13 @@ fn ctx_downstream_modern(ctx: &IncomingRequestContext) -> bool {
 		.is_some_and(RequestProtocol::is_modern)
 }
 
-fn wrap_with_guardrails(
-	stream: impl Stream<Item = Result<ServerJsonRpcMessage, ClientError>> + Send + 'static,
+fn wrap_with_guardrails<E>(
+	stream: impl Stream<Item = Result<ServerJsonRpcMessage, E>> + Send + 'static,
 	guardrails: GuardrailsCtx,
-) -> impl Stream<Item = Result<ServerJsonRpcMessage, ClientError>> + Send + 'static {
+) -> impl Stream<Item = Result<ServerJsonRpcMessage, E>> + Send + 'static
+where
+	E: Send + 'static,
+{
 	use futures_util::StreamExt;
 	let guardrails = Arc::new(guardrails);
 	stream.then(move |rpc| {
@@ -1397,12 +1176,15 @@ fn wrap_with_guardrails(
 	})
 }
 
-fn into_sse_stream(
+fn into_sse_stream<E>(
 	request_id: RequestId,
-	stream: impl Stream<Item = Result<ServerJsonRpcMessage, ClientError>> + Send + 'static,
+	stream: impl Stream<Item = Result<ServerJsonRpcMessage, E>> + Send + 'static,
 	mcp_log: Option<AsyncLog<MCPInfo>>,
 	downstream_modern: bool,
-) -> impl Stream<Item = ServerSseMessage> + Send + 'static {
+) -> impl Stream<Item = ServerSseMessage> + Send + 'static
+where
+	E: std::fmt::Display + Send + 'static,
+{
 	use futures_util::StreamExt;
 	let mut captured_terminal = false;
 	stream.map(move |rpc| {
@@ -1426,77 +1208,6 @@ fn into_sse_stream(
 			message: Arc::new(r),
 		}
 	})
-}
-
-fn normalize_outbound_for_protocol(
-	mut msg: ServerJsonRpcMessage,
-	downstream_modern: bool,
-) -> ServerJsonRpcMessage {
-	if downstream_modern {
-		return msg;
-	}
-
-	let ServerJsonRpcMessage::Response(resp) = &mut msg else {
-		return msg;
-	};
-
-	match &mut resp.result {
-		ServerResult::DiscoverResult(r) => {
-			r.result_type = None;
-			r.ttl_ms = None;
-			r.cache_scope = None;
-		},
-		ServerResult::InitializeResult(r) => r.result_type = None,
-		ServerResult::CompleteResult(r) => r.result_type = None,
-		ServerResult::GetPromptResult(r) => r.result_type = None,
-		ServerResult::ListPromptsResult(r) => {
-			r.result_type = None;
-			r.ttl_ms = None;
-			r.cache_scope = None;
-		},
-		ServerResult::ListResourcesResult(r) => {
-			r.result_type = None;
-			r.ttl_ms = None;
-			r.cache_scope = None;
-		},
-		ServerResult::ListResourceTemplatesResult(r) => {
-			r.result_type = None;
-			r.ttl_ms = None;
-			r.cache_scope = None;
-		},
-		ServerResult::ReadResourceResult(r) => {
-			r.result_type = None;
-			r.ttl_ms = None;
-			r.cache_scope = None;
-		},
-		ServerResult::ListToolsResult(r) => {
-			r.result_type = None;
-			r.ttl_ms = None;
-			r.cache_scope = None;
-		},
-		ServerResult::ElicitResult(r) => r.result_type = None,
-		ServerResult::CreateTaskResult(r) => r.result_type = None,
-		ServerResult::ListTasksResult(r) => r.result_type = None,
-		ServerResult::GetTaskResult(r) => r.result_type = None,
-		ServerResult::CancelTaskResult(r) => r.result_type = None,
-		ServerResult::SubscriptionsListenResult(r) => r.result_type = None,
-		ServerResult::CallToolResult(r) => r.result_type = None,
-		ServerResult::GetTaskPayloadResult(r) => strip_protocol_result_fields(&mut r.0),
-		ServerResult::EmptyResult(r) => r.result_type = None,
-		ServerResult::CustomResult(r) => strip_protocol_result_fields(&mut r.0),
-		ServerResult::InputRequiredResult(_) => {},
-	}
-
-	msg
-}
-
-fn strip_protocol_result_fields(value: &mut serde_json::Value) {
-	let Some(obj) = value.as_object_mut() else {
-		return;
-	};
-	obj.remove("resultType");
-	obj.remove("ttlMs");
-	obj.remove("cacheScope");
 }
 
 fn with_gateway_cache_policy(mut msg: ServerJsonRpcMessage) -> ServerJsonRpcMessage {

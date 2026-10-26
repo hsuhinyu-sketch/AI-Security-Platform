@@ -10,6 +10,7 @@ use super::{ClientError, handler::RelayInputs, mergestream::Messages, session::S
 use crate::http::{Body, Response};
 use crate::proxy::ProxyError;
 use futures_util::{StreamExt, TryStreamExt};
+use gateway_mcp::capabilities::restrict_session_capabilities as session_capabilities;
 use security_integration_runtime::{
 	SecurityConfig, identity_binding::VerifiedOwner, mcp_sessions::McpSessionConfig,
 };
@@ -21,6 +22,10 @@ use std::sync::{
 };
 use std::time::{Duration, Instant};
 pub(crate) use subscriptions::prepare_subscription;
+
+#[cfg(test)]
+#[path = "session_security_tests.rs"]
+mod tests;
 
 #[derive(Clone)]
 pub(crate) struct SessionScope(pub String);
@@ -49,7 +54,7 @@ pub(crate) struct SessionBinding {
 	last_access: Mutex<Instant>,
 	idle_ttl: Duration,
 	max_age: Duration,
-	revision: crate::a2a::revision::ConfigLease,
+	revision: gateway_contracts::ConfigLease,
 	pub closed: AtomicBool,
 	_slot: Arc<Slot>,
 	subscriptions: Mutex<std::collections::HashMap<(String, String), subscriptions::State>>,
@@ -77,7 +82,7 @@ pub(crate) struct SessionAccess {
 	identity: GatewayIdentity,
 	scope: String,
 	expires: i64,
-	revision: crate::a2a::revision::ConfigLease,
+	revision: gateway_contracts::ConfigLease,
 	action: ActionRequest,
 	pub binding: Option<Arc<SessionBinding>>,
 	_stream: Arc<Slot>,
@@ -89,32 +94,6 @@ pub(crate) struct SessionAccess {
 
 pub(crate) fn digest(value: &str) -> String {
 	crate::security::digest(value)
-}
-
-pub(crate) fn restrict_capabilities(capabilities: &mut rmcp::model::ServerCapabilities) {
-	if let Some(c) = &mut capabilities.resources {
-		c.subscribe = None;
-		c.list_changed = None;
-	}
-	if let Some(c) = &mut capabilities.tools {
-		c.list_changed = None;
-	}
-	if let Some(c) = &mut capabilities.prompts {
-		c.list_changed = None;
-	}
-	capabilities.tasks = None;
-	capabilities.experimental = None;
-	capabilities.extensions = None;
-	capabilities.logging = None;
-	capabilities.completions = None;
-}
-
-fn session_capabilities(capabilities: &mut rmcp::model::ServerCapabilities, stateful: bool) {
-	let subscribe = capabilities.resources.as_ref().and_then(|c| c.subscribe);
-	restrict_capabilities(capabilities);
-	if stateful && let Some(c) = &mut capabilities.resources {
-		c.subscribe = subscribe;
-	}
 }
 
 pub(crate) fn restrict_for_context(
@@ -190,7 +169,7 @@ impl SessionAccess {
 			.ok_or_else(|| refuse("identity"))?;
 		let revision = parts
 			.extensions
-			.get::<crate::a2a::revision::ConfigLease>()
+			.get::<gateway_contracts::ConfigLease>()
 			.cloned()
 			.ok_or_else(|| refuse("configuration"))?;
 		let limits = config.mcp_sessions.clone().expect("enabled");
@@ -218,7 +197,7 @@ impl SessionAccess {
 		access.check()?;
 		Ok(Some(Box::new(access)))
 	}
-	pub fn check(&self) -> Result<(), ProxyError> {
+	fn current(&self) -> Result<(), ProxyError> {
 		if let Some(flow) = &self.flow {
 			flow.current()?;
 		}
@@ -231,8 +210,15 @@ impl SessionAccess {
 		if let Some(binding) = &self.binding {
 			self.validate_binding(binding)?;
 		}
-		crate::security::evaluate(&self.config, &self.action).map_err(|_| self.denial("authorization"))
+		Ok(())
 	}
+	pub fn check(&self) -> Result<(), ProxyError> {
+		self.current()?;
+		crate::security::evaluate(&self.config, &self.action)
+			.map_err(|_| self.denial("authorization"))?;
+		self.current()
+	}
+
 	fn validate_binding(&self, binding: &SessionBinding) -> Result<(), ProxyError> {
 		if self.owner != binding.owner
 			|| match (&self.flow, &binding.flow) {
@@ -452,15 +438,23 @@ pub(crate) fn protect_messages(
 	request: Option<&rmcp::model::JsonRpcRequest<rmcp::model::ClientRequest>>,
 	server: &str,
 ) -> Messages {
-	protect_messages_with_sampling(stream, context, request, server, None)
+	protect_messages_with_sampling(
+		stream,
+		context,
+		request,
+		server,
+		#[cfg(feature = "gateway-llm")]
+		None,
+	)
 }
 pub(crate) fn protect_messages_with_sampling(
 	stream: Messages,
 	context: &super::upstream::IncomingRequestContext,
 	request: Option<&rmcp::model::JsonRpcRequest<rmcp::model::ClientRequest>>,
 	server: &str,
-	sampling: Option<reverse::sampling::Transport>,
+	#[cfg(feature = "gateway-llm")] sampling: Option<reverse::sampling::Transport>,
 ) -> Messages {
+	#[cfg(feature = "gateway-llm")]
 	let sampling = sampling.map(Arc::new);
 	let http = context.as_request();
 	let Some(access) = http.extensions().get::<SessionAccess>().cloned() else {
@@ -471,29 +465,22 @@ pub(crate) fn protect_messages_with_sampling(
 	let subscription = http.extensions().get::<subscriptions::Ticket>().cloned();
 	let task = http.extensions().get::<tasks::Ticket>().cloned();
 	let server = server.to_string();
-	let business = request
-		.and_then(|r| {
-			use rmcp::model::ClientRequest;
-			let identity = access.identity.clone();
-			match &r.request {
-				ClientRequest::CallToolRequest(call) => Some((
-					security_pipeline::tool_invoke_for_identity(
-						r.id.to_string(),
-						identity,
-						call.params.name.to_string(),
-					),
-					Some(serde_json::Value::Object(
-						call.params.arguments.clone().unwrap_or_default(),
-					)),
-				)),
-				ClientRequest::ListToolsRequest(_) => Some((
-					security_pipeline::tool_list(r.id.to_string(), identity, "mcp-gateway"),
-					None,
-				)),
-				_ => super::security::object_action(r, identity, &server).map(|a| (a, None)),
-			}
-		})
-		.map(Arc::new);
+	let business = request.and_then(|r| {
+		let op = super::security::normalize(
+			r,
+			http
+				.extensions()
+				.get::<security_types::RequestContext>()
+				.expect("MCP ingress context")
+				.request_id(),
+			access.identity.clone(),
+			&server,
+		);
+		match op.kind {
+			super::security::OperationKind::Control | super::security::OperationKind::Unsupported => None,
+			_ => Some(Arc::new((op.action, op.arguments))),
+		}
+	});
 	let parent = if let Some(task) = &task {
 		reverse::task_parent(&access, &server, request, task)
 	} else {
@@ -502,6 +489,7 @@ pub(crate) fn protect_messages_with_sampling(
 	Messages::from_stream(futures_util::stream::try_unfold(
 		(stream, access, false, parent),
 		move |(mut stream, access, done, parent)| {
+			#[cfg(feature = "gateway-llm")]
 			let sampling = sampling.clone();
 			let (expected, business) = (expected.clone(), business.clone());
 			let method = method.clone();
@@ -539,6 +527,7 @@ pub(crate) fn protect_messages_with_sampling(
 						return Ok(None);
 					};
 					let mut message = message?;
+					#[cfg(feature = "gateway-llm")]
 					if task.is_some() && reverse::sampling::is_request(&message) {
 						reverse::request(&access, parent.as_ref(), &mut message).map_err(ClientError::new)?;
 						Box::pin(reverse::sampling::execute(
@@ -621,6 +610,7 @@ pub(crate) fn protect_messages_with_sampling(
 						let kind_matches = matches!(
 							(method.as_deref(), &r.result),
 							(Some("initialize"), InitializeResult(_))
+								| (Some("server/discover"), DiscoverResult(_))
 								| (Some("ping"), EmptyResult(_))
 								| (Some("tools/call"), CallToolResult(_))
 								| (Some("tools/list"), ListToolsResult(_))
@@ -640,6 +630,9 @@ pub(crate) fn protect_messages_with_sampling(
 							tasks::observe_initialize(&access, &server, init).map_err(ClientError::new)?;
 							session_capabilities(&mut init.capabilities, access.binding.is_some());
 							tasks::capabilities(&access, &mut init.capabilities);
+						}
+						if let rmcp::model::ServerResult::DiscoverResult(discovery) = &mut r.result {
+							session_capabilities(&mut discovery.capabilities, false);
 						}
 						if let rmcp::model::ServerResult::ListToolsResult(list) = &mut r.result {
 							tasks::observe_tools(&access, &server, list).map_err(ClientError::new)?;

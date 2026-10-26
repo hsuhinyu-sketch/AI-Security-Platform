@@ -266,7 +266,7 @@ pub enum DynamicPdpFailureMode {
 
 /// Dynamic restrictions layered over the normal identity/action/resource policy vocabulary.
 /// All fields of `policy` still apply; session, client, and time restrictions are additional.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DynamicPolicy {
 	#[serde(flatten)]
@@ -279,6 +279,45 @@ pub struct DynamicPolicy {
 	pub not_before: Option<DateTime<Utc>>,
 	#[serde(default, skip_serializing_if = "Option::is_none")]
 	pub expires_at: Option<DateTime<Utc>>,
+}
+
+// Split the flat wire object before validating Policy, so extension keys are legitimate
+// only here and unknown match conditions cannot become wildcards.
+impl<'de> serde::Deserialize<'de> for DynamicPolicy {
+	fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+		use serde::de::Error;
+		let mut fields = serde_json::Map::<String, serde_json::Value>::deserialize(deserializer)?;
+		fn take<T: serde::de::DeserializeOwned>(
+			fields: &mut serde_json::Map<String, serde_json::Value>,
+			key: &str,
+		) -> Result<Option<T>, String> {
+			fields
+				.remove(key)
+				.map(|v| serde_json_path_to_error::from_value(v).map_err(|e| format!("{key}: {e}")))
+				.transpose()
+		}
+		let session_id = take(&mut fields, "sessionId")
+			.map_err(D::Error::custom)?
+			.flatten();
+		let client_id = take(&mut fields, "clientId")
+			.map_err(D::Error::custom)?
+			.flatten();
+		let not_before = take(&mut fields, "notBefore")
+			.map_err(D::Error::custom)?
+			.flatten();
+		let expires_at = take(&mut fields, "expiresAt")
+			.map_err(D::Error::custom)?
+			.flatten();
+		let policy = serde_json_path_to_error::from_value(serde_json::Value::Object(fields))
+			.map_err(D::Error::custom)?;
+		Ok(Self {
+			policy,
+			session_id,
+			client_id,
+			not_before,
+			expires_at,
+		})
+	}
 }
 
 impl DynamicPolicy {
@@ -450,7 +489,7 @@ impl<P: DynamicPdp> DynamicPdp for CachedDynamicPdp<P> {
 /// Configuration for the built-in dynamic PDP. Its runtime cache is intentionally excluded from
 /// YAML/JSON, while clones of a loaded configuration share that cache.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct DynamicAuthorizationConfig {
 	pub policy_version: String,
 	#[serde(default)]
@@ -590,7 +629,7 @@ impl<P: DelegationRevocationProvider> SecurityControl for DelegationRevocationCh
 
 /// Ensures that the AI request retains the identities required by the deployment.
 #[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct RequiredIdentity {
 	pub user: bool,
 	pub agent: bool,
@@ -601,7 +640,7 @@ pub struct RequiredIdentity {
 /// always comes from previously verified authentication; this registry binds it to a tenant and
 /// an OAuth client/workload identity so a caller cannot gain authority by merely naming an Agent.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct RegisteredAgentConfig {
 	pub agent_id: String,
 	pub tenant_id: String,
@@ -624,7 +663,7 @@ const fn default_enabled() -> bool {
 /// static source with a remote directory by installing a runtime `SecurityControl` at the same
 /// identity-stage seam.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct AgentIdentityRegistryConfig {
 	/// Deny any request that does not carry a registered Agent identity.
 	#[serde(default)]
@@ -743,7 +782,7 @@ impl SecurityControl for AgentIdentityRegistry {
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct RequiredToolArgumentsConfig {
 	pub tool_name: String,
 	#[serde(default)]
@@ -753,7 +792,7 @@ pub struct RequiredToolArgumentsConfig {
 /// Declares a Tool as high risk. Until an external approval provider is installed, this is a
 /// fail-closed gate rather than an implicit approval.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct RequiredToolApprovalConfig {
 	pub tool_name: String,
 }
@@ -761,7 +800,7 @@ pub struct RequiredToolApprovalConfig {
 /// A direct, user-to-Agent delegation grant. Its identifier must be present in verified
 /// request identity, so a caller cannot select a broader configured grant by itself.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct AgentDelegationConfig {
 	pub id: String,
 	pub user_id: String,
@@ -780,7 +819,7 @@ pub struct AgentDelegationConfig {
 /// One permitted operation inside a delegation grant. Omitted match fields are wildcards;
 /// a grant still needs at least one scope to permit anything.
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct DelegationScope {
 	#[serde(default, skip_serializing_if = "Option::is_none")]
 	pub action_type: Option<ActionType>,
@@ -795,7 +834,7 @@ pub struct DelegationScope {
 /// YAML/JSON-friendly composition of the built-in PoC bricks. The presence of this
 /// configuration enables the pipeline; an empty policy list is intentionally fail-closed.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SecurityPipelineConfig {
 	#[serde(default, skip_serializing_if = "Option::is_none")]
 	pub required_identity: Option<RequiredIdentity>,
@@ -1347,6 +1386,17 @@ pub enum GatewayError {
 	},
 	Capability(CapabilityError),
 	CapabilityUnavailable,
+}
+
+impl GatewayError {
+	pub fn kind(&self) -> security_types::SecurityFailureKind {
+		use security_types::SecurityFailureKind as K;
+		match self {
+			Self::Denied(_) | Self::DeniedByControl { .. } => K::Denied,
+			Self::Capability(_) => K::CapabilityRejected,
+			Self::CapabilityUnavailable => K::CapabilityUnavailable,
+		}
+	}
 }
 
 /// Ordered, composable security enforcement for one normalized Gateway request.

@@ -10,15 +10,13 @@ use std::{
 	time::{Duration, Instant},
 };
 
-pub(crate) const PREFIX: &str = "/v1/a2a/push/";
+pub(crate) use gateway_a2a::push::{PREFIX, is_callback_path};
 static CHANNELS: OnceLock<Mutex<HashMap<String, Arc<Channel>>>> = OnceLock::new();
 static RECEIVERS: OnceLock<Arc<tokio::sync::Semaphore>> = OnceLock::new();
 fn channels() -> &'static Mutex<HashMap<String, Arc<Channel>>> {
 	CHANNELS.get_or_init(Default::default)
 }
-pub(crate) fn is_callback_path(path: &str) -> bool {
-	path == "/v1/a2a/push" || path.starts_with(PREFIX)
-}
+
 #[derive(Clone)]
 struct Proof {
 	config: Arc<SecurityConfig>,
@@ -78,8 +76,17 @@ impl Channel {
 		Ok(())
 	}
 	fn public(&self) -> Value {
-		serde_json::json!({"taskId":self.proof.get().map(|p|p.task.as_str()).unwrap_or_default(),"pushNotificationConfig":{"id":self.id,"url":self.url}})
+		gateway_a2a::push::public_config(
+			self
+				.proof
+				.get()
+				.map(|p| p.task.as_str())
+				.unwrap_or_default(),
+			&self.id,
+			&self.url,
+		)
 	}
+
 	fn live(&self) -> bool {
 		Instant::now() < self.expires
 			&& !self.closed.load(Ordering::Acquire)
@@ -99,16 +106,17 @@ impl Channel {
 }
 impl AuthorizedCall {
 	pub(super) fn prepare_push(&mut self, req: &mut Request, rpc: &Rpc) -> Result<(), ProxyError> {
-		if !rpc.method.starts_with("tasks/pushNotificationConfig/") {
+		let Some(method) = gateway_a2a::Method::parse(&rpc.method).and_then(|m| m.push_operation())
+		else {
 			return Ok(());
-		}
+		};
 		let settings = self
 			.config
 			.a2a_objects
 			.as_ref()
 			.and_then(|o| o.push.as_ref())
 			.ok_or_else(|| deny(&self.action, ObjectError::Unsupported))?;
-		let method = rpc.method.rsplit('/').next().expect("prefix");
+		let method = method.name();
 		authorize(self, method)?;
 		if method == "set" {
 			if self
@@ -118,11 +126,12 @@ impl AuthorizedCall {
 			{
 				return Err(deny(&self.action, ObjectError::Terminal));
 			}
-			let cfg = &rpc.params["pushNotificationConfig"];
-			object(cfg, &["url"]).map_err(|e| deny(&self.action, e))?;
-			if cfg["url"].as_str() != Some(&settings.callback_base_url) {
+			let requested =
+				gateway_a2a::push::requested_url(rpc).map_err(|e| deny(&self.action, object_error(e)))?;
+			if requested != Some(settings.callback_base_url.as_str()) {
 				return Err(deny(&self.action, ObjectError::Push));
 			}
+
 			security_audit::StateJournal::encoded_len(
 				&(&self.action, &self.scope, &self.credential.issuer),
 				16384,
@@ -161,7 +170,13 @@ impl AuthorizedCall {
 				busy: AtomicBool::new(false),
 				last: Mutex::new(None),
 			});
-			let rewritten = serde_json::json!({"jsonrpc":"2.0","id":rpc.id,"method":rpc.method,"params":{"taskId":self.permit.task_id,"pushNotificationConfig":{"id":id,"url":channel.url,"authentication":{"schemes":["Bearer"],"credentials":secret}}}});
+			let rewritten = gateway_a2a::push::registration_request(
+				rpc,
+				self.permit.task_id.as_deref(),
+				&id,
+				&channel.url,
+				&secret,
+			);
 			*req.body_mut() =
 				crate::json::to_body(rewritten).map_err(|_| deny(&self.action, ObjectError::Push))?;
 			req.headers_mut().remove(header::CONTENT_LENGTH);
@@ -262,9 +277,8 @@ impl AuthorizedCall {
 			},
 			_ => return Ok(None),
 		};
-		let body =
-			crate::json::to_body(serde_json::json!({"jsonrpc":"2.0","id":self.rpc_id,"result":result}))
-				.map_err(|_| deny(&self.action, ObjectError::Push))?;
+		let body = crate::json::to_body(gateway_a2a::push::response(&self.rpc_id, result))
+			.map_err(|_| deny(&self.action, ObjectError::Push))?;
 		Ok(Some(
 			::http::Response::builder()
 				.header(header::CONTENT_TYPE, "application/json")
@@ -292,13 +306,18 @@ impl AuthorizedCall {
 				} else {
 					authorize(self, "set")?;
 					let result = &rpc["result"];
-					if result["taskId"] != self.permit.task_id.as_deref().unwrap_or_default()
-						|| result["pushNotificationConfig"]["id"] != channel.id
-						|| result["pushNotificationConfig"]["url"] != channel.url
+					if gateway_a2a::push::validate_registration(
+						result,
+						self.permit.task_id.as_deref().unwrap_or_default(),
+						&channel.id,
+						&channel.url,
+					)
+					.is_err()
 					{
 						channel.closed.store(true, Ordering::Release);
 						return Err(deny(&self.action, ObjectError::ResponseBinding));
 					}
+
 					// Checkpoint uses the current observed Task metadata; it is not a new remote event.
 					let call = channel
 						.proof
@@ -332,7 +351,7 @@ impl AuthorizedCall {
 				authorize(self, "delete")?;
 				if !error
 					&& (!response.status().is_success()
-						|| rpc["result"].as_object().is_none_or(|o| !o.is_empty()))
+						|| !gateway_a2a::push::valid_delete_result(&rpc["result"]))
 				{
 					return Err(deny(&self.action, ObjectError::ResponseBinding));
 				}
@@ -373,7 +392,14 @@ impl Proof {
 			)
 			.map_err(|e| deny(&self.action, e))?;
 		permit
-			.bind_execution(self.execution.as_ref().map(|e| e.binding()).as_deref())
+			.bind_execution(
+				task_binding(
+					self.execution.as_ref().map(|e| e.binding()),
+					self.flow.as_ref(),
+					self.guards.as_ref(),
+				)?
+				.as_deref(),
+			)
 			.map_err(|e| deny(&self.action, e))?;
 		if permit.cleanup_key().map_err(|e| deny(&self.action, e))? != self.generation {
 			return Err(deny(&self.action, ObjectError::Push));

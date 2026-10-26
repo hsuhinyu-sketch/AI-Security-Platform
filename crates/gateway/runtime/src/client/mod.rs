@@ -1,3 +1,4 @@
+#[cfg(feature = "providers-azure")]
 mod azure;
 mod connect_tunnel;
 mod dns;

@@ -93,7 +93,12 @@ dependencies = [
  "futures",
  "futures-core",
  "futures-util",
+ "gateway-a2a",
  "gateway-composition",
+ "gateway-contracts",
+ "gateway-llm",
+ "gateway-mcp",
+ "gateway-protocol-core",
  "gateway-rag",
  "google-cloud-auth",
  "hashbrown 0.17.1",
@@ -2612,8 +2617,92 @@ dependencies = [
 ]
 
 [[package]]
+name = "gateway-a2a"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "base64 0.22.1",
+ "http",
+ "security-types",
+ "serde",
+ "serde_json",
+ "url",
+]
+
+[[package]]
 name = "gateway-composition"
 version = "0.0.0"
+
+[[package]]
+name = "gateway-contracts"
+version = "0.0.0"
+dependencies = [
+ "tokio",
+]
+
+[[package]]
+name = "gateway-llm"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "arcstr",
+ "async-openai",
+ "async-trait",
+ "base64 0.22.1",
+ "bytes",
+ "futures-util",
+ "gateway-protocol-core",
+ "http",
+ "http-body",
+ "http-body-util",
+ "itertools 0.15.0",
+ "percent-encoding",
+ "pin-project-lite",
+ "rand 0.10.3",
+ "rust_decimal",
+ "schemars 1.2.1",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+ "tokio",
+ "tokio-util",
+ "tokio_sse_codec",
+ "tracing",
+]
+
+[[package]]
+name = "gateway-mcp"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "base64 0.22.1",
+ "futures-core",
+ "futures-util",
+ "gateway-protocol-core",
+ "http",
+ "openapiv3",
+ "percent-encoding",
+ "regex",
+ "rmcp",
+ "security-pipeline",
+ "security-types",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+ "tokio",
+ "tracing",
+ "url",
+]
+
+[[package]]
+name = "gateway-protocol-core"
+version = "0.0.0"
+dependencies = [
+ "bytes",
+ "gateway-contracts",
+ "http",
+ "tokio",
+]
 
 [[package]]
 name = "gateway-rag"
@@ -2630,6 +2719,8 @@ dependencies = [
  "security-types",
  "serde",
  "serde_json",
+ "tokio",
+ "tower",
  "uuid",
 ]
 
@@ -4736,8 +4827,6 @@ dependencies = [
  "itertools 0.15.0",
  "itoa",
  "once_cell",
- "opentelemetry-otlp",
- "opentelemetry_sdk",
  "pin-project-lite",
  "prometheus-client",
  "rustc_version",
@@ -6091,12 +6180,15 @@ name = "security-integration-runtime"
 version = "0.0.0"
 dependencies = [
  "chrono",
+ "libc",
  "reqwest",
  "security-audit",
  "security-pipeline",
+ "security-rag",
  "security-types",
  "serde",
  "serde_json",
+ "serde_json_path_to_error",
  "sha2 0.11.1",
  "sqlx",
  "tokio",
@@ -6127,6 +6219,7 @@ dependencies = [
  "security-types",
  "serde",
  "serde_json",
+ "serde_json_path_to_error",
  "sha2 0.11.1",
  "uuid",
 ]
@@ -6163,6 +6256,7 @@ dependencies = [
  "chrono",
  "serde",
  "serde_json",
+ "uuid",
 ]
 
 [[package]]

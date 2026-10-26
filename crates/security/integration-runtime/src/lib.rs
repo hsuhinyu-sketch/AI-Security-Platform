@@ -10,6 +10,7 @@ use security_types::{ActionRequest, Decision, DecisionEffect, SecurityEvent};
 
 pub mod a2a_objects;
 mod blocking_client_cache;
+mod config_input;
 pub mod context_store;
 pub mod cross_component;
 mod data_egress;
@@ -51,7 +52,7 @@ pub enum SecurityMode {
 }
 
 /// System-level common security configuration. Protocol-specific controls remain separate.
-#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Default, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SecurityConfig {
 	#[serde(default, skip_serializing_if = "Option::is_none")]
@@ -382,6 +383,23 @@ pub fn evaluate(config: &SecurityConfig, action: &ActionRequest) -> Result<(), G
 	evaluate_with_arguments(config, action, None)
 }
 
+/// Shared routing boundary: candidates never invoke remote providers or action controls.
+/// Dispatch and Continuation evaluate full authorization and configured durable audit admission.
+pub fn evaluate_at_stage(
+	config: &SecurityConfig,
+	stage: security_types::CheckStage,
+	action: &ActionRequest,
+	arguments: Option<&serde_json::Value>,
+	audit: &dyn AuditSink,
+) -> Result<(), GatewayError> {
+	match stage {
+		security_types::CheckStage::Candidate => prefilter_with_audit(config, action, audit),
+		security_types::CheckStage::Dispatch | security_types::CheckStage::Continuation => {
+			evaluate_with_audit(config, action, arguments, audit)
+		},
+	}
+}
+
 /// Cheap necessary-condition check, not an authorization grant. Reuses the existing static
 /// authorizer; never invokes PDP, directory, revocation, approval or capability providers.
 pub fn prefilter_with_audit(
@@ -693,3 +711,10 @@ fn capability_denial(
 	));
 	GatewayError::Denied(decision)
 }
+
+#[cfg(test)]
+#[path = "execution_tests.rs"]
+mod execution_tests;
+
+#[cfg(test)]
+mod lifecycle_tests;

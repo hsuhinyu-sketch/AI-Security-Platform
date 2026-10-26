@@ -17,8 +17,9 @@ default = [
 	"mimalloc",
 	"tls-aws-lc",
 ]
-# Temporary shared runtime dependencies. Protocol-specific extraction will make these optional
-# in a later phase; keeping them grouped makes feature-selected gateway profiles build today.
+# LLM-only edge composition. Choose one TLS feature explicitly with --no-default-features.
+llm-edge = ["gateway-llm", "security-s1", "database", "telemetry-otlp"]
+mcp-edge = ["gateway-mcp", "security-s1", "database", "telemetry-otlp"]
 runtime-base = [
 	"providers-aws",
 	"providers-azure",
@@ -26,12 +27,12 @@ runtime-base = [
 	"database",
 	"telemetry-otlp",
 ]
-gateway-llm = ["gateway-composition/gateway-llm"]
-gateway-a2a = ["gateway-composition/gateway-a2a"]
-gateway-mcp = ["gateway-composition/gateway-mcp"]
+gateway-llm = ["gateway-composition/gateway-llm", "dep:tiktoken-rs", "gateway-llm/protocol", "dep:async-openai"]
+gateway-a2a = ["gateway-composition/gateway-a2a", "dep:gateway-a2a"]
+gateway-mcp = ["gateway-composition/gateway-mcp", "dep:gateway-mcp", "dep:rmcp"]
 inference-routing = ["gateway-composition/inference-routing", "gateway-llm"]
 security-s1 = ["gateway-composition/security-s1"]
-gateway-rag = ["gateway-composition/gateway-rag"]
+gateway-rag = ["gateway-composition/gateway-rag", "dep:gateway-rag", "dep:security-rag"]
 gateway-full = [
 	"gateway-llm",
 	"gateway-a2a",
@@ -68,26 +69,31 @@ telemetry-otlp = [
     "dep:opentelemetry_sdk",
 ]
 ui = []
-schema = ["schemars"]
+schema = ["schemars", "gateway-llm/schema"]
 assert_size_runtime = ["platform-core/assert_size_runtime"]
 
 [dependencies]
+gateway-contracts = { path = "../contracts" }
+gateway-llm = { path = "../llm", default-features = false }
+gateway-protocol-core = { path = "../protocol-core" }
+gateway-mcp = { path = "../mcp", optional = true, features = ["openapi"] }
+gateway-a2a = { path = "../a2a", optional = true }
 platform-core.workspace = true
 platform-celx.workspace = true
 platform-hbone.workspace = true
 platform-pool.workspace = true
 gateway-composition = { path = "../composition", default-features = false }
-gateway-rag = { path = "../rag" }
+gateway-rag = { path = "../rag", optional = true }
 security-pipeline = { path = "../../security/pipeline" }
 security-audit = { path = "../../security/audit" }
-security-rag = { path = "../../security/rag" }
+security-rag = { path = "../../security/rag", optional = true }
 security-integration-runtime = { path = "../../security/integration-runtime" }
 security-capability-broker = { path = "../../security/capability-broker" }
 security-types = { path = "../../security/types" }
 anyhow.workspace = true
 arc-swap.workspace = true
 async-compression.workspace = true
-async-openai.workspace = true
+async-openai = { workspace = true, optional = true, features = ["chat-completion-types", "moderation-types", "response-types", "realtime-types"] }
 async-trait.workspace = true
 atomic_float.workspace = true
 aws-config = { workspace = true, optional = true }
@@ -166,7 +172,7 @@ libc.workspace = true
 rcgen.workspace = true
 regex.workspace = true
 
-rmcp = { version = "2.0", features = [
+rmcp = { version = "2.0", optional = true, features = [
     "client",
     "server",
     "base64",
@@ -196,7 +202,7 @@ sse-stream.workspace = true
 subtle.workspace = true
 sqlx = { workspace = true, optional = true }
 thiserror.workspace = true
-tiktoken-rs.workspace = true
+tiktoken-rs = { workspace = true, optional = true }
 mimalloc = { workspace = true, optional = true }
 tokio-rustls.workspace = true
 tokio-stream.workspace = true
@@ -252,3 +258,6 @@ declare_interior_mutable_const = "allow"
 mismatched_lifetime_syntaxes = "allow"
 # ossl350 is set by the openssl-sys crate when OpenSSL >= 3.5.0 is detected.
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(ossl350)'] }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util"] }

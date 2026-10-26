@@ -1,14 +1,18 @@
+#[cfg(feature = "gateway-llm")]
 use ::http::header::CONTENT_TYPE;
+#[cfg(feature = "gateway-llm")]
 use ::http::{HeaderMap, HeaderValue, header};
 use serde::{Deserialize, Serialize};
 
+#[cfg(feature = "gateway-llm")]
 use crate::llm::policy::with_default_timeout;
-use crate::proxy::httpproxy::PolicyClient;
-use crate::telemetry::metrics::{OutboundCallKind, OutboundCallSubtype};
-use crate::types::agent::SimpleBackendReference;
 use crate::*;
+#[cfg(feature = "gateway-llm")]
+use gateway_protocol_core::execution::BoundHttpExecution;
 
+#[cfg(feature = "gateway-llm")]
 const REQUEST_PATH: &str = "request";
+#[cfg(feature = "gateway-llm")]
 const RESPONSE_PATH: &str = "response";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -129,6 +133,7 @@ pub enum MaskActionBody {
 	ResponseChoices(ResponseChoices),
 }
 
+#[cfg(feature = "gateway-llm")]
 fn build_request_for_request(
 	http_headers: &HeaderMap,
 	messages: Vec<Message>,
@@ -139,6 +144,7 @@ fn build_request_for_request(
 	build_request(&body, REQUEST_PATH, http_headers)
 }
 
+#[cfg(feature = "gateway-llm")]
 fn build_request_for_response(
 	http_headers: &HeaderMap,
 	choices: Vec<ResponseChoice>,
@@ -149,6 +155,7 @@ fn build_request_for_response(
 	build_request(&body, RESPONSE_PATH, http_headers)
 }
 
+#[cfg(feature = "gateway-llm")]
 fn build_request<T: serde::Serialize>(
 	body: &T,
 	path: &str,
@@ -172,34 +179,34 @@ fn build_request<T: serde::Serialize>(
 	Ok(req)
 }
 
+#[cfg(feature = "gateway-llm")]
 pub async fn send_request(
-	client: &PolicyClient,
-	target: &SimpleBackendReference,
+	client: &impl BoundHttpExecution<
+		RequestBody = crate::http::Body,
+		ResponseBody = crate::http::Body,
+		Error = crate::proxy::ProxyError,
+	>,
 	http_headers: &HeaderMap,
 	messages: Vec<Message>,
 ) -> anyhow::Result<GuardrailsPromptResponse> {
 	let whr = with_default_timeout(build_request_for_request(http_headers, messages)?);
-	let res = Box::pin(
-		client
-			.with_outbound(OutboundCallKind::Policy, OutboundCallSubtype::Guardrail)
-			.call_reference(whr, target),
-	)
-	.await?;
+	let res = Box::pin(client.execute(whr)).await?;
 	let parsed = json::from_response_body(res).await?;
 	Ok(parsed)
 }
 
+#[cfg(feature = "gateway-llm")]
 pub async fn send_response(
-	client: &PolicyClient,
-	target: &SimpleBackendReference,
+	client: &impl BoundHttpExecution<
+		RequestBody = crate::http::Body,
+		ResponseBody = crate::http::Body,
+		Error = crate::proxy::ProxyError,
+	>,
 	http_headers: &HeaderMap,
 	choices: Vec<ResponseChoice>,
 ) -> anyhow::Result<GuardrailsResponseResponse> {
 	let whr = with_default_timeout(build_request_for_response(http_headers, choices)?);
-	let res = client
-		.with_outbound(OutboundCallKind::Policy, OutboundCallSubtype::Guardrail)
-		.call_reference(whr, target)
-		.await?;
+	let res = client.execute(whr).await?;
 	let parsed = json::from_response_body(res).await?;
 	Ok(parsed)
 }

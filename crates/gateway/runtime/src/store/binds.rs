@@ -1,3 +1,5 @@
+#[cfg(feature = "gateway-llm")]
+use crate::types::agent::Backend;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::net::TcpListener as StdTcpListener;
 use std::sync::Arc;
@@ -22,8 +24,8 @@ use crate::proxy::dtrace;
 use crate::proxy::httpproxy::PolicyClient;
 use crate::store::{BackendPolicy, HasExpressions, PolicyExpressions, RequestPolicy};
 use crate::types::agent::{
-	A2aPolicy, Backend, BackendKey, BackendTargetRef, BackendTrafficPolicy, BackendWithPolicies,
-	Bind, BindKey, FrontendPolicy, JwtAuthentication, Listener, ListenerKey, ListenerName,
+	A2aPolicy, BackendKey, BackendTargetRef, BackendTrafficPolicy, BackendWithPolicies, Bind,
+	BindKey, FrontendPolicy, JwtAuthentication, Listener, ListenerKey, ListenerName,
 	McpAuthentication, PolicyInheritance, PolicyKey, PolicyTarget, Route, RouteGroupKey, RouteKey,
 	RouteName, RouteSet, TCPRoute, TCPRouteSet, TargetedPolicy, TrafficPolicy,
 };
@@ -69,7 +71,7 @@ impl<'a> From<&'a RouteTarget> for RouteTargetRef<'a> {
 
 #[derive(Debug)]
 pub struct Store {
-	a2a_revision: crate::a2a::revision::ConfigRevision,
+	a2a_revision: gateway_contracts::ConfigRevision,
 	core_ids: Option<Vec<core_affinity::CoreId>>,
 	binds: HashMap<BindKey, Arc<Bind>>,
 
@@ -130,6 +132,17 @@ pub struct FrontendPolices {
 }
 
 impl FrontendPolices {
+	/// Also check trusted/control-plane values that did not pass through YAML.
+	pub(crate) fn validate_compiled(&self) -> anyhow::Result<()> {
+		if self.tracing.is_some() || self.access_log_otlp.is_some() {
+			crate::telemetry::trc::validate_compiled()?;
+		}
+		if let Some(logging) = &self.access_log {
+			logging.validate_compiled()?;
+		}
+		Ok(())
+	}
+
 	pub fn set_if_empty(&mut self, rule: &FrontendPolicy) {
 		match rule {
 			FrontendPolicy::HTTP(p) => {
@@ -215,6 +228,7 @@ pub struct BackendPolicies {
 	pub backend_tls: Option<BackendTLS>,
 	pub backend_auth: Option<BackendAuth>,
 	pub a2a: Option<A2aPolicy>,
+	#[cfg(feature = "gateway-llm")]
 	pub llm_provider: Option<Arc<llm::NamedAIProvider>>,
 	pub llm: Option<Arc<llm::Policy>>,
 	pub inference_routing: Option<InferenceRouting>,
@@ -248,12 +262,56 @@ pub struct BackendPolicies {
 }
 
 impl BackendPolicies {
+	/// Model identity for security request construction; this is not execution authority.
+	pub(crate) fn model_name(&self) -> Option<&str> {
+		#[cfg(feature = "gateway-llm")]
+		return self
+			.llm_provider
+			.as_ref()
+			.map(|provider| provider.name.as_str());
+		#[cfg(not(feature = "gateway-llm"))]
+		None
+	}
+
+	pub(crate) fn validate_compiled_protocols(&self) -> Result<(), crate::proxy::ProxyError> {
+		if !cfg!(feature = "gateway-llm") && self.llm.is_some() {
+			return Err(crate::proxy::ProxyError::ProcessingString(
+				"LLM support is not compiled; enable gateway-llm".into(),
+			));
+		}
+		if !cfg!(feature = "inference-routing") && self.inference_routing.is_some() {
+			return Err(crate::proxy::ProxyError::ProcessingString(
+				"inferenceRouting is not compiled; enable inference-routing".into(),
+			));
+		}
+		if let Some(security) = &self.security_audit {
+			crate::capabilities::validate_security(security, crate::capabilities::compiled_profile())
+				.map_err(crate::proxy::ProxyError::ProcessingString)?;
+		}
+		if !cfg!(feature = "gateway-mcp")
+			&& (self.mcp_authorization.is_some()
+				|| self.mcp_authentication.is_some()
+				|| self.mcp_guardrails.is_some())
+		{
+			return Err(crate::proxy::ProxyError::ProcessingString(
+				"MCP support is not compiled; enable gateway-mcp".into(),
+			));
+		}
+		if !cfg!(feature = "gateway-a2a") && self.a2a.is_some() {
+			return Err(crate::proxy::ProxyError::ProcessingString(
+				"A2A support is not compiled; enable gateway-a2a".into(),
+			));
+		}
+		Ok(())
+	}
+
 	// Merges self and other. Other has precedence
 	pub fn merge(self, other: BackendPolicies) -> BackendPolicies {
 		Self {
 			backend_tls: other.backend_tls.or(self.backend_tls),
 			backend_auth: other.backend_auth.or(self.backend_auth),
 			a2a: other.a2a.or(self.a2a),
+			#[cfg(feature = "gateway-llm")]
 			llm_provider: other.llm_provider.or(self.llm_provider),
 			llm: other.llm.or(self.llm),
 			authorization: match (
@@ -430,6 +488,14 @@ pub struct LLMRequestPolicies {
 }
 
 impl LLMRequestPolicies {
+	pub fn requires_content_adapter(&self) -> bool {
+		self
+			.llm
+			.as_ref()
+			.and_then(|p| p.prompt_guard.as_ref())
+			.is_some_and(|g| !g.request.is_empty() || !g.response.is_empty())
+	}
+
 	/// Selected controls that cannot execute on an opaque request/response body.
 	pub fn requires_structured_adapter(&self) -> bool {
 		self.llm.as_ref().is_some_and(|p| {
@@ -445,6 +511,7 @@ impl LLMRequestPolicies {
 					.is_some_and(|p| !p.append.is_empty() || !p.prepend.is_empty())
 				|| !p.model_aliases.is_empty()
 				|| p.prompt_caching.is_some()
+				|| p.streaming_limits.is_some()
 		}) || self
 			.local_rate_limit
 			.as_deref()
@@ -492,6 +559,10 @@ impl LLMRequestPolicies {
 		};
 
 		Arc::new(llm::Policy {
+			streaming_limits: match (preferred.streaming_limits, fallback.streaming_limits) {
+				(Some(a), Some(b)) => Some(a.stricter(b)),
+				(a, b) => a.or(b),
+			},
 			prompt_guard: preferred
 				.prompt_guard
 				.clone()
@@ -529,6 +600,7 @@ impl LLMRequestPolicies {
 
 #[derive(Debug, Default)]
 pub struct LLMResponsePolicies {
+	pub streaming_limits: llm::policy::streaming_limits::StreamingLimits,
 	pub local_rate_limit: Vec<http::localratelimit::RateLimit>,
 	pub remote_rate_limit: Option<http::remoteratelimit::LLMResponseAmend>,
 	pub request_traceparent: Option<HeaderValue>,
@@ -1246,24 +1318,28 @@ impl Store {
 			.policies_by_key
 			.values()
 			.filter_map(|v| v.policy.as_frontend())
-			.filter_map(|v| match v {
-				FrontendPolicy::Tracing(t) => {
-					let tracer_policy = Arc::clone(t);
-					Some(Box::new(move || {
-						if let Some(t) = tracer_policy.tracer.get() {
-							t.shutdown()
-						}
-					}) as ShutdownPolicy)
-				},
-				FrontendPolicy::AccessLog(t) => {
-					let access_log_policy = t.access_log_policy.clone();
-					Some(Box::new(move || {
-						if let Some(t) = access_log_policy.as_ref().and_then(|l| l.logger.get()) {
-							t.shutdown()
-						}
-					}) as ShutdownPolicy)
-				},
-				_ => None,
+			.filter_map(|v| -> Option<ShutdownPolicy> {
+				match v {
+					#[cfg(feature = "telemetry-otlp")]
+					FrontendPolicy::Tracing(t) => {
+						let tracer_policy = Arc::clone(t);
+						Some(Box::new(move || {
+							if let Some(t) = tracer_policy.tracer.get() {
+								t.shutdown()
+							}
+						}) as ShutdownPolicy)
+					},
+					#[cfg(feature = "telemetry-otlp")]
+					FrontendPolicy::AccessLog(t) => {
+						let access_log_policy = t.access_log_policy.clone();
+						Some(Box::new(move || {
+							if let Some(t) = access_log_policy.as_ref().and_then(|l| l.logger.get()) {
+								t.shutdown()
+							}
+						}) as ShutdownPolicy)
+					},
+					_ => None,
+				}
 			})
 			.collect_vec()
 	}
@@ -1535,6 +1611,7 @@ impl Store {
 	}
 
 	pub fn insert_backend(&mut self, key: BackendKey, b: BackendWithPolicies) {
+		#[cfg(feature = "gateway-llm")]
 		if let Backend::AI(_, t) = &b.backend
 			&& t.providers.any(|p| p.tokenize)
 		{
@@ -1642,7 +1719,7 @@ impl Drop for StoreWriteGuard<'_> {
 	}
 }
 impl Store {
-	pub(crate) fn a2a_config_lease(&self) -> crate::a2a::revision::ConfigLease {
+	pub(crate) fn a2a_config_lease(&self) -> gateway_contracts::ConfigLease {
 		self.a2a_revision.lease()
 	}
 	/// Store-wide conservative contract. Telemetry-only frontend policies are excluded.
@@ -1911,6 +1988,7 @@ pub struct PreviousState {
 	pub route_groups: HashSet<RouteGroupKey>,
 }
 
+#[cfg(feature = "gateway-llm")]
 fn preload_tokenizers() {
 	static INIT_TOKENIZERS: std::sync::Once = std::sync::Once::new();
 

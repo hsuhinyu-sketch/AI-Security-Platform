@@ -1,0 +1,4773 @@
+{
+  "cases": [
+    {
+      "name": "text",
+      "direction": "chat",
+      "events": [
+        {
+          "type": "messageStart",
+          "payload": "{\"role\":\"assistant\"}"
+        },
+        {
+          "type": "contentBlockDelta",
+          "payload": "{\"contentBlockIndex\":0,\"delta\":{\"text\":\"你好\"}}"
+        },
+        {
+          "type": "messageStop",
+          "payload": "{\"stopReason\":\"end_turn\",\"additionalModelResponseFields\":{\"safety\":\"retained\"}}"
+        },
+        {
+          "type": "metadata",
+          "payload": "{\"usage\":{\"inputTokens\":17,\"outputTokens\":5,\"totalTokens\":22,\"cacheReadInputTokens\":3,\"cacheWriteInputTokens\":4},\"metrics\":{\"latencyMs\":23},\"performanceConfig\":{}}"
+        }
+      ],
+      "bufferLimit": 65536,
+      "chunkSize": 0,
+      "expected": {
+        "decoded": [
+          {
+            "ok": "MessageStart(MessageStartEvent { role: Assistant })"
+          },
+          {
+            "ok": "ContentBlockDelta(ContentBlockDeltaEvent { delta: Some(Text(\"你好\")), content_block_index: 0 })"
+          },
+          {
+            "ok": "MessageStop(MessageStopEvent { stop_reason: EndTurn, additional_model_response_fields: Some(Object {\"safety\": String(\"retained\")}) })"
+          },
+          {
+            "ok": "Metadata(ConverseStreamMetadataEvent { usage: Some(TokenUsage { input_tokens: 17, output_tokens: 5, total_tokens: 22, cache_read_input_tokens: Some(3), cache_write_input_tokens: Some(4) }), metrics: Some(ConverseMetrics { latency_ms: 23 }), performance_config: Some(PerformanceConfiguration) })"
+          }
+        ],
+        "events": [
+          {
+            "event": "",
+            "data": {
+              "id": "fixed-message",
+              "choices": [
+                {
+                  "index": 0,
+                  "delta": {
+                    "content": null,
+                    "role": "assistant"
+                  }
+                }
+              ],
+              "created": 1700000000,
+              "model": "fixture",
+              "service_tier": null,
+              "system_fingerprint": null,
+              "object": "chat.completion.chunk",
+              "usage": null
+            }
+          },
+          {
+            "event": "",
+            "data": {
+              "id": "fixed-message",
+              "choices": [
+                {
+                  "index": 0,
+                  "delta": {
+                    "content": "你好"
+                  }
+                }
+              ],
+              "created": 1700000000,
+              "model": "fixture",
+              "service_tier": null,
+              "system_fingerprint": null,
+              "object": "chat.completion.chunk",
+              "usage": null
+            }
+          },
+          {
+            "event": "",
+            "data": {
+              "id": "fixed-message",
+              "choices": [
+                {
+                  "index": 0,
+                  "delta": {
+                    "content": null
+                  },
+                  "finish_reason": "stop"
+                }
+              ],
+              "created": 1700000000,
+              "model": "fixture",
+              "service_tier": null,
+              "system_fingerprint": null,
+              "object": "chat.completion.chunk",
+              "usage": null
+            }
+          },
+          {
+            "event": "",
+            "data": {
+              "id": "fixed-message",
+              "choices": [],
+              "created": 1700000000,
+              "model": "fixture",
+              "service_tier": null,
+              "system_fingerprint": null,
+              "object": "chat.completion.chunk",
+              "usage": {
+                "prompt_tokens": 17,
+                "completion_tokens": 5,
+                "total_tokens": 22,
+                "prompt_tokens_details": {
+                  "cached_tokens": 3
+                },
+                "cache_read_input_tokens": 3,
+                "cache_creation_input_tokens": 4
+              }
+            }
+          },
+          {
+            "event": "",
+            "data": "[DONE]"
+          }
+        ],
+        "frames": [
+          "data: {\"id\":\"fixed-message\",\"choices\":[{\"index\":0,\"delta\":{\"content\":null,\"role\":\"assistant\"}}],\"created\":1700000000,\"model\":\"fixture\",\"service_tier\":null,\"system_fingerprint\":null,\"object\":\"chat.completion.chunk\",\"usage\":null}\n\ndata: {\"id\":\"fixed-message\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"你好\"}}],\"created\":1700000000,\"model\":\"fixture\",\"service_tier\":null,\"system_fingerprint\":null,\"object\":\"chat.completion.chunk\",\"usage\":null}\n\ndata: {\"id\":\"fixed-message\",\"choices\":[{\"index\":0,\"delta\":{\"content\":null},\"finish_reason\":\"stop\"}],\"created\":1700000000,\"model\":\"fixture\",\"service_tier\":null,\"system_fingerprint\":null,\"object\":\"chat.completion.chunk\",\"usage\":null}\n\ndata: {\"id\":\"fixed-message\",\"choices\":[],\"created\":1700000000,\"model\":\"fixture\",\"service_tier\":null,\"system_fingerprint\":null,\"object\":\"chat.completion.chunk\",\"usage\":{\"prompt_tokens\":17,\"completion_tokens\":5,\"total_tokens\":22,\"prompt_tokens_details\":{\"cached_tokens\":3},\"cache_read_input_tokens\":3,\"cache_creation_input_tokens\":4}}\n\n",
+          "data: [DONE]\n\n"
+        ],
+        "error": null,
+        "stats": {
+          "input": 17,
+          "output": 5,
+          "total": 22,
+          "cached": 3,
+          "cacheWrite": 4,
+          "reasoning": null,
+          "model": null,
+          "tier": null,
+          "firstToken": true
+        }
+      }
+    },
+    {
+      "name": "text",
+      "direction": "messages",
+      "events": [
+        {
+          "type": "messageStart",
+          "payload": "{\"role\":\"assistant\"}"
+        },
+        {
+          "type": "contentBlockDelta",
+          "payload": "{\"contentBlockIndex\":0,\"delta\":{\"text\":\"你好\"}}"
+        },
+        {
+          "type": "messageStop",
+          "payload": "{\"stopReason\":\"end_turn\",\"additionalModelResponseFields\":{\"safety\":\"retained\"}}"
+        },
+        {
+          "type": "metadata",
+          "payload": "{\"usage\":{\"inputTokens\":17,\"outputTokens\":5,\"totalTokens\":22,\"cacheReadInputTokens\":3,\"cacheWriteInputTokens\":4},\"metrics\":{\"latencyMs\":23},\"performanceConfig\":{}}"
+        }
+      ],
+      "bufferLimit": 65536,
+      "chunkSize": 0,
+      "expected": {
+        "decoded": [
+          {
+            "ok": "MessageStart(MessageStartEvent { role: Assistant })"
+          },
+          {
+            "ok": "ContentBlockDelta(ContentBlockDeltaEvent { delta: Some(Text(\"你好\")), content_block_index: 0 })"
+          },
+          {
+            "ok": "MessageStop(MessageStopEvent { stop_reason: EndTurn, additional_model_response_fields: Some(Object {\"safety\": String(\"retained\")}) })"
+          },
+          {
+            "ok": "Metadata(ConverseStreamMetadataEvent { usage: Some(TokenUsage { input_tokens: 17, output_tokens: 5, total_tokens: 22, cache_read_input_tokens: Some(3), cache_write_input_tokens: Some(4) }), metrics: Some(ConverseMetrics { latency_ms: 23 }), performance_config: Some(PerformanceConfiguration) })"
+          }
+        ],
+        "events": [
+          {
+            "event": "message_start",
+            "data": {
+              "type": "message_start",
+              "message": {
+                "id": "msg_fixture_0",
+                "type": "message",
+                "role": "assistant",
+                "content": [],
+                "model": "fixture",
+                "stop_reason": null,
+                "stop_sequence": null,
+                "usage": {
+                  "input_tokens": 0,
+                  "output_tokens": 0
+                }
+              }
+            }
+          },
+          {
+            "event": "content_block_start",
+            "data": {
+              "type": "content_block_start",
+              "index": 0,
+              "content_block": {
+                "type": "text",
+                "text": ""
+              }
+            }
+          },
+          {
+            "event": "content_block_delta",
+            "data": {
+              "type": "content_block_delta",
+              "index": 0,
+              "delta": {
+                "type": "text_delta",
+                "text": "你好"
+              }
+            }
+          },
+          {
+            "event": "message_delta",
+            "data": {
+              "type": "message_delta",
+              "delta": {
+                "stop_reason": "end_turn",
+                "stop_sequence": null
+              },
+              "usage": {
+                "input_tokens": 17,
+                "output_tokens": 5,
+                "cache_creation_input_tokens": 4,
+                "cache_read_input_tokens": 3
+              }
+            }
+          },
+          {
+            "event": "message_stop",
+            "data": {
+              "type": "message_stop"
+            }
+          }
+        ],
+        "frames": [
+          "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_fixture_0\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[],\"model\":\"fixture\",\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":0,\"output_tokens\":0}}}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"你好\"}}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null},\"usage\":{\"input_tokens\":17,\"output_tokens\":5,\"cache_creation_input_tokens\":4,\"cache_read_input_tokens\":3}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+        ],
+        "error": null,
+        "stats": {
+          "input": 17,
+          "output": 5,
+          "total": 22,
+          "cached": 3,
+          "cacheWrite": 4,
+          "reasoning": null,
+          "model": null,
+          "tier": null,
+          "firstToken": true
+        }
+      }
+    },
+    {
+      "name": "empty",
+      "direction": "chat",
+      "events": [],
+      "bufferLimit": 65536,
+      "chunkSize": 0,
+      "expected": {
+        "decoded": [],
+        "events": [
+          {
+            "event": "",
+            "data": "[DONE]"
+          }
+        ],
+        "frames": [
+          "data: [DONE]\n\n"
+        ],
+        "error": null,
+        "stats": {
+          "input": null,
+          "output": null,
+          "total": null,
+          "cached": null,
+          "cacheWrite": null,
+          "reasoning": null,
+          "model": null,
+          "tier": null,
+          "firstToken": false
+        }
+      }
+    },
+    {
+      "name": "empty",
+      "direction": "messages",
+      "events": [],
+      "bufferLimit": 65536,
+      "chunkSize": 0,
+      "expected": {
+        "decoded": [],
+        "events": [],
+        "frames": [],
+        "error": null,
+        "stats": {
+          "input": null,
+          "output": null,
+          "total": null,
+          "cached": null,
+          "cacheWrite": null,
+          "reasoning": null,
+          "model": null,
+          "tier": null,
+          "firstToken": false
+        }
+      }
+    },
+    {
+      "name": "tools",
+      "direction": "chat",
+      "events": [
+        {
+          "type": "messageStart",
+          "payload": "{\"role\":\"assistant\"}"
+        },
+        {
+          "type": "contentBlockStart",
+          "payload": "{\"contentBlockIndex\":2,\"start\":{\"toolUse\":{\"toolUseId\":\"call-original\",\"name\":\"danger_tool\"}}}"
+        },
+        {
+          "type": "contentBlockDelta",
+          "payload": "{\"contentBlockIndex\":2,\"delta\":{\"toolUse\":{\"input\":\"{\\\"x\\\":\"}}}"
+        },
+        {
+          "type": "contentBlockDelta",
+          "payload": "{\"contentBlockIndex\":0,\"delta\":{\"text\":\"interleave\"}}"
+        },
+        {
+          "type": "contentBlockDelta",
+          "payload": "{\"contentBlockIndex\":2,\"delta\":{\"toolUse\":{\"input\":\"1}\"}}}"
+        },
+        {
+          "type": "contentBlockStop",
+          "payload": "{\"contentBlockIndex\":2}"
+        },
+        {
+          "type": "messageStop",
+          "payload": "{\"stopReason\":\"tool_use\",\"additionalModelResponseFields\":{\"safety\":\"retained\"}}"
+        },
+        {
+          "type": "metadata",
+          "payload": "{\"usage\":{\"inputTokens\":17,\"outputTokens\":5,\"totalTokens\":22,\"cacheReadInputTokens\":0,\"cacheWriteInputTokens\":0},\"metrics\":{\"latencyMs\":23},\"performanceConfig\":{}}"
+        }
+      ],
+      "bufferLimit": 65536,
+      "chunkSize": 0,
+      "expected": {
+        "decoded": [
+          {
+            "ok": "MessageStart(MessageStartEvent { role: Assistant })"
+          },
+          {
+            "ok": "ContentBlockStart(ContentBlockStartEvent { start: Some(ToolUse(ToolUseBlockStart { tool_use_id: \"call-original\", name: \"danger_tool\" })), content_block_index: 2 })"
+          },
+          {
+            "ok": "ContentBlockDelta(ContentBlockDeltaEvent { delta: Some(ToolUse(ToolUseBlockDelta { input: \"{\\\"x\\\":\" })), content_block_index: 2 })"
+          },
+          {
+            "ok": "ContentBlockDelta(ContentBlockDeltaEvent { delta: Some(Text(\"interleave\")), content_block_index: 0 })"
+          },
+          {
+            "ok": "ContentBlockDelta(ContentBlockDeltaEvent { delta: Some(ToolUse(ToolUseBlockDelta { input: \"1}\" })), content_block_index: 2 })"
+          },
+          {
+            "ok": "ContentBlockStop(ContentBlockStopEvent { content_block_index: 2 })"
+          },
+          {
+            "ok": "MessageStop(MessageStopEvent { stop_reason: ToolUse, additional_model_response_fields: Some(Object {\"safety\": String(\"retained\")}) })"
+          },
+          {
+            "ok": "Metadata(ConverseStreamMetadataEvent { usage: Some(TokenUsage { input_tokens: 17, output_tokens: 5, total_tokens: 22, cache_read_input_tokens: Some(0), cache_write_input_tokens: Some(0) }), metrics: Some(ConverseMetrics { latency_ms: 23 }), performance_config: Some(PerformanceConfiguration) })"
+          }
+        ],
+        "events": [
+          {
+            "event": "",
+            "data": {
+              "id": "fixed-message",
+              "choices": [
+                {
+                  "index": 0,
+                  "delta": {
+                    "content": null,
+                    "role": "assistant"
+                  }
+                }
+              ],
+              "created": 1700000000,
+              "model": "fixture",
+              "service_tier": null,
+              "system_fingerprint": null,
+              "object": "chat.completion.chunk",
+              "usage": null
+            }
+          },
+          {
+            "event": "",
+            "data": {
+              "id": "fixed-message",
+              "choices": [
+                {
+                  "index": 0,
+                  "delta": {
+                    "content": null,
+                    "tool_calls": [
+                      {
+                        "index": 2,
+                        "id": "call-original",
+                        "type": "function",
+                        "function": {
+                          "name": "danger.tool"
+                        }
+                      }
+                    ]
+                  }
+                }
+              ],
+              "created": 1700000000,
+              "model": "fixture",
+              "service_tier": null,
+              "system_fingerprint": null,
+              "object": "chat.completion.chunk",
+              "usage": null
+            }
+          },
+          {
+            "event": "",
+            "data": {
+              "id": "fixed-message",
+              "choices": [
+                {
+                  "index": 0,
+                  "delta": {
+                    "content": null,
+                    "tool_calls": [
+                      {
+                        "index": 2,
+                        "id": null,
+                        "type": null,
+                        "function": {
+                          "arguments": "{\"x\":"
+                        }
+                      }
+                    ]
+                  }
+                }
+              ],
+              "created": 1700000000,
+              "model": "fixture",
+              "service_tier": null,
+              "system_fingerprint": null,
+              "object": "chat.completion.chunk",
+              "usage": null
+            }
+          },
+          {
+            "event": "",
+            "data": {
+              "id": "fixed-message",
+              "choices": [
+                {
+                  "index": 0,
+                  "delta": {
+                    "content": "interleave"
+                  }
+                }
+              ],
+              "created": 1700000000,
+              "model": "fixture",
+              "service_tier": null,
+              "system_fingerprint": null,
+              "object": "chat.completion.chunk",
+              "usage": null
+            }
+          },
+          {
+            "event": "",
+            "data": {
+              "id": "fixed-message",
+              "choices": [
+                {
+                  "index": 0,
+                  "delta": {
+                    "content": null,
+                    "tool_calls": [
+                      {
+                        "index": 2,
+                        "id": null,
+                        "type": null,
+                        "function": {
+                          "arguments": "1}"
+                        }
+                      }
+                    ]
+                  }
+                }
+              ],
+              "created": 1700000000,
+              "model": "fixture",
+              "service_tier": null,
+              "system_fingerprint": null,
+              "object": "chat.completion.chunk",
+              "usage": null
+            }
+          },
+          {
+            "event": "",
+            "data": {
+              "id": "fixed-message",
+              "choices": [
+                {
+                  "index": 0,
+                  "delta": {
+                    "content": null
+                  },
+                  "finish_reason": "tool_calls"
+                }
+              ],
+              "created": 1700000000,
+              "model": "fixture",
+              "service_tier": null,
+              "system_fingerprint": null,
+              "object": "chat.completion.chunk",
+              "usage": null
+            }
+          },
+          {
+            "event": "",
+            "data": {
+              "id": "fixed-message",
+              "choices": [],
+              "created": 1700000000,
+              "model": "fixture",
+              "service_tier": null,
+              "system_fingerprint": null,
+              "object": "chat.completion.chunk",
+              "usage": {
+                "prompt_tokens": 17,
+                "completion_tokens": 5,
+                "total_tokens": 22,
+                "prompt_tokens_details": {
+                  "cached_tokens": 0
+                },
+                "cache_read_input_tokens": 0,
+                "cache_creation_input_tokens": 0
+              }
+            }
+          },
+          {
+            "event": "",
+            "data": "[DONE]"
+          }
+        ],
+        "frames": [
+          "data: {\"id\":\"fixed-message\",\"choices\":[{\"index\":0,\"delta\":{\"content\":null,\"role\":\"assistant\"}}],\"created\":1700000000,\"model\":\"fixture\",\"service_tier\":null,\"system_fingerprint\":null,\"object\":\"chat.completion.chunk\",\"usage\":null}\n\ndata: {\"id\":\"fixed-message\",\"choices\":[{\"index\":0,\"delta\":{\"content\":null,\"tool_calls\":[{\"index\":2,\"id\":\"call-original\",\"type\":\"function\",\"function\":{\"name\":\"danger.tool\"}}]}}],\"created\":1700000000,\"model\":\"fixture\",\"service_tier\":null,\"system_fingerprint\":null,\"object\":\"chat.completion.chunk\",\"usage\":null}\n\ndata: {\"id\":\"fixed-message\",\"choices\":[{\"index\":0,\"delta\":{\"content\":null,\"tool_calls\":[{\"index\":2,\"id\":null,\"type\":null,\"function\":{\"arguments\":\"{\\\"x\\\":\"}}]}}],\"created\":1700000000,\"model\":\"fixture\",\"service_tier\":null,\"system_fingerprint\":null,\"object\":\"chat.completion.chunk\",\"usage\":null}\n\ndata: {\"id\":\"fixed-message\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"interleave\"}}],\"created\":1700000000,\"model\":\"fixture\",\"service_tier\":null,\"system_fingerprint\":null,\"object\":\"chat.completion.chunk\",\"usage\":null}\n\ndata: {\"id\":\"fixed-message\",\"choices\":[{\"index\":0,\"delta\":{\"content\":null,\"tool_calls\":[{\"index\":2,\"id\":null,\"type\":null,\"function\":{\"arguments\":\"1}\"}}]}}],\"created\":1700000000,\"model\":\"fixture\",\"service_tier\":null,\"system_fingerprint\":null,\"object\":\"chat.completion.chunk\",\"usage\":null}\n\ndata: {\"id\":\"fixed-message\",\"choices\":[{\"index\":0,\"delta\":{\"content\":null},\"finish_reason\":\"tool_calls\"}],\"created\":1700000000,\"model\":\"fixture\",\"service_tier\":null,\"system_fingerprint\":null,\"object\":\"chat.completion.chunk\",\"usage\":null}\n\ndata: {\"id\":\"fixed-message\",\"choices\":[],\"created\":1700000000,\"model\":\"fixture\",\"service_tier\":null,\"system_fingerprint\":null,\"object\":\"chat.completion.chunk\",\"usage\":{\"prompt_tokens\":17,\"completion_tokens\":5,\"total_tokens\":22,\"prompt_tokens_details\":{\"cached_tokens\":0},\"cache_read_input_tokens\":0,\"cache_creation_input_tokens\":0}}\n\n",
+          "data: [DONE]\n\n"
+        ],
+        "error": null,
+        "stats": {
+          "input": 17,
+          "output": 5,
+          "total": 22,
+          "cached": 0,
+          "cacheWrite": 0,
+          "reasoning": null,
+          "model": null,
+          "tier": null,
+          "firstToken": true
+        }
+      }
+    },
+    {
+      "name": "tools",
+      "direction": "messages",
+      "events": [
+        {
+          "type": "messageStart",
+          "payload": "{\"role\":\"assistant\"}"
+        },
+        {
+          "type": "contentBlockStart",
+          "payload": "{\"contentBlockIndex\":2,\"start\":{\"toolUse\":{\"toolUseId\":\"call-original\",\"name\":\"danger_tool\"}}}"
+        },
+        {
+          "type": "contentBlockDelta",
+          "payload": "{\"contentBlockIndex\":2,\"delta\":{\"toolUse\":{\"input\":\"{\\\"x\\\":\"}}}"
+        },
+        {
+          "type": "contentBlockDelta",
+          "payload": "{\"contentBlockIndex\":0,\"delta\":{\"text\":\"interleave\"}}"
+        },
+        {
+          "type": "contentBlockDelta",
+          "payload": "{\"contentBlockIndex\":2,\"delta\":{\"toolUse\":{\"input\":\"1}\"}}}"
+        },
+        {
+          "type": "contentBlockStop",
+          "payload": "{\"contentBlockIndex\":2}"
+        },
+        {
+          "type": "messageStop",
+          "payload": "{\"stopReason\":\"tool_use\",\"additionalModelResponseFields\":{\"safety\":\"retained\"}}"
+        },
+        {
+          "type": "metadata",
+          "payload": "{\"usage\":{\"inputTokens\":17,\"outputTokens\":5,\"totalTokens\":22,\"cacheReadInputTokens\":0,\"cacheWriteInputTokens\":0},\"metrics\":{\"latencyMs\":23},\"performanceConfig\":{}}"
+        }
+      ],
+      "bufferLimit": 65536,
+      "chunkSize": 0,
+      "expected": {
+        "decoded": [
+          {
+            "ok": "MessageStart(MessageStartEvent { role: Assistant })"
+          },
+          {
+            "ok": "ContentBlockStart(ContentBlockStartEvent { start: Some(ToolUse(ToolUseBlockStart { tool_use_id: \"call-original\", name: \"danger_tool\" })), content_block_index: 2 })"
+          },
+          {
+            "ok": "ContentBlockDelta(ContentBlockDeltaEvent { delta: Some(ToolUse(ToolUseBlockDelta { input: \"{\\\"x\\\":\" })), content_block_index: 2 })"
+          },
+          {
+            "ok": "ContentBlockDelta(ContentBlockDeltaEvent { delta: Some(Text(\"interleave\")), content_block_index: 0 })"
+          },
+          {
+            "ok": "ContentBlockDelta(ContentBlockDeltaEvent { delta: Some(ToolUse(ToolUseBlockDelta { input: \"1}\" })), content_block_index: 2 })"
+          },
+          {
+            "ok": "ContentBlockStop(ContentBlockStopEvent { content_block_index: 2 })"
+          },
+          {
+            "ok": "MessageStop(MessageStopEvent { stop_reason: ToolUse, additional_model_response_fields: Some(Object {\"safety\": String(\"retained\")}) })"
+          },
+          {
+            "ok": "Metadata(ConverseStreamMetadataEvent { usage: Some(TokenUsage { input_tokens: 17, output_tokens: 5, total_tokens: 22, cache_read_input_tokens: Some(0), cache_write_input_tokens: Some(0) }), metrics: Some(ConverseMetrics { latency_ms: 23 }), performance_config: Some(PerformanceConfiguration) })"
+          }
+        ],
+        "events": [
+          {
+            "event": "message_start",
+            "data": {
+              "type": "message_start",
+              "message": {
+                "id": "msg_fixture_0",
+                "type": "message",
+                "role": "assistant",
+                "content": [],
+                "model": "fixture",
+                "stop_reason": null,
+                "stop_sequence": null,
+                "usage": {
+                  "input_tokens": 0,
+                  "output_tokens": 0
+                }
+              }
+            }
+          },
+          {
+            "event": "content_block_start",
+            "data": {
+              "type": "content_block_start",
+              "index": 2,
+              "content_block": {
+                "type": "tool_use",
+                "id": "call-original",
+                "name": "danger.tool",
+                "input": {}
+              }
+            }
+          },
+          {
+            "event": "content_block_delta",
+            "data": {
+              "type": "content_block_delta",
+              "index": 2,
+              "delta": {
+                "type": "input_json_delta",
+                "partial_json": "{\"x\":"
+              }
+            }
+          },
+          {
+            "event": "content_block_start",
+            "data": {
+              "type": "content_block_start",
+              "index": 0,
+              "content_block": {
+                "type": "text",
+                "text": ""
+              }
+            }
+          },
+          {
+            "event": "content_block_delta",
+            "data": {
+              "type": "content_block_delta",
+              "index": 0,
+              "delta": {
+                "type": "text_delta",
+                "text": "interleave"
+              }
+            }
+          },
+          {
+            "event": "content_block_delta",
+            "data": {
+              "type": "content_block_delta",
+              "index": 2,
+              "delta": {
+                "type": "input_json_delta",
+                "partial_json": "1}"
+              }
+            }
+          },
+          {
+            "event": "content_block_stop",
+            "data": {
+              "type": "content_block_stop",
+              "index": 2
+            }
+          },
+          {
+            "event": "message_delta",
+            "data": {
+              "type": "message_delta",
+              "delta": {
+                "stop_reason": "tool_use",
+                "stop_sequence": null
+              },
+              "usage": {
+                "input_tokens": 17,
+                "output_tokens": 5,
+                "cache_creation_input_tokens": 0,
+                "cache_read_input_tokens": 0
+              }
+            }
+          },
+          {
+            "event": "message_stop",
+            "data": {
+              "type": "message_stop"
+            }
+          }
+        ],
+        "frames": [
+          "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_fixture_0\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[],\"model\":\"fixture\",\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":0,\"output_tokens\":0}}}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":2,\"content_block\":{\"type\":\"tool_use\",\"id\":\"call-original\",\"name\":\"danger.tool\",\"input\":{}}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":2,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"{\\\"x\\\":\"}}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"interleave\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":2,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"1}\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":2}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"tool_use\",\"stop_sequence\":null},\"usage\":{\"input_tokens\":17,\"output_tokens\":5,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+        ],
+        "error": null,
+        "stats": {
+          "input": 17,
+          "output": 5,
+          "total": 22,
+          "cached": 0,
+          "cacheWrite": 0,
+          "reasoning": null,
+          "model": null,
+          "tier": null,
+          "firstToken": true
+        }
+      }
+    },
+    {
+      "name": "reasoning",
+      "direction": "chat",
+      "events": [
+        {
+          "type": "messageStart",
+          "payload": "{\"role\":\"assistant\"}"
+        },
+        {
+          "type": "contentBlockDelta",
+          "payload": "{\"contentBlockIndex\":0,\"delta\":{\"reasoningContent\":{\"text\":\"think\"}}}"
+        },
+        {
+          "type": "contentBlockDelta",
+          "payload": "{\"contentBlockIndex\":0,\"delta\":{\"reasoningContent\":{\"signature\":\"signature-secure\"}}}"
+        },
+        {
+          "type": "contentBlockDelta",
+          "payload": "{\"contentBlockIndex\":0,\"delta\":{\"reasoningContent\":{\"redactedContent\":[1,2,3]}}}"
+        },
+        {
+          "type": "contentBlockDelta",
+          "payload": "{\"contentBlockIndex\":0,\"delta\":{\"reasoningContent\":\"Unknown\"}}"
+        },
+        {
+          "type": "messageStop",
+          "payload": "{\"stopReason\":\"end_turn\",\"additionalModelResponseFields\":{\"safety\":\"retained\"}}"
+        }
+      ],
+      "bufferLimit": 65536,
+      "chunkSize": 0,
+      "expected": {
+        "decoded": [
+          {
+            "ok": "MessageStart(MessageStartEvent { role: Assistant })"
+          },
+          {
+            "ok": "ContentBlockDelta(ContentBlockDeltaEvent { delta: Some(ReasoningContent(Text(\"think\"))), content_block_index: 0 })"
+          },
+          {
+            "ok": "ContentBlockDelta(ContentBlockDeltaEvent { delta: Some(ReasoningContent(Signature(\"signature-secure\"))), content_block_index: 0 })"
+          },
+          {
+            "ok": "ContentBlockDelta(ContentBlockDeltaEvent { delta: Some(ReasoningContent(RedactedContent(b\"\\x01\\x02\\x03\"))), content_block_index: 0 })"
+          },
+          {
+            "ok": "ContentBlockDelta(ContentBlockDeltaEvent { delta: Some(ReasoningContent(Unknown)), content_block_index: 0 })"
+          },
+          {
+            "ok": "MessageStop(MessageStopEvent { stop_reason: EndTurn, additional_model_response_fields: Some(Object {\"safety\": String(\"retained\")}) })"
+          }
+        ],
+        "events": [
+          {
+            "event": "",
+            "data": {
+              "id": "fixed-message",
+              "choices": [
+                {
+                  "index": 0,
+                  "delta": {
+                    "content": null,
+                    "role": "assistant"
+                  }
+                }
+              ],
+              "created": 1700000000,
+              "model": "fixture",
+              "service_tier": null,
+              "system_fingerprint": null,
+              "object": "chat.completion.chunk",
+              "usage": null
+            }
+          },
+          {
+            "event": "",
+            "data": {
+              "id": "fixed-message",
+              "choices": [
+                {
+                  "index": 0,
+                  "delta": {
+                    "content": null,
+                    "reasoning_content": "think"
+                  }
+                }
+              ],
+              "created": 1700000000,
+              "model": "fixture",
+              "service_tier": null,
+              "system_fingerprint": null,
+              "object": "chat.completion.chunk",
+              "usage": null
+            }
+          },
+          {
+            "event": "",
+            "data": {
+              "id": "fixed-message",
+              "choices": [
+                {
+                  "index": 0,
+                  "delta": {
+                    "content": null,
+                    "reasoning_signature": "signature-secure"
+                  }
+                }
+              ],
+              "created": 1700000000,
+              "model": "fixture",
+              "service_tier": null,
+              "system_fingerprint": null,
+              "object": "chat.completion.chunk",
+              "usage": null
+            }
+          },
+          {
+            "event": "",
+            "data": {
+              "id": "fixed-message",
+              "choices": [
+                {
+                  "index": 0,
+                  "delta": {
+                    "content": null,
+                    "reasoning_content": "[REDACTED]"
+                  }
+                }
+              ],
+              "created": 1700000000,
+              "model": "fixture",
+              "service_tier": null,
+              "system_fingerprint": null,
+              "object": "chat.completion.chunk",
+              "usage": null
+            }
+          },
+          {
+            "event": "",
+            "data": {
+              "id": "fixed-message",
+              "choices": [
+                {
+                  "index": 0,
+                  "delta": {
+                    "content": null
+                  }
+                }
+              ],
+              "created": 1700000000,
+              "model": "fixture",
+              "service_tier": null,
+              "system_fingerprint": null,
+              "object": "chat.completion.chunk",
+              "usage": null
+            }
+          },
+          {
+            "event": "",
+            "data": {
+              "id": "fixed-message",
+              "choices": [
+                {
+                  "index": 0,
+                  "delta": {
+                    "content": null
+                  },
+                  "finish_reason": "stop"
+                }
+              ],
+              "created": 1700000000,
+              "model": "fixture",
+              "service_tier": null,
+              "system_fingerprint": null,
+              "object": "chat.completion.chunk",
+              "usage": null
+            }
+          },
+          {
+            "event": "",
+            "data": "[DONE]"
+          }
+        ],
+        "frames": [
+          "data: {\"id\":\"fixed-message\",\"choices\":[{\"index\":0,\"delta\":{\"content\":null,\"role\":\"assistant\"}}],\"created\":1700000000,\"model\":\"fixture\",\"service_tier\":null,\"system_fingerprint\":null,\"object\":\"chat.completion.chunk\",\"usage\":null}\n\ndata: {\"id\":\"fixed-message\",\"choices\":[{\"index\":0,\"delta\":{\"content\":null,\"reasoning_content\":\"think\"}}],\"created\":1700000000,\"model\":\"fixture\",\"service_tier\":null,\"system_fingerprint\":null,\"object\":\"chat.completion.chunk\",\"usage\":null}\n\ndata: {\"id\":\"fixed-message\",\"choices\":[{\"index\":0,\"delta\":{\"content\":null,\"reasoning_signature\":\"signature-secure\"}}],\"created\":1700000000,\"model\":\"fixture\",\"service_tier\":null,\"system_fingerprint\":null,\"object\":\"chat.completion.chunk\",\"usage\":null}\n\ndata: {\"id\":\"fixed-message\",\"choices\":[{\"index\":0,\"delta\":{\"content\":null,\"reasoning_content\":\"[REDACTED]\"}}],\"created\":1700000000,\"model\":\"fixture\",\"service_tier\":null,\"system_fingerprint\":null,\"object\":\"chat.completion.chunk\",\"usage\":null}\n\ndata: {\"id\":\"fixed-message\",\"choices\":[{\"index\":0,\"delta\":{\"content\":null}}],\"created\":1700000000,\"model\":\"fixture\",\"service_tier\":null,\"system_fingerprint\":null,\"object\":\"chat.completion.chunk\",\"usage\":null}\n\ndata: {\"id\":\"fixed-message\",\"choices\":[{\"index\":0,\"delta\":{\"content\":null},\"finish_reason\":\"stop\"}],\"created\":1700000000,\"model\":\"fixture\",\"service_tier\":null,\"system_fingerprint\":null,\"object\":\"chat.completion.chunk\",\"usage\":null}\n\n",
+          "data: [DONE]\n\n"
+        ],
+        "error": null,
+        "stats": {
+          "input": null,
+          "output": null,
+          "total": null,
+          "cached": null,
+          "cacheWrite": null,
+          "reasoning": null,
+          "model": null,
+          "tier": null,
+          "firstToken": true
+        }
+      }
+    },
+    {
+      "name": "reasoning",
+      "direction": "messages",
+      "events": [
+        {
+          "type": "messageStart",
+          "payload": "{\"role\":\"assistant\"}"
+        },
+        {
+          "type": "contentBlockDelta",
+          "payload": "{\"contentBlockIndex\":0,\"delta\":{\"reasoningContent\":{\"text\":\"think\"}}}"
+        },
+        {
+          "type": "contentBlockDelta",
+          "payload": "{\"contentBlockIndex\":0,\"delta\":{\"reasoningContent\":{\"signature\":\"signature-secure\"}}}"
+        },
+        {
+          "type": "contentBlockDelta",
+          "payload": "{\"contentBlockIndex\":0,\"delta\":{\"reasoningContent\":{\"redactedContent\":[1,2,3]}}}"
+        },
+        {
+          "type": "contentBlockDelta",
+          "payload": "{\"contentBlockIndex\":0,\"delta\":{\"reasoningContent\":\"Unknown\"}}"
+        },
+        {
+          "type": "messageStop",
+          "payload": "{\"stopReason\":\"end_turn\",\"additionalModelResponseFields\":{\"safety\":\"retained\"}}"
+        }
+      ],
+      "bufferLimit": 65536,
+      "chunkSize": 0,
+      "expected": {
+        "decoded": [
+          {
+            "ok": "MessageStart(MessageStartEvent { role: Assistant })"
+          },
+          {
+            "ok": "ContentBlockDelta(ContentBlockDeltaEvent { delta: Some(ReasoningContent(Text(\"think\"))), content_block_index: 0 })"
+          },
+          {
+            "ok": "ContentBlockDelta(ContentBlockDeltaEvent { delta: Some(ReasoningContent(Signature(\"signature-secure\"))), content_block_index: 0 })"
+          },
+          {
+            "ok": "ContentBlockDelta(ContentBlockDeltaEvent { delta: Some(ReasoningContent(RedactedContent(b\"\\x01\\x02\\x03\"))), content_block_index: 0 })"
+          },
+          {
+            "ok": "ContentBlockDelta(ContentBlockDeltaEvent { delta: Some(ReasoningContent(Unknown)), content_block_index: 0 })"
+          },
+          {
+            "ok": "MessageStop(MessageStopEvent { stop_reason: EndTurn, additional_model_response_fields: Some(Object {\"safety\": String(\"retained\")}) })"
+          }
+        ],
+        "events": [
+          {
+            "event": "message_start",
+            "data": {
+              "type": "message_start",
+              "message": {
+                "id": "msg_fixture_0",
+                "type": "message",
+                "role": "assistant",
+                "content": [],
+                "model": "fixture",
+                "stop_reason": null,
+                "stop_sequence": null,
+                "usage": {
+                  "input_tokens": 0,
+                  "output_tokens": 0
+                }
+              }
+            }
+          },
+          {
+            "event": "content_block_start",
+            "data": {
+              "type": "content_block_start",
+              "index": 0,
+              "content_block": {
+                "type": "thinking",
+                "thinking": "",
+                "signature": ""
+              }
+            }
+          },
+          {
+            "event": "content_block_delta",
+            "data": {
+              "type": "content_block_delta",
+              "index": 0,
+              "delta": {
+                "type": "thinking_delta",
+                "thinking": "think"
+              }
+            }
+          },
+          {
+            "event": "content_block_delta",
+            "data": {
+              "type": "content_block_delta",
+              "index": 0,
+              "delta": {
+                "type": "signature_delta",
+                "signature": "signature-secure"
+              }
+            }
+          },
+          {
+            "event": "content_block_delta",
+            "data": {
+              "type": "content_block_delta",
+              "index": 0,
+              "delta": {
+                "type": "thinking_delta",
+                "thinking": "[REDACTED]"
+              }
+            }
+          },
+          {
+            "event": "content_block_delta",
+            "data": {
+              "type": "content_block_delta",
+              "index": 0,
+              "delta": {
+                "type": "thinking_delta",
+                "thinking": ""
+              }
+            }
+          }
+        ],
+        "frames": [
+          "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_fixture_0\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[],\"model\":\"fixture\",\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":0,\"output_tokens\":0}}}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"thinking\",\"thinking\":\"\",\"signature\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"think\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"signature_delta\",\"signature\":\"signature-secure\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"[REDACTED]\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"\"}}\n\n"
+        ],
+        "error": null,
+        "stats": {
+          "input": null,
+          "output": null,
+          "total": null,
+          "cached": null,
+          "cacheWrite": null,
+          "reasoning": null,
+          "model": null,
+          "tier": null,
+          "firstToken": true
+        }
+      }
+    },
+    {
+      "name": "empty-delta",
+      "direction": "chat",
+      "events": [
+        {
+          "type": "contentBlockDelta",
+          "payload": "{\"contentBlockIndex\":0,\"delta\":null}"
+        }
+      ],
+      "bufferLimit": 65536,
+      "chunkSize": 0,
+      "expected": {
+        "decoded": [
+          {
+            "ok": "ContentBlockDelta(ContentBlockDeltaEvent { delta: None, content_block_index: 0 })"
+          }
+        ],
+        "events": [
+          {
+            "event": "",
+            "data": "[DONE]"
+          }
+        ],
+        "frames": [
+          "data: [DONE]\n\n"
+        ],
+        "error": null,
+        "stats": {
+          "input": null,
+          "output": null,
+          "total": null,
+          "cached": null,
+          "cacheWrite": null,
+          "reasoning": null,
+          "model": null,
+          "tier": null,
+          "firstToken": true
+        }
+      }
+    },
+    {
+      "name": "empty-delta",
+      "direction": "messages",
+      "events": [
+        {
+          "type": "contentBlockDelta",
+          "payload": "{\"contentBlockIndex\":0,\"delta\":null}"
+        }
+      ],
+      "bufferLimit": 65536,
+      "chunkSize": 0,
+      "expected": {
+        "decoded": [
+          {
+            "ok": "ContentBlockDelta(ContentBlockDeltaEvent { delta: None, content_block_index: 0 })"
+          }
+        ],
+        "events": [],
+        "frames": [],
+        "error": null,
+        "stats": {
+          "input": null,
+          "output": null,
+          "total": null,
+          "cached": null,
+          "cacheWrite": null,
+          "reasoning": null,
+          "model": null,
+          "tier": null,
+          "firstToken": false
+        }
+      }
+    },
+    {
+      "name": "repeat-block",
+      "direction": "chat",
+      "events": [
+        {
+          "type": "contentBlockStart",
+          "payload": "{\"contentBlockIndex\":2,\"start\":{\"toolUse\":{\"toolUseId\":\"call-original\",\"name\":\"danger_tool\"}}}"
+        },
+        {
+          "type": "contentBlockStart",
+          "payload": "{\"contentBlockIndex\":2,\"start\":{\"toolUse\":{\"toolUseId\":\"call-original\",\"name\":\"danger_tool\"}}}"
+        },
+        {
+          "type": "contentBlockDelta",
+          "payload": "{\"contentBlockIndex\":2,\"delta\":{\"toolUse\":{\"input\":\"{}\"}}}"
+        }
+      ],
+      "bufferLimit": 65536,
+      "chunkSize": 0,
+      "expected": {
+        "decoded": [
+          {
+            "ok": "ContentBlockStart(ContentBlockStartEvent { start: Some(ToolUse(ToolUseBlockStart { tool_use_id: \"call-original\", name: \"danger_tool\" })), content_block_index: 2 })"
+          },
+          {
+            "ok": "ContentBlockStart(ContentBlockStartEvent { start: Some(ToolUse(ToolUseBlockStart { tool_use_id: \"call-original\", name: \"danger_tool\" })), content_block_index: 2 })"
+          },
+          {
+            "ok": "ContentBlockDelta(ContentBlockDeltaEvent { delta: Some(ToolUse(ToolUseBlockDelta { input: \"{}\" })), content_block_index: 2 })"
+          }
+        ],
+        "events": [
+          {
+            "event": "",
+            "data": {
+              "id": "fixed-message",
+              "choices": [
+                {
+                  "index": 0,
+                  "delta": {
+                    "content": null,
+                    "tool_calls": [
+                      {
+                        "index": 2,
+                        "id": "call-original",
+                        "type": "function",
+                        "function": {
+                          "name": "danger.tool"
+                        }
+                      }
+                    ]
+                  }
+                }
+              ],
+              "created": 1700000000,
+              "model": "fixture",
+              "service_tier": null,
+              "system_fingerprint": null,
+              "object": "chat.completion.chunk",
+              "usage": null
+            }
+          },
+          {
+            "event": "",
+            "data": {
+              "id": "fixed-message",
+              "choices": [
+                {
+                  "index": 0,
+                  "delta": {
+                    "content": null,
+                    "tool_calls": [
+                      {
+                        "index": 2,
+                        "id": "call-original",
+                        "type": "function",
+                        "function": {
+                          "name": "danger.tool"
+                        }
+                      }
+                    ]
+                  }
+                }
+              ],
+              "created": 1700000000,
+              "model": "fixture",
+              "service_tier": null,
+              "system_fingerprint": null,
+              "object": "chat.completion.chunk",
+              "usage": null
+            }
+          },
+          {
+            "event": "",
+            "data": {
+              "id": "fixed-message",
+              "choices": [
+                {
+                  "index": 0,
+                  "delta": {
+                    "content": null,
+                    "tool_calls": [
+                      {
+                        "index": 2,
+                        "id": null,
+                        "type": null,
+                        "function": {
+                          "arguments": "{}"
+                        }
+                      }
+                    ]
+                  }
+                }
+              ],
+              "created": 1700000000,
+              "model": "fixture",
+              "service_tier": null,
+              "system_fingerprint": null,
+              "object": "chat.completion.chunk",
+              "usage": null
+            }
+          },
+          {
+            "event": "",
+            "data": "[DONE]"
+          }
+        ],
+        "frames": [
+          "data: {\"id\":\"fixed-message\",\"choices\":[{\"index\":0,\"delta\":{\"content\":null,\"tool_calls\":[{\"index\":2,\"id\":\"call-original\",\"type\":\"function\",\"function\":{\"name\":\"danger.tool\"}}]}}],\"created\":1700000000,\"model\":\"fixture\",\"service_tier\":null,\"system_fingerprint\":null,\"object\":\"chat.completion.chunk\",\"usage\":null}\n\ndata: {\"id\":\"fixed-message\",\"choices\":[{\"index\":0,\"delta\":{\"content\":null,\"tool_calls\":[{\"index\":2,\"id\":\"call-original\",\"type\":\"function\",\"function\":{\"name\":\"danger.tool\"}}]}}],\"created\":1700000000,\"model\":\"fixture\",\"service_tier\":null,\"system_fingerprint\":null,\"object\":\"chat.completion.chunk\",\"usage\":null}\n\ndata: {\"id\":\"fixed-message\",\"choices\":[{\"index\":0,\"delta\":{\"content\":null,\"tool_calls\":[{\"index\":2,\"id\":null,\"type\":null,\"function\":{\"arguments\":\"{}\"}}]}}],\"created\":1700000000,\"model\":\"fixture\",\"service_tier\":null,\"system_fingerprint\":null,\"object\":\"chat.completion.chunk\",\"usage\":null}\n\n",
+          "data: [DONE]\n\n"
+        ],
+        "error": null,
+        "stats": {
+          "input": null,
+          "output": null,
+          "total": null,
+          "cached": null,
+          "cacheWrite": null,
+          "reasoning": null,
+          "model": null,
+          "tier": null,
+          "firstToken": true
+        }
+      }
+    },
+    {
+      "name": "repeat-block",
+      "direction": "messages",
+      "events": [
+        {
+          "type": "contentBlockStart",
+          "payload": "{\"contentBlockIndex\":2,\"start\":{\"toolUse\":{\"toolUseId\":\"call-original\",\"name\":\"danger_tool\"}}}"
+        },
+        {
+          "type": "contentBlockStart",
+          "payload": "{\"contentBlockIndex\":2,\"start\":{\"toolUse\":{\"toolUseId\":\"call-original\",\"name\":\"danger_tool\"}}}"
+        },
+        {
+          "type": "contentBlockDelta",
+          "payload": "{\"contentBlockIndex\":2,\"delta\":{\"toolUse\":{\"input\":\"{}\"}}}"
+        }
+      ],
+      "bufferLimit": 65536,
+      "chunkSize": 0,
+      "expected": {
+        "decoded": [
+          {
+            "ok": "ContentBlockStart(ContentBlockStartEvent { start: Some(ToolUse(ToolUseBlockStart { tool_use_id: \"call-original\", name: \"danger_tool\" })), content_block_index: 2 })"
+          },
+          {
+            "ok": "ContentBlockStart(ContentBlockStartEvent { start: Some(ToolUse(ToolUseBlockStart { tool_use_id: \"call-original\", name: \"danger_tool\" })), content_block_index: 2 })"
+          },
+          {
+            "ok": "ContentBlockDelta(ContentBlockDeltaEvent { delta: Some(ToolUse(ToolUseBlockDelta { input: \"{}\" })), content_block_index: 2 })"
+          }
+        ],
+        "events": [
+          {
+            "event": "content_block_start",
+            "data": {
+              "type": "content_block_start",
+              "index": 2,
+              "content_block": {
+                "type": "tool_use",
+                "id": "call-original",
+                "name": "danger.tool",
+                "input": {}
+              }
+            }
+          },
+          {
+            "event": "content_block_start",
+            "data": {
+              "type": "content_block_start",
+              "index": 2,
+              "content_block": {
+                "type": "tool_use",
+                "id": "call-original",
+                "name": "danger.tool",
+                "input": {}
+              }
+            }
+          },
+          {
+            "event": "content_block_delta",
+            "data": {
+              "type": "content_block_delta",
+              "index": 2,
+              "delta": {
+                "type": "input_json_delta",
+                "partial_json": "{}"
+              }
+            }
+          }
+        ],
+        "frames": [
+          "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":2,\"content_block\":{\"type\":\"tool_use\",\"id\":\"call-original\",\"name\":\"danger.tool\",\"input\":{}}}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":2,\"content_block\":{\"type\":\"tool_use\",\"id\":\"call-original\",\"name\":\"danger.tool\",\"input\":{}}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":2,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"{}\"}}\n\n"
+        ],
+        "error": null,
+        "stats": {
+          "input": null,
+          "output": null,
+          "total": null,
+          "cached": null,
+          "cacheWrite": null,
+          "reasoning": null,
+          "model": null,
+          "tier": null,
+          "firstToken": true
+        }
+      }
+    },
+    {
+      "name": "out-of-order",
+      "direction": "chat",
+      "events": [
+        {
+          "type": "contentBlockDelta",
+          "payload": "{\"contentBlockIndex\":2,\"delta\":{\"toolUse\":{\"input\":\"orphan\"}}}"
+        },
+        {
+          "type": "messageStop",
+          "payload": "{\"stopReason\":\"end_turn\",\"additionalModelResponseFields\":{\"safety\":\"retained\"}}"
+        },
+        {
+          "type": "messageStart",
+          "payload": "{\"role\":\"assistant\"}"
+        },
+        {
+          "type": "contentBlockStart",
+          "payload": "{\"contentBlockIndex\":2,\"start\":{\"toolUse\":{\"toolUseId\":\"call-original\",\"name\":\"danger_tool\"}}}"
+        },
+        {
+          "type": "messageStop",
+          "payload": "{\"stopReason\":\"end_turn\",\"additionalModelResponseFields\":{\"safety\":\"retained\"}}"
+        },
+        {
+          "type": "contentBlockDelta",
+          "payload": "{\"contentBlockIndex\":0,\"delta\":{\"text\":\"after-stop\"}}"
+        }
+      ],
+      "bufferLimit": 65536,
+      "chunkSize": 0,
+      "expected": {
+        "decoded": [
+          {
+            "ok": "ContentBlockDelta(ContentBlockDeltaEvent { delta: Some(ToolUse(ToolUseBlockDelta { input: \"orphan\" })), content_block_index: 2 })"
+          },
+          {
+            "ok": "MessageStop(MessageStopEvent { stop_reason: EndTurn, additional_model_response_fields: Some(Object {\"safety\": String(\"retained\")}) })"
+          },
+          {
+            "ok": "MessageStart(MessageStartEvent { role: Assistant })"
+          },
+          {
+            "ok": "ContentBlockStart(ContentBlockStartEvent { start: Some(ToolUse(ToolUseBlockStart { tool_use_id: \"call-original\", name: \"danger_tool\" })), content_block_index: 2 })"
+          },
+          {
+            "ok": "MessageStop(MessageStopEvent { stop_reason: EndTurn, additional_model_response_fields: Some(Object {\"safety\": String(\"retained\")}) })"
+          },
+          {
+            "ok": "ContentBlockDelta(ContentBlockDeltaEvent { delta: Some(Text(\"after-stop\")), content_block_index: 0 })"
+          }
+        ],
+        "events": [
+          {
+            "event": "",
+            "data": {
+              "id": "fixed-message",
+              "choices": [
+                {
+                  "index": 0,
+                  "delta": {
+                    "content": null
+                  }
+                }
+              ],
+              "created": 1700000000,
+              "model": "fixture",
+              "service_tier": null,
+              "system_fingerprint": null,
+              "object": "chat.completion.chunk",
+              "usage": null
+            }
+          },
+          {
+            "event": "",
+            "data": {
+              "id": "fixed-message",
+              "choices": [
+                {
+                  "index": 0,
+                  "delta": {
+                    "content": null
+                  },
+                  "finish_reason": "stop"
+                }
+              ],
+              "created": 1700000000,
+              "model": "fixture",
+              "service_tier": null,
+              "system_fingerprint": null,
+              "object": "chat.completion.chunk",
+              "usage": null
+            }
+          },
+          {
+            "event": "",
+            "data": {
+              "id": "fixed-message",
+              "choices": [
+                {
+                  "index": 0,
+                  "delta": {
+                    "content": null,
+                    "role": "assistant"
+                  }
+                }
+              ],
+              "created": 1700000000,
+              "model": "fixture",
+              "service_tier": null,
+              "system_fingerprint": null,
+              "object": "chat.completion.chunk",
+              "usage": null
+            }
+          },
+          {
+            "event": "",
+            "data": {
+              "id": "fixed-message",
+              "choices": [
+                {
+                  "index": 0,
+                  "delta": {
+                    "content": null,
+                    "tool_calls": [
+                      {
+                        "index": 2,
+                        "id": "call-original",
+                        "type": "function",
+                        "function": {
+                          "name": "danger.tool"
+                        }
+                      }
+                    ]
+                  }
+                }
+              ],
+              "created": 1700000000,
+              "model": "fixture",
+              "service_tier": null,
+              "system_fingerprint": null,
+              "object": "chat.completion.chunk",
+              "usage": null
+            }
+          },
+          {
+            "event": "",
+            "data": {
+              "id": "fixed-message",
+              "choices": [
+                {
+                  "index": 0,
+                  "delta": {
+                    "content": null
+                  },
+                  "finish_reason": "stop"
+                }
+              ],
+              "created": 1700000000,
+              "model": "fixture",
+              "service_tier": null,
+              "system_fingerprint": null,
+              "object": "chat.completion.chunk",
+              "usage": null
+            }
+          },
+          {
+            "event": "",
+            "data": {
+              "id": "fixed-message",
+              "choices": [
+                {
+                  "index": 0,
+                  "delta": {
+                    "content": "after-stop"
+                  }
+                }
+              ],
+              "created": 1700000000,
+              "model": "fixture",
+              "service_tier": null,
+              "system_fingerprint": null,
+              "object": "chat.completion.chunk",
+              "usage": null
+            }
+          },
+          {
+            "event": "",
+            "data": "[DONE]"
+          }
+        ],
+        "frames": [
+          "data: {\"id\":\"fixed-message\",\"choices\":[{\"index\":0,\"delta\":{\"content\":null}}],\"created\":1700000000,\"model\":\"fixture\",\"service_tier\":null,\"system_fingerprint\":null,\"object\":\"chat.completion.chunk\",\"usage\":null}\n\ndata: {\"id\":\"fixed-message\",\"choices\":[{\"index\":0,\"delta\":{\"content\":null},\"finish_reason\":\"stop\"}],\"created\":1700000000,\"model\":\"fixture\",\"service_tier\":null,\"system_fingerprint\":null,\"object\":\"chat.completion.chunk\",\"usage\":null}\n\ndata: {\"id\":\"fixed-message\",\"choices\":[{\"index\":0,\"delta\":{\"content\":null,\"role\":\"assistant\"}}],\"created\":1700000000,\"model\":\"fixture\",\"service_tier\":null,\"system_fingerprint\":null,\"object\":\"chat.completion.chunk\",\"usage\":null}\n\ndata: {\"id\":\"fixed-message\",\"choices\":[{\"index\":0,\"delta\":{\"content\":null,\"tool_calls\":[{\"index\":2,\"id\":\"call-original\",\"type\":\"function\",\"function\":{\"name\":\"danger.tool\"}}]}}],\"created\":1700000000,\"model\":\"fixture\",\"service_tier\":null,\"system_fingerprint\":null,\"object\":\"chat.completion.chunk\",\"usage\":null}\n\ndata: {\"id\":\"fixed-message\",\"choices\":[{\"index\":0,\"delta\":{\"content\":null},\"finish_reason\":\"stop\"}],\"created\":1700000000,\"model\":\"fixture\",\"service_tier\":null,\"system_fingerprint\":null,\"object\":\"chat.completion.chunk\",\"usage\":null}\n\ndata: {\"id\":\"fixed-message\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"after-stop\"}}],\"created\":1700000000,\"model\":\"fixture\",\"service_tier\":null,\"system_fingerprint\":null,\"object\":\"chat.completion.chunk\",\"usage\":null}\n\n",
+          "data: [DONE]\n\n"
+        ],
+        "error": null,
+        "stats": {
+          "input": null,
+          "output": null,
+          "total": null,
+          "cached": null,
+          "cacheWrite": null,
+          "reasoning": null,
+          "model": null,
+          "tier": null,
+          "firstToken": true
+        }
+      }
+    },
+    {
+      "name": "out-of-order",
+      "direction": "messages",
+      "events": [
+        {
+          "type": "contentBlockDelta",
+          "payload": "{\"contentBlockIndex\":2,\"delta\":{\"toolUse\":{\"input\":\"orphan\"}}}"
+        },
+        {
+          "type": "messageStop",
+          "payload": "{\"stopReason\":\"end_turn\",\"additionalModelResponseFields\":{\"safety\":\"retained\"}}"
+        },
+        {
+          "type": "messageStart",
+          "payload": "{\"role\":\"assistant\"}"
+        },
+        {
+          "type": "contentBlockStart",
+          "payload": "{\"contentBlockIndex\":2,\"start\":{\"toolUse\":{\"toolUseId\":\"call-original\",\"name\":\"danger_tool\"}}}"
+        },
+        {
+          "type": "messageStop",
+          "payload": "{\"stopReason\":\"end_turn\",\"additionalModelResponseFields\":{\"safety\":\"retained\"}}"
+        },
+        {
+          "type": "contentBlockDelta",
+          "payload": "{\"contentBlockIndex\":0,\"delta\":{\"text\":\"after-stop\"}}"
+        }
+      ],
+      "bufferLimit": 65536,
+      "chunkSize": 0,
+      "expected": {
+        "decoded": [
+          {
+            "ok": "ContentBlockDelta(ContentBlockDeltaEvent { delta: Some(ToolUse(ToolUseBlockDelta { input: \"orphan\" })), content_block_index: 2 })"
+          },
+          {
+            "ok": "MessageStop(MessageStopEvent { stop_reason: EndTurn, additional_model_response_fields: Some(Object {\"safety\": String(\"retained\")}) })"
+          },
+          {
+            "ok": "MessageStart(MessageStartEvent { role: Assistant })"
+          },
+          {
+            "ok": "ContentBlockStart(ContentBlockStartEvent { start: Some(ToolUse(ToolUseBlockStart { tool_use_id: \"call-original\", name: \"danger_tool\" })), content_block_index: 2 })"
+          },
+          {
+            "ok": "MessageStop(MessageStopEvent { stop_reason: EndTurn, additional_model_response_fields: Some(Object {\"safety\": String(\"retained\")}) })"
+          },
+          {
+            "ok": "ContentBlockDelta(ContentBlockDeltaEvent { delta: Some(Text(\"after-stop\")), content_block_index: 0 })"
+          }
+        ],
+        "events": [
+          {
+            "event": "content_block_delta",
+            "data": {
+              "type": "content_block_delta",
+              "index": 2,
+              "delta": {
+                "type": "input_json_delta",
+                "partial_json": "orphan"
+              }
+            }
+          },
+          {
+            "event": "message_start",
+            "data": {
+              "type": "message_start",
+              "message": {
+                "id": "msg_fixture_0",
+                "type": "message",
+                "role": "assistant",
+                "content": [],
+                "model": "fixture",
+                "stop_reason": null,
+                "stop_sequence": null,
+                "usage": {
+                  "input_tokens": 0,
+                  "output_tokens": 0
+                }
+              }
+            }
+          },
+          {
+            "event": "content_block_start",
+            "data": {
+              "type": "content_block_start",
+              "index": 2,
+              "content_block": {
+                "type": "tool_use",
+                "id": "call-original",
+                "name": "danger.tool",
+                "input": {}
+              }
+            }
+          },
+          {
+            "event": "content_block_start",
+            "data": {
+              "type": "content_block_start",
+              "index": 0,
+              "content_block": {
+                "type": "text",
+                "text": ""
+              }
+            }
+          },
+          {
+            "event": "content_block_delta",
+            "data": {
+              "type": "content_block_delta",
+              "index": 0,
+              "delta": {
+                "type": "text_delta",
+                "text": "after-stop"
+              }
+            }
+          }
+        ],
+        "frames": [
+          "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":2,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"orphan\"}}\n\nevent: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_fixture_0\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[],\"model\":\"fixture\",\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":0,\"output_tokens\":0}}}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":2,\"content_block\":{\"type\":\"tool_use\",\"id\":\"call-original\",\"name\":\"danger.tool\",\"input\":{}}}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"after-stop\"}}\n\n"
+        ],
+        "error": null,
+        "stats": {
+          "input": null,
+          "output": null,
+          "total": null,
+          "cached": null,
+          "cacheWrite": null,
+          "reasoning": null,
+          "model": null,
+          "tier": null,
+          "firstToken": true
+        }
+      }
+    },
+    {
+      "name": "empty-start",
+      "direction": "chat",
+      "events": [
+        {
+          "type": "contentBlockStart",
+          "payload": "{\"contentBlockIndex\":0}"
+        }
+      ],
+      "bufferLimit": 65536,
+      "chunkSize": 0,
+      "expected": {
+        "decoded": [
+          {
+            "ok": "ContentBlockStart(ContentBlockStartEvent { start: None, content_block_index: 0 })"
+          }
+        ],
+        "events": [
+          {
+            "event": "",
+            "data": "[DONE]"
+          }
+        ],
+        "frames": [
+          "data: [DONE]\n\n"
+        ],
+        "error": null,
+        "stats": {
+          "input": null,
+          "output": null,
+          "total": null,
+          "cached": null,
+          "cacheWrite": null,
+          "reasoning": null,
+          "model": null,
+          "tier": null,
+          "firstToken": false
+        }
+      }
+    },
+    {
+      "name": "empty-start",
+      "direction": "messages",
+      "events": [
+        {
+          "type": "contentBlockStart",
+          "payload": "{\"contentBlockIndex\":0}"
+        }
+      ],
+      "bufferLimit": 65536,
+      "chunkSize": 0,
+      "expected": {
+        "decoded": [
+          {
+            "ok": "ContentBlockStart(ContentBlockStartEvent { start: None, content_block_index: 0 })"
+          }
+        ],
+        "events": [
+          {
+            "event": "content_block_start",
+            "data": {
+              "type": "content_block_start",
+              "index": 0,
+              "content_block": {
+                "type": "text",
+                "text": ""
+              }
+            }
+          }
+        ],
+        "frames": [
+          "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n"
+        ],
+        "error": null,
+        "stats": {
+          "input": null,
+          "output": null,
+          "total": null,
+          "cached": null,
+          "cacheWrite": null,
+          "reasoning": null,
+          "model": null,
+          "tier": null,
+          "firstToken": false
+        }
+      }
+    },
+    {
+      "name": "text-start",
+      "direction": "chat",
+      "events": [
+        {
+          "type": "contentBlockStart",
+          "payload": "{\"contentBlockIndex\":0,\"start\":\"text\"}"
+        }
+      ],
+      "bufferLimit": 65536,
+      "chunkSize": 0,
+      "expected": {
+        "decoded": [
+          {
+            "ok": "ContentBlockStart(ContentBlockStartEvent { start: Some(Text), content_block_index: 0 })"
+          }
+        ],
+        "events": [
+          {
+            "event": "",
+            "data": "[DONE]"
+          }
+        ],
+        "frames": [
+          "data: [DONE]\n\n"
+        ],
+        "error": null,
+        "stats": {
+          "input": null,
+          "output": null,
+          "total": null,
+          "cached": null,
+          "cacheWrite": null,
+          "reasoning": null,
+          "model": null,
+          "tier": null,
+          "firstToken": false
+        }
+      }
+    },
+    {
+      "name": "text-start",
+      "direction": "messages",
+      "events": [
+        {
+          "type": "contentBlockStart",
+          "payload": "{\"contentBlockIndex\":0,\"start\":\"text\"}"
+        }
+      ],
+      "bufferLimit": 65536,
+      "chunkSize": 0,
+      "expected": {
+        "decoded": [
+          {
+            "ok": "ContentBlockStart(ContentBlockStartEvent { start: Some(Text), content_block_index: 0 })"
+          }
+        ],
+        "events": [
+          {
+            "event": "content_block_start",
+            "data": {
+              "type": "content_block_start",
+              "index": 0,
+              "content_block": {
+                "type": "text",
+                "text": ""
+              }
+            }
+          }
+        ],
+        "frames": [
+          "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n"
+        ],
+        "error": null,
+        "stats": {
+          "input": null,
+          "output": null,
+          "total": null,
+          "cached": null,
+          "cacheWrite": null,
+          "reasoning": null,
+          "model": null,
+          "tier": null,
+          "firstToken": false
+        }
+      }
+    },
+    {
+      "name": "reason-start",
+      "direction": "chat",
+      "events": [
+        {
+          "type": "contentBlockStart",
+          "payload": "{\"contentBlockIndex\":0,\"start\":\"reasoningContent\"}"
+        }
+      ],
+      "bufferLimit": 65536,
+      "chunkSize": 0,
+      "expected": {
+        "decoded": [
+          {
+            "ok": "ContentBlockStart(ContentBlockStartEvent { start: Some(ReasoningContent), content_block_index: 0 })"
+          }
+        ],
+        "events": [
+          {
+            "event": "",
+            "data": "[DONE]"
+          }
+        ],
+        "frames": [
+          "data: [DONE]\n\n"
+        ],
+        "error": null,
+        "stats": {
+          "input": null,
+          "output": null,
+          "total": null,
+          "cached": null,
+          "cacheWrite": null,
+          "reasoning": null,
+          "model": null,
+          "tier": null,
+          "firstToken": false
+        }
+      }
+    },
+    {
+      "name": "reason-start",
+      "direction": "messages",
+      "events": [
+        {
+          "type": "contentBlockStart",
+          "payload": "{\"contentBlockIndex\":0,\"start\":\"reasoningContent\"}"
+        }
+      ],
+      "bufferLimit": 65536,
+      "chunkSize": 0,
+      "expected": {
+        "decoded": [
+          {
+            "ok": "ContentBlockStart(ContentBlockStartEvent { start: Some(ReasoningContent), content_block_index: 0 })"
+          }
+        ],
+        "events": [
+          {
+            "event": "content_block_start",
+            "data": {
+              "type": "content_block_start",
+              "index": 0,
+              "content_block": {
+                "type": "thinking",
+                "thinking": "",
+                "signature": ""
+              }
+            }
+          }
+        ],
+        "frames": [
+          "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"thinking\",\"thinking\":\"\",\"signature\":\"\"}}\n\n"
+        ],
+        "error": null,
+        "stats": {
+          "input": null,
+          "output": null,
+          "total": null,
+          "cached": null,
+          "cacheWrite": null,
+          "reasoning": null,
+          "model": null,
+          "tier": null,
+          "firstToken": false
+        }
+      }
+    },
+    {
+      "name": "metadata-empty",
+      "direction": "chat",
+      "events": [
+        {
+          "type": "metadata",
+          "payload": "{}"
+        }
+      ],
+      "bufferLimit": 65536,
+      "chunkSize": 0,
+      "expected": {
+        "decoded": [
+          {
+            "ok": "Metadata(ConverseStreamMetadataEvent { usage: None, metrics: None, performance_config: None })"
+          }
+        ],
+        "events": [
+          {
+            "event": "",
+            "data": "[DONE]"
+          }
+        ],
+        "frames": [
+          "data: [DONE]\n\n"
+        ],
+        "error": null,
+        "stats": {
+          "input": null,
+          "output": null,
+          "total": null,
+          "cached": null,
+          "cacheWrite": null,
+          "reasoning": null,
+          "model": null,
+          "tier": null,
+          "firstToken": false
+        }
+      }
+    },
+    {
+      "name": "metadata-empty",
+      "direction": "messages",
+      "events": [
+        {
+          "type": "metadata",
+          "payload": "{}"
+        }
+      ],
+      "bufferLimit": 65536,
+      "chunkSize": 0,
+      "expected": {
+        "decoded": [
+          {
+            "ok": "Metadata(ConverseStreamMetadataEvent { usage: None, metrics: None, performance_config: None })"
+          }
+        ],
+        "events": [
+          {
+            "event": "message_stop",
+            "data": {
+              "type": "message_stop"
+            }
+          }
+        ],
+        "frames": [
+          "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+        ],
+        "error": null,
+        "stats": {
+          "input": null,
+          "output": null,
+          "total": null,
+          "cached": null,
+          "cacheWrite": null,
+          "reasoning": null,
+          "model": null,
+          "tier": null,
+          "firstToken": false
+        }
+      }
+    },
+    {
+      "name": "unknown-event",
+      "direction": "chat",
+      "events": [
+        {
+          "type": "future",
+          "payload": "{\"secret\":\"do-not-pretend-text\"}"
+        }
+      ],
+      "bufferLimit": 65536,
+      "chunkSize": 0,
+      "expected": {
+        "decoded": [
+          {
+            "error": "unexpected event type: future"
+          }
+        ],
+        "events": [
+          {
+            "event": "",
+            "data": "[DONE]"
+          }
+        ],
+        "frames": [
+          "data: [DONE]\n\n"
+        ],
+        "error": null,
+        "stats": {
+          "input": null,
+          "output": null,
+          "total": null,
+          "cached": null,
+          "cacheWrite": null,
+          "reasoning": null,
+          "model": null,
+          "tier": null,
+          "firstToken": false
+        }
+      }
+    },
+    {
+      "name": "unknown-event",
+      "direction": "messages",
+      "events": [
+        {
+          "type": "future",
+          "payload": "{\"secret\":\"do-not-pretend-text\"}"
+        }
+      ],
+      "bufferLimit": 65536,
+      "chunkSize": 0,
+      "expected": {
+        "decoded": [
+          {
+            "error": "unexpected event type: future"
+          }
+        ],
+        "events": [
+          {
+            "event": "error",
+            "data": {
+              "type": "error",
+              "error": {
+                "type": "api_error",
+                "message": "Stream processing error"
+              }
+            }
+          }
+        ],
+        "frames": [
+          "event: error\ndata: {\"type\":\"error\",\"error\":{\"type\":\"api_error\",\"message\":\"Stream processing error\"}}\n\n"
+        ],
+        "error": null,
+        "stats": {
+          "input": null,
+          "output": null,
+          "total": null,
+          "cached": null,
+          "cacheWrite": null,
+          "reasoning": null,
+          "model": null,
+          "tier": null,
+          "firstToken": false
+        }
+      }
+    },
+    {
+      "name": "unknown-delta",
+      "direction": "chat",
+      "events": [
+        {
+          "type": "contentBlockDelta",
+          "payload": "{\"contentBlockIndex\":0,\"delta\":{\"future\":\"x\"}}"
+        }
+      ],
+      "bufferLimit": 65536,
+      "chunkSize": 0,
+      "expected": {
+        "decoded": [
+          {
+            "error": "unknown variant `future`, expected one of `reasoningContent`, `text`, `toolUse` at line 1 column 40"
+          }
+        ],
+        "events": [
+          {
+            "event": "",
+            "data": "[DONE]"
+          }
+        ],
+        "frames": [
+          "data: [DONE]\n\n"
+        ],
+        "error": null,
+        "stats": {
+          "input": null,
+          "output": null,
+          "total": null,
+          "cached": null,
+          "cacheWrite": null,
+          "reasoning": null,
+          "model": null,
+          "tier": null,
+          "firstToken": false
+        }
+      }
+    },
+    {
+      "name": "unknown-delta",
+      "direction": "messages",
+      "events": [
+        {
+          "type": "contentBlockDelta",
+          "payload": "{\"contentBlockIndex\":0,\"delta\":{\"future\":\"x\"}}"
+        }
+      ],
+      "bufferLimit": 65536,
+      "chunkSize": 0,
+      "expected": {
+        "decoded": [
+          {
+            "error": "unknown variant `future`, expected one of `reasoningContent`, `text`, `toolUse` at line 1 column 40"
+          }
+        ],
+        "events": [
+          {
+            "event": "error",
+            "data": {
+              "type": "error",
+              "error": {
+                "type": "api_error",
+                "message": "Stream processing error"
+              }
+            }
+          }
+        ],
+        "frames": [
+          "event: error\ndata: {\"type\":\"error\",\"error\":{\"type\":\"api_error\",\"message\":\"Stream processing error\"}}\n\n"
+        ],
+        "error": null,
+        "stats": {
+          "input": null,
+          "output": null,
+          "total": null,
+          "cached": null,
+          "cacheWrite": null,
+          "reasoning": null,
+          "model": null,
+          "tier": null,
+          "firstToken": false
+        }
+      }
+    },
+    {
+      "name": "unknown-reasoning",
+      "direction": "chat",
+      "events": [
+        {
+          "type": "contentBlockDelta",
+          "payload": "{\"contentBlockIndex\":0,\"delta\":{\"reasoningContent\":{\"future\":\"x\"}}}"
+        }
+      ],
+      "bufferLimit": 65536,
+      "chunkSize": 0,
+      "expected": {
+        "decoded": [
+          {
+            "error": "unknown variant `future`, expected one of `redactedContent`, `signature`, `text`, `Unknown` at line 1 column 60"
+          }
+        ],
+        "events": [
+          {
+            "event": "",
+            "data": "[DONE]"
+          }
+        ],
+        "frames": [
+          "data: [DONE]\n\n"
+        ],
+        "error": null,
+        "stats": {
+          "input": null,
+          "output": null,
+          "total": null,
+          "cached": null,
+          "cacheWrite": null,
+          "reasoning": null,
+          "model": null,
+          "tier": null,
+          "firstToken": false
+        }
+      }
+    },
+    {
+      "name": "unknown-reasoning",
+      "direction": "messages",
+      "events": [
+        {
+          "type": "contentBlockDelta",
+          "payload": "{\"contentBlockIndex\":0,\"delta\":{\"reasoningContent\":{\"future\":\"x\"}}}"
+        }
+      ],
+      "bufferLimit": 65536,
+      "chunkSize": 0,
+      "expected": {
+        "decoded": [
+          {
+            "error": "unknown variant `future`, expected one of `redactedContent`, `signature`, `text`, `Unknown` at line 1 column 60"
+          }
+        ],
+        "events": [
+          {
+            "event": "error",
+            "data": {
+              "type": "error",
+              "error": {
+                "type": "api_error",
+                "message": "Stream processing error"
+              }
+            }
+          }
+        ],
+        "frames": [
+          "event: error\ndata: {\"type\":\"error\",\"error\":{\"type\":\"api_error\",\"message\":\"Stream processing error\"}}\n\n"
+        ],
+        "error": null,
+        "stats": {
+          "input": null,
+          "output": null,
+          "total": null,
+          "cached": null,
+          "cacheWrite": null,
+          "reasoning": null,
+          "model": null,
+          "tier": null,
+          "firstToken": false
+        }
+      }
+    },
+    {
+      "name": "malformed",
+      "direction": "chat",
+      "events": [
+        {
+          "type": "contentBlockDelta",
+          "payload": "{"
+        }
+      ],
+      "bufferLimit": 65536,
+      "chunkSize": 0,
+      "expected": {
+        "decoded": [
+          {
+            "error": "EOF while parsing an object at line 1 column 1"
+          }
+        ],
+        "events": [
+          {
+            "event": "",
+            "data": "[DONE]"
+          }
+        ],
+        "frames": [
+          "data: [DONE]\n\n"
+        ],
+        "error": null,
+        "stats": {
+          "input": null,
+          "output": null,
+          "total": null,
+          "cached": null,
+          "cacheWrite": null,
+          "reasoning": null,
+          "model": null,
+          "tier": null,
+          "firstToken": false
+        }
+      }
+    },
+    {
+      "name": "malformed",
+      "direction": "messages",
+      "events": [
+        {
+          "type": "contentBlockDelta",
+          "payload": "{"
+        }
+      ],
+      "bufferLimit": 65536,
+      "chunkSize": 0,
+      "expected": {
+        "decoded": [
+          {
+            "error": "EOF while parsing an object at line 1 column 1"
+          }
+        ],
+        "events": [
+          {
+            "event": "error",
+            "data": {
+              "type": "error",
+              "error": {
+                "type": "api_error",
+                "message": "Stream processing error"
+              }
+            }
+          }
+        ],
+        "frames": [
+          "event: error\ndata: {\"type\":\"error\",\"error\":{\"type\":\"api_error\",\"message\":\"Stream processing error\"}}\n\n"
+        ],
+        "error": null,
+        "stats": {
+          "input": null,
+          "output": null,
+          "total": null,
+          "cached": null,
+          "cacheWrite": null,
+          "reasoning": null,
+          "model": null,
+          "tier": null,
+          "firstToken": false
+        }
+      }
+    },
+    {
+      "name": "missing-header",
+      "direction": "chat",
+      "events": [
+        {
+          "payload": "{}"
+        }
+      ],
+      "bufferLimit": 65536,
+      "chunkSize": 0,
+      "expected": {
+        "decoded": [
+          {
+            "error": "no event type header"
+          }
+        ],
+        "events": [
+          {
+            "event": "",
+            "data": "[DONE]"
+          }
+        ],
+        "frames": [
+          "data: [DONE]\n\n"
+        ],
+        "error": null,
+        "stats": {
+          "input": null,
+          "output": null,
+          "total": null,
+          "cached": null,
+          "cacheWrite": null,
+          "reasoning": null,
+          "model": null,
+          "tier": null,
+          "firstToken": false
+        }
+      }
+    },
+    {
+      "name": "missing-header",
+      "direction": "messages",
+      "events": [
+        {
+          "payload": "{}"
+        }
+      ],
+      "bufferLimit": 65536,
+      "chunkSize": 0,
+      "expected": {
+        "decoded": [
+          {
+            "error": "no event type header"
+          }
+        ],
+        "events": [
+          {
+            "event": "error",
+            "data": {
+              "type": "error",
+              "error": {
+                "type": "api_error",
+                "message": "Stream processing error"
+              }
+            }
+          }
+        ],
+        "frames": [
+          "event: error\ndata: {\"type\":\"error\",\"error\":{\"type\":\"api_error\",\"message\":\"Stream processing error\"}}\n\n"
+        ],
+        "error": null,
+        "stats": {
+          "input": null,
+          "output": null,
+          "total": null,
+          "cached": null,
+          "cacheWrite": null,
+          "reasoning": null,
+          "model": null,
+          "tier": null,
+          "firstToken": false
+        }
+      }
+    },
+    {
+      "name": "exception",
+      "direction": "chat",
+      "events": [
+        {
+          "exception": "modelStreamErrorException",
+          "payload": "{\"message\":\"denied\"}"
+        }
+      ],
+      "bufferLimit": 65536,
+      "chunkSize": 0,
+      "expected": {
+        "decoded": [
+          {
+            "error": "modelStreamErrorException: {\"message\":\"denied\"}"
+          }
+        ],
+        "events": [
+          {
+            "event": "",
+            "data": "[DONE]"
+          }
+        ],
+        "frames": [
+          "data: [DONE]\n\n"
+        ],
+        "error": null,
+        "stats": {
+          "input": null,
+          "output": null,
+          "total": null,
+          "cached": null,
+          "cacheWrite": null,
+          "reasoning": null,
+          "model": null,
+          "tier": null,
+          "firstToken": false
+        }
+      }
+    },
+    {
+      "name": "exception",
+      "direction": "messages",
+      "events": [
+        {
+          "exception": "modelStreamErrorException",
+          "payload": "{\"message\":\"denied\"}"
+        }
+      ],
+      "bufferLimit": 65536,
+      "chunkSize": 0,
+      "expected": {
+        "decoded": [
+          {
+            "error": "modelStreamErrorException: {\"message\":\"denied\"}"
+          }
+        ],
+        "events": [
+          {
+            "event": "error",
+            "data": {
+              "type": "error",
+              "error": {
+                "type": "api_error",
+                "message": "Stream processing error"
+              }
+            }
+          }
+        ],
+        "frames": [
+          "event: error\ndata: {\"type\":\"error\",\"error\":{\"type\":\"api_error\",\"message\":\"Stream processing error\"}}\n\n"
+        ],
+        "error": null,
+        "stats": {
+          "input": null,
+          "output": null,
+          "total": null,
+          "cached": null,
+          "cacheWrite": null,
+          "reasoning": null,
+          "model": null,
+          "tier": null,
+          "firstToken": false
+        }
+      }
+    },
+    {
+      "name": "user",
+      "direction": "chat",
+      "events": [
+        {
+          "type": "messageStart",
+          "payload": "{\"role\":\"user\"}"
+        }
+      ],
+      "bufferLimit": 65536,
+      "chunkSize": 0,
+      "expected": {
+        "decoded": [
+          {
+            "ok": "MessageStart(MessageStartEvent { role: User })"
+          }
+        ],
+        "events": [
+          {
+            "event": "",
+            "data": {
+              "id": "fixed-message",
+              "choices": [
+                {
+                  "index": 0,
+                  "delta": {
+                    "content": null,
+                    "role": "user"
+                  }
+                }
+              ],
+              "created": 1700000000,
+              "model": "fixture",
+              "service_tier": null,
+              "system_fingerprint": null,
+              "object": "chat.completion.chunk",
+              "usage": null
+            }
+          },
+          {
+            "event": "",
+            "data": "[DONE]"
+          }
+        ],
+        "frames": [
+          "data: {\"id\":\"fixed-message\",\"choices\":[{\"index\":0,\"delta\":{\"content\":null,\"role\":\"user\"}}],\"created\":1700000000,\"model\":\"fixture\",\"service_tier\":null,\"system_fingerprint\":null,\"object\":\"chat.completion.chunk\",\"usage\":null}\n\n",
+          "data: [DONE]\n\n"
+        ],
+        "error": null,
+        "stats": {
+          "input": null,
+          "output": null,
+          "total": null,
+          "cached": null,
+          "cacheWrite": null,
+          "reasoning": null,
+          "model": null,
+          "tier": null,
+          "firstToken": false
+        }
+      }
+    },
+    {
+      "name": "user",
+      "direction": "messages",
+      "events": [
+        {
+          "type": "messageStart",
+          "payload": "{\"role\":\"user\"}"
+        }
+      ],
+      "bufferLimit": 65536,
+      "chunkSize": 0,
+      "expected": {
+        "decoded": [
+          {
+            "ok": "MessageStart(MessageStartEvent { role: User })"
+          }
+        ],
+        "events": [
+          {
+            "event": "message_start",
+            "data": {
+              "type": "message_start",
+              "message": {
+                "id": "msg_fixture_0",
+                "type": "message",
+                "role": "assistant",
+                "content": [],
+                "model": "fixture",
+                "stop_reason": null,
+                "stop_sequence": null,
+                "usage": {
+                  "input_tokens": 0,
+                  "output_tokens": 0
+                }
+              }
+            }
+          }
+        ],
+        "frames": [
+          "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_fixture_0\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[],\"model\":\"fixture\",\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":0,\"output_tokens\":0}}}\n\n"
+        ],
+        "error": null,
+        "stats": {
+          "input": null,
+          "output": null,
+          "total": null,
+          "cached": null,
+          "cacheWrite": null,
+          "reasoning": null,
+          "model": null,
+          "tier": null,
+          "firstToken": false
+        }
+      }
+    },
+    {
+      "name": "negative-index",
+      "direction": "chat",
+      "events": [
+        {
+          "type": "contentBlockStart",
+          "payload": "{\"contentBlockIndex\":-1,\"start\":{\"toolUse\":{\"toolUseId\":\"negative\",\"name\":\"unknown\"}}}"
+        }
+      ],
+      "bufferLimit": 65536,
+      "chunkSize": 0,
+      "expected": {
+        "decoded": [
+          {
+            "ok": "ContentBlockStart(ContentBlockStartEvent { start: Some(ToolUse(ToolUseBlockStart { tool_use_id: \"negative\", name: \"unknown\" })), content_block_index: -1 })"
+          }
+        ],
+        "events": [
+          {
+            "event": "",
+            "data": {
+              "id": "fixed-message",
+              "choices": [
+                {
+                  "index": 0,
+                  "delta": {
+                    "content": null,
+                    "tool_calls": [
+                      {
+                        "index": 4294967295,
+                        "id": "negative",
+                        "type": "function",
+                        "function": {
+                          "name": "unknown"
+                        }
+                      }
+                    ]
+                  }
+                }
+              ],
+              "created": 1700000000,
+              "model": "fixture",
+              "service_tier": null,
+              "system_fingerprint": null,
+              "object": "chat.completion.chunk",
+              "usage": null
+            }
+          },
+          {
+            "event": "",
+            "data": "[DONE]"
+          }
+        ],
+        "frames": [
+          "data: {\"id\":\"fixed-message\",\"choices\":[{\"index\":0,\"delta\":{\"content\":null,\"tool_calls\":[{\"index\":4294967295,\"id\":\"negative\",\"type\":\"function\",\"function\":{\"name\":\"unknown\"}}]}}],\"created\":1700000000,\"model\":\"fixture\",\"service_tier\":null,\"system_fingerprint\":null,\"object\":\"chat.completion.chunk\",\"usage\":null}\n\n",
+          "data: [DONE]\n\n"
+        ],
+        "error": null,
+        "stats": {
+          "input": null,
+          "output": null,
+          "total": null,
+          "cached": null,
+          "cacheWrite": null,
+          "reasoning": null,
+          "model": null,
+          "tier": null,
+          "firstToken": false
+        }
+      }
+    },
+    {
+      "name": "negative-index",
+      "direction": "messages",
+      "events": [
+        {
+          "type": "contentBlockStart",
+          "payload": "{\"contentBlockIndex\":-1,\"start\":{\"toolUse\":{\"toolUseId\":\"negative\",\"name\":\"unknown\"}}}"
+        }
+      ],
+      "bufferLimit": 65536,
+      "chunkSize": 0,
+      "expected": {
+        "decoded": [
+          {
+            "ok": "ContentBlockStart(ContentBlockStartEvent { start: Some(ToolUse(ToolUseBlockStart { tool_use_id: \"negative\", name: \"unknown\" })), content_block_index: -1 })"
+          }
+        ],
+        "events": [
+          {
+            "event": "content_block_start",
+            "data": {
+              "type": "content_block_start",
+              "index": 18446744073709551615,
+              "content_block": {
+                "type": "tool_use",
+                "id": "negative",
+                "name": "unknown",
+                "input": {}
+              }
+            }
+          }
+        ],
+        "frames": [
+          "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":18446744073709551615,\"content_block\":{\"type\":\"tool_use\",\"id\":\"negative\",\"name\":\"unknown\",\"input\":{}}}\n\n"
+        ],
+        "error": null,
+        "stats": {
+          "input": null,
+          "output": null,
+          "total": null,
+          "cached": null,
+          "cacheWrite": null,
+          "reasoning": null,
+          "model": null,
+          "tier": null,
+          "firstToken": false
+        }
+      }
+    },
+    {
+      "name": "stop-content_filtered",
+      "direction": "chat",
+      "events": [
+        {
+          "type": "messageStop",
+          "payload": "{\"stopReason\":\"content_filtered\",\"additionalModelResponseFields\":{\"safety\":\"retained\"}}"
+        }
+      ],
+      "bufferLimit": 65536,
+      "chunkSize": 0,
+      "expected": {
+        "decoded": [
+          {
+            "ok": "MessageStop(MessageStopEvent { stop_reason: ContentFiltered, additional_model_response_fields: Some(Object {\"safety\": String(\"retained\")}) })"
+          }
+        ],
+        "events": [
+          {
+            "event": "",
+            "data": {
+              "id": "fixed-message",
+              "choices": [
+                {
+                  "index": 0,
+                  "delta": {
+                    "content": null
+                  },
+                  "finish_reason": "content_filter"
+                }
+              ],
+              "created": 1700000000,
+              "model": "fixture",
+              "service_tier": null,
+              "system_fingerprint": null,
+              "object": "chat.completion.chunk",
+              "usage": null
+            }
+          },
+          {
+            "event": "",
+            "data": "[DONE]"
+          }
+        ],
+        "frames": [
+          "data: {\"id\":\"fixed-message\",\"choices\":[{\"index\":0,\"delta\":{\"content\":null},\"finish_reason\":\"content_filter\"}],\"created\":1700000000,\"model\":\"fixture\",\"service_tier\":null,\"system_fingerprint\":null,\"object\":\"chat.completion.chunk\",\"usage\":null}\n\n",
+          "data: [DONE]\n\n"
+        ],
+        "error": null,
+        "stats": {
+          "input": null,
+          "output": null,
+          "total": null,
+          "cached": null,
+          "cacheWrite": null,
+          "reasoning": null,
+          "model": null,
+          "tier": null,
+          "firstToken": false
+        }
+      }
+    },
+    {
+      "name": "stop-content_filtered",
+      "direction": "messages",
+      "events": [
+        {
+          "type": "messageStop",
+          "payload": "{\"stopReason\":\"content_filtered\",\"additionalModelResponseFields\":{\"safety\":\"retained\"}}"
+        }
+      ],
+      "bufferLimit": 65536,
+      "chunkSize": 0,
+      "expected": {
+        "decoded": [
+          {
+            "ok": "MessageStop(MessageStopEvent { stop_reason: ContentFiltered, additional_model_response_fields: Some(Object {\"safety\": String(\"retained\")}) })"
+          }
+        ],
+        "events": [],
+        "frames": [],
+        "error": null,
+        "stats": {
+          "input": null,
+          "output": null,
+          "total": null,
+          "cached": null,
+          "cacheWrite": null,
+          "reasoning": null,
+          "model": null,
+          "tier": null,
+          "firstToken": false
+        }
+      }
+    },
+    {
+      "name": "stop-guardrail_intervened",
+      "direction": "chat",
+      "events": [
+        {
+          "type": "messageStop",
+          "payload": "{\"stopReason\":\"guardrail_intervened\",\"additionalModelResponseFields\":{\"safety\":\"retained\"}}"
+        }
+      ],
+      "bufferLimit": 65536,
+      "chunkSize": 0,
+      "expected": {
+        "decoded": [
+          {
+            "ok": "MessageStop(MessageStopEvent { stop_reason: GuardrailIntervened, additional_model_response_fields: Some(Object {\"safety\": String(\"retained\")}) })"
+          }
+        ],
+        "events": [
+          {
+            "event": "",
+            "data": {
+              "id": "fixed-message",
+              "choices": [
+                {
+                  "index": 0,
+                  "delta": {
+                    "content": null
+                  },
+                  "finish_reason": "content_filter"
+                }
+              ],
+              "created": 1700000000,
+              "model": "fixture",
+              "service_tier": null,
+              "system_fingerprint": null,
+              "object": "chat.completion.chunk",
+              "usage": null
+            }
+          },
+          {
+            "event": "",
+            "data": "[DONE]"
+          }
+        ],
+        "frames": [
+          "data: {\"id\":\"fixed-message\",\"choices\":[{\"index\":0,\"delta\":{\"content\":null},\"finish_reason\":\"content_filter\"}],\"created\":1700000000,\"model\":\"fixture\",\"service_tier\":null,\"system_fingerprint\":null,\"object\":\"chat.completion.chunk\",\"usage\":null}\n\n",
+          "data: [DONE]\n\n"
+        ],
+        "error": null,
+        "stats": {
+          "input": null,
+          "output": null,
+          "total": null,
+          "cached": null,
+          "cacheWrite": null,
+          "reasoning": null,
+          "model": null,
+          "tier": null,
+          "firstToken": false
+        }
+      }
+    },
+    {
+      "name": "stop-guardrail_intervened",
+      "direction": "messages",
+      "events": [
+        {
+          "type": "messageStop",
+          "payload": "{\"stopReason\":\"guardrail_intervened\",\"additionalModelResponseFields\":{\"safety\":\"retained\"}}"
+        }
+      ],
+      "bufferLimit": 65536,
+      "chunkSize": 0,
+      "expected": {
+        "decoded": [
+          {
+            "ok": "MessageStop(MessageStopEvent { stop_reason: GuardrailIntervened, additional_model_response_fields: Some(Object {\"safety\": String(\"retained\")}) })"
+          }
+        ],
+        "events": [],
+        "frames": [],
+        "error": null,
+        "stats": {
+          "input": null,
+          "output": null,
+          "total": null,
+          "cached": null,
+          "cacheWrite": null,
+          "reasoning": null,
+          "model": null,
+          "tier": null,
+          "firstToken": false
+        }
+      }
+    },
+    {
+      "name": "stop-max_tokens",
+      "direction": "chat",
+      "events": [
+        {
+          "type": "messageStop",
+          "payload": "{\"stopReason\":\"max_tokens\",\"additionalModelResponseFields\":{\"safety\":\"retained\"}}"
+        }
+      ],
+      "bufferLimit": 65536,
+      "chunkSize": 0,
+      "expected": {
+        "decoded": [
+          {
+            "ok": "MessageStop(MessageStopEvent { stop_reason: MaxTokens, additional_model_response_fields: Some(Object {\"safety\": String(\"retained\")}) })"
+          }
+        ],
+        "events": [
+          {
+            "event": "",
+            "data": {
+              "id": "fixed-message",
+              "choices": [
+                {
+                  "index": 0,
+                  "delta": {
+                    "content": null
+                  },
+                  "finish_reason": "length"
+                }
+              ],
+              "created": 1700000000,
+              "model": "fixture",
+              "service_tier": null,
+              "system_fingerprint": null,
+              "object": "chat.completion.chunk",
+              "usage": null
+            }
+          },
+          {
+            "event": "",
+            "data": "[DONE]"
+          }
+        ],
+        "frames": [
+          "data: {\"id\":\"fixed-message\",\"choices\":[{\"index\":0,\"delta\":{\"content\":null},\"finish_reason\":\"length\"}],\"created\":1700000000,\"model\":\"fixture\",\"service_tier\":null,\"system_fingerprint\":null,\"object\":\"chat.completion.chunk\",\"usage\":null}\n\n",
+          "data: [DONE]\n\n"
+        ],
+        "error": null,
+        "stats": {
+          "input": null,
+          "output": null,
+          "total": null,
+          "cached": null,
+          "cacheWrite": null,
+          "reasoning": null,
+          "model": null,
+          "tier": null,
+          "firstToken": false
+        }
+      }
+    },
+    {
+      "name": "stop-max_tokens",
+      "direction": "messages",
+      "events": [
+        {
+          "type": "messageStop",
+          "payload": "{\"stopReason\":\"max_tokens\",\"additionalModelResponseFields\":{\"safety\":\"retained\"}}"
+        }
+      ],
+      "bufferLimit": 65536,
+      "chunkSize": 0,
+      "expected": {
+        "decoded": [
+          {
+            "ok": "MessageStop(MessageStopEvent { stop_reason: MaxTokens, additional_model_response_fields: Some(Object {\"safety\": String(\"retained\")}) })"
+          }
+        ],
+        "events": [],
+        "frames": [],
+        "error": null,
+        "stats": {
+          "input": null,
+          "output": null,
+          "total": null,
+          "cached": null,
+          "cacheWrite": null,
+          "reasoning": null,
+          "model": null,
+          "tier": null,
+          "firstToken": false
+        }
+      }
+    },
+    {
+      "name": "stop-model_context_window_exceeded",
+      "direction": "chat",
+      "events": [
+        {
+          "type": "messageStop",
+          "payload": "{\"stopReason\":\"model_context_window_exceeded\",\"additionalModelResponseFields\":{\"safety\":\"retained\"}}"
+        }
+      ],
+      "bufferLimit": 65536,
+      "chunkSize": 0,
+      "expected": {
+        "decoded": [
+          {
+            "ok": "MessageStop(MessageStopEvent { stop_reason: ModelContextWindowExceeded, additional_model_response_fields: Some(Object {\"safety\": String(\"retained\")}) })"
+          }
+        ],
+        "events": [
+          {
+            "event": "",
+            "data": {
+              "id": "fixed-message",
+              "choices": [
+                {
+                  "index": 0,
+                  "delta": {
+                    "content": null
+                  },
+                  "finish_reason": "length"
+                }
+              ],
+              "created": 1700000000,
+              "model": "fixture",
+              "service_tier": null,
+              "system_fingerprint": null,
+              "object": "chat.completion.chunk",
+              "usage": null
+            }
+          },
+          {
+            "event": "",
+            "data": "[DONE]"
+          }
+        ],
+        "frames": [
+          "data: {\"id\":\"fixed-message\",\"choices\":[{\"index\":0,\"delta\":{\"content\":null},\"finish_reason\":\"length\"}],\"created\":1700000000,\"model\":\"fixture\",\"service_tier\":null,\"system_fingerprint\":null,\"object\":\"chat.completion.chunk\",\"usage\":null}\n\n",
+          "data: [DONE]\n\n"
+        ],
+        "error": null,
+        "stats": {
+          "input": null,
+          "output": null,
+          "total": null,
+          "cached": null,
+          "cacheWrite": null,
+          "reasoning": null,
+          "model": null,
+          "tier": null,
+          "firstToken": false
+        }
+      }
+    },
+    {
+      "name": "stop-model_context_window_exceeded",
+      "direction": "messages",
+      "events": [
+        {
+          "type": "messageStop",
+          "payload": "{\"stopReason\":\"model_context_window_exceeded\",\"additionalModelResponseFields\":{\"safety\":\"retained\"}}"
+        }
+      ],
+      "bufferLimit": 65536,
+      "chunkSize": 0,
+      "expected": {
+        "decoded": [
+          {
+            "ok": "MessageStop(MessageStopEvent { stop_reason: ModelContextWindowExceeded, additional_model_response_fields: Some(Object {\"safety\": String(\"retained\")}) })"
+          }
+        ],
+        "events": [],
+        "frames": [],
+        "error": null,
+        "stats": {
+          "input": null,
+          "output": null,
+          "total": null,
+          "cached": null,
+          "cacheWrite": null,
+          "reasoning": null,
+          "model": null,
+          "tier": null,
+          "firstToken": false
+        }
+      }
+    },
+    {
+      "name": "stop-stop_sequence",
+      "direction": "chat",
+      "events": [
+        {
+          "type": "messageStop",
+          "payload": "{\"stopReason\":\"stop_sequence\",\"additionalModelResponseFields\":{\"safety\":\"retained\"}}"
+        }
+      ],
+      "bufferLimit": 65536,
+      "chunkSize": 0,
+      "expected": {
+        "decoded": [
+          {
+            "ok": "MessageStop(MessageStopEvent { stop_reason: StopSequence, additional_model_response_fields: Some(Object {\"safety\": String(\"retained\")}) })"
+          }
+        ],
+        "events": [
+          {
+            "event": "",
+            "data": {
+              "id": "fixed-message",
+              "choices": [
+                {
+                  "index": 0,
+                  "delta": {
+                    "content": null
+                  },
+                  "finish_reason": "stop"
+                }
+              ],
+              "created": 1700000000,
+              "model": "fixture",
+              "service_tier": null,
+              "system_fingerprint": null,
+              "object": "chat.completion.chunk",
+              "usage": null
+            }
+          },
+          {
+            "event": "",
+            "data": "[DONE]"
+          }
+        ],
+        "frames": [
+          "data: {\"id\":\"fixed-message\",\"choices\":[{\"index\":0,\"delta\":{\"content\":null},\"finish_reason\":\"stop\"}],\"created\":1700000000,\"model\":\"fixture\",\"service_tier\":null,\"system_fingerprint\":null,\"object\":\"chat.completion.chunk\",\"usage\":null}\n\n",
+          "data: [DONE]\n\n"
+        ],
+        "error": null,
+        "stats": {
+          "input": null,
+          "output": null,
+          "total": null,
+          "cached": null,
+          "cacheWrite": null,
+          "reasoning": null,
+          "model": null,
+          "tier": null,
+          "firstToken": false
+        }
+      }
+    },
+    {
+      "name": "stop-stop_sequence",
+      "direction": "messages",
+      "events": [
+        {
+          "type": "messageStop",
+          "payload": "{\"stopReason\":\"stop_sequence\",\"additionalModelResponseFields\":{\"safety\":\"retained\"}}"
+        }
+      ],
+      "bufferLimit": 65536,
+      "chunkSize": 0,
+      "expected": {
+        "decoded": [
+          {
+            "ok": "MessageStop(MessageStopEvent { stop_reason: StopSequence, additional_model_response_fields: Some(Object {\"safety\": String(\"retained\")}) })"
+          }
+        ],
+        "events": [],
+        "frames": [],
+        "error": null,
+        "stats": {
+          "input": null,
+          "output": null,
+          "total": null,
+          "cached": null,
+          "cacheWrite": null,
+          "reasoning": null,
+          "model": null,
+          "tier": null,
+          "firstToken": false
+        }
+      }
+    },
+    {
+      "name": "stop-tool_use",
+      "direction": "chat",
+      "events": [
+        {
+          "type": "messageStop",
+          "payload": "{\"stopReason\":\"tool_use\",\"additionalModelResponseFields\":{\"safety\":\"retained\"}}"
+        }
+      ],
+      "bufferLimit": 65536,
+      "chunkSize": 0,
+      "expected": {
+        "decoded": [
+          {
+            "ok": "MessageStop(MessageStopEvent { stop_reason: ToolUse, additional_model_response_fields: Some(Object {\"safety\": String(\"retained\")}) })"
+          }
+        ],
+        "events": [
+          {
+            "event": "",
+            "data": {
+              "id": "fixed-message",
+              "choices": [
+                {
+                  "index": 0,
+                  "delta": {
+                    "content": null
+                  },
+                  "finish_reason": "tool_calls"
+                }
+              ],
+              "created": 1700000000,
+              "model": "fixture",
+              "service_tier": null,
+              "system_fingerprint": null,
+              "object": "chat.completion.chunk",
+              "usage": null
+            }
+          },
+          {
+            "event": "",
+            "data": "[DONE]"
+          }
+        ],
+        "frames": [
+          "data: {\"id\":\"fixed-message\",\"choices\":[{\"index\":0,\"delta\":{\"content\":null},\"finish_reason\":\"tool_calls\"}],\"created\":1700000000,\"model\":\"fixture\",\"service_tier\":null,\"system_fingerprint\":null,\"object\":\"chat.completion.chunk\",\"usage\":null}\n\n",
+          "data: [DONE]\n\n"
+        ],
+        "error": null,
+        "stats": {
+          "input": null,
+          "output": null,
+          "total": null,
+          "cached": null,
+          "cacheWrite": null,
+          "reasoning": null,
+          "model": null,
+          "tier": null,
+          "firstToken": false
+        }
+      }
+    },
+    {
+      "name": "stop-tool_use",
+      "direction": "messages",
+      "events": [
+        {
+          "type": "messageStop",
+          "payload": "{\"stopReason\":\"tool_use\",\"additionalModelResponseFields\":{\"safety\":\"retained\"}}"
+        }
+      ],
+      "bufferLimit": 65536,
+      "chunkSize": 0,
+      "expected": {
+        "decoded": [
+          {
+            "ok": "MessageStop(MessageStopEvent { stop_reason: ToolUse, additional_model_response_fields: Some(Object {\"safety\": String(\"retained\")}) })"
+          }
+        ],
+        "events": [],
+        "frames": [],
+        "error": null,
+        "stats": {
+          "input": null,
+          "output": null,
+          "total": null,
+          "cached": null,
+          "cacheWrite": null,
+          "reasoning": null,
+          "model": null,
+          "tier": null,
+          "firstToken": false
+        }
+      }
+    },
+    {
+      "name": "stop-end_turn",
+      "direction": "chat",
+      "events": [
+        {
+          "type": "messageStop",
+          "payload": "{\"stopReason\":\"end_turn\",\"additionalModelResponseFields\":{\"safety\":\"retained\"}}"
+        }
+      ],
+      "bufferLimit": 65536,
+      "chunkSize": 0,
+      "expected": {
+        "decoded": [
+          {
+            "ok": "MessageStop(MessageStopEvent { stop_reason: EndTurn, additional_model_response_fields: Some(Object {\"safety\": String(\"retained\")}) })"
+          }
+        ],
+        "events": [
+          {
+            "event": "",
+            "data": {
+              "id": "fixed-message",
+              "choices": [
+                {
+                  "index": 0,
+                  "delta": {
+                    "content": null
+                  },
+                  "finish_reason": "stop"
+                }
+              ],
+              "created": 1700000000,
+              "model": "fixture",
+              "service_tier": null,
+              "system_fingerprint": null,
+              "object": "chat.completion.chunk",
+              "usage": null
+            }
+          },
+          {
+            "event": "",
+            "data": "[DONE]"
+          }
+        ],
+        "frames": [
+          "data: {\"id\":\"fixed-message\",\"choices\":[{\"index\":0,\"delta\":{\"content\":null},\"finish_reason\":\"stop\"}],\"created\":1700000000,\"model\":\"fixture\",\"service_tier\":null,\"system_fingerprint\":null,\"object\":\"chat.completion.chunk\",\"usage\":null}\n\n",
+          "data: [DONE]\n\n"
+        ],
+        "error": null,
+        "stats": {
+          "input": null,
+          "output": null,
+          "total": null,
+          "cached": null,
+          "cacheWrite": null,
+          "reasoning": null,
+          "model": null,
+          "tier": null,
+          "firstToken": false
+        }
+      }
+    },
+    {
+      "name": "stop-end_turn",
+      "direction": "messages",
+      "events": [
+        {
+          "type": "messageStop",
+          "payload": "{\"stopReason\":\"end_turn\",\"additionalModelResponseFields\":{\"safety\":\"retained\"}}"
+        }
+      ],
+      "bufferLimit": 65536,
+      "chunkSize": 0,
+      "expected": {
+        "decoded": [
+          {
+            "ok": "MessageStop(MessageStopEvent { stop_reason: EndTurn, additional_model_response_fields: Some(Object {\"safety\": String(\"retained\")}) })"
+          }
+        ],
+        "events": [],
+        "frames": [],
+        "error": null,
+        "stats": {
+          "input": null,
+          "output": null,
+          "total": null,
+          "cached": null,
+          "cacheWrite": null,
+          "reasoning": null,
+          "model": null,
+          "tier": null,
+          "firstToken": false
+        }
+      }
+    },
+    {
+      "name": "usage-None-None",
+      "direction": "chat",
+      "events": [
+        {
+          "type": "metadata",
+          "payload": "{\"usage\":{\"inputTokens\":17,\"outputTokens\":5,\"totalTokens\":22},\"metrics\":{\"latencyMs\":23},\"performanceConfig\":{}}"
+        }
+      ],
+      "bufferLimit": 65536,
+      "chunkSize": 0,
+      "expected": {
+        "decoded": [
+          {
+            "ok": "Metadata(ConverseStreamMetadataEvent { usage: Some(TokenUsage { input_tokens: 17, output_tokens: 5, total_tokens: 22, cache_read_input_tokens: None, cache_write_input_tokens: None }), metrics: Some(ConverseMetrics { latency_ms: 23 }), performance_config: Some(PerformanceConfiguration) })"
+          }
+        ],
+        "events": [
+          {
+            "event": "",
+            "data": {
+              "id": "fixed-message",
+              "choices": [],
+              "created": 1700000000,
+              "model": "fixture",
+              "service_tier": null,
+              "system_fingerprint": null,
+              "object": "chat.completion.chunk",
+              "usage": {
+                "prompt_tokens": 17,
+                "completion_tokens": 5,
+                "total_tokens": 22
+              }
+            }
+          },
+          {
+            "event": "",
+            "data": "[DONE]"
+          }
+        ],
+        "frames": [
+          "data: {\"id\":\"fixed-message\",\"choices\":[],\"created\":1700000000,\"model\":\"fixture\",\"service_tier\":null,\"system_fingerprint\":null,\"object\":\"chat.completion.chunk\",\"usage\":{\"prompt_tokens\":17,\"completion_tokens\":5,\"total_tokens\":22}}\n\n",
+          "data: [DONE]\n\n"
+        ],
+        "error": null,
+        "stats": {
+          "input": 17,
+          "output": 5,
+          "total": 22,
+          "cached": null,
+          "cacheWrite": null,
+          "reasoning": null,
+          "model": null,
+          "tier": null,
+          "firstToken": false
+        }
+      }
+    },
+    {
+      "name": "usage-None-None",
+      "direction": "messages",
+      "events": [
+        {
+          "type": "metadata",
+          "payload": "{\"usage\":{\"inputTokens\":17,\"outputTokens\":5,\"totalTokens\":22},\"metrics\":{\"latencyMs\":23},\"performanceConfig\":{}}"
+        }
+      ],
+      "bufferLimit": 65536,
+      "chunkSize": 0,
+      "expected": {
+        "decoded": [
+          {
+            "ok": "Metadata(ConverseStreamMetadataEvent { usage: Some(TokenUsage { input_tokens: 17, output_tokens: 5, total_tokens: 22, cache_read_input_tokens: None, cache_write_input_tokens: None }), metrics: Some(ConverseMetrics { latency_ms: 23 }), performance_config: Some(PerformanceConfiguration) })"
+          }
+        ],
+        "events": [
+          {
+            "event": "message_stop",
+            "data": {
+              "type": "message_stop"
+            }
+          }
+        ],
+        "frames": [
+          "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+        ],
+        "error": null,
+        "stats": {
+          "input": 17,
+          "output": 5,
+          "total": 22,
+          "cached": null,
+          "cacheWrite": null,
+          "reasoning": null,
+          "model": null,
+          "tier": null,
+          "firstToken": false
+        }
+      }
+    },
+    {
+      "name": "usage-0-None",
+      "direction": "chat",
+      "events": [
+        {
+          "type": "metadata",
+          "payload": "{\"usage\":{\"inputTokens\":17,\"outputTokens\":5,\"totalTokens\":22,\"cacheReadInputTokens\":0},\"metrics\":{\"latencyMs\":23},\"performanceConfig\":{}}"
+        }
+      ],
+      "bufferLimit": 65536,
+      "chunkSize": 0,
+      "expected": {
+        "decoded": [
+          {
+            "ok": "Metadata(ConverseStreamMetadataEvent { usage: Some(TokenUsage { input_tokens: 17, output_tokens: 5, total_tokens: 22, cache_read_input_tokens: Some(0), cache_write_input_tokens: None }), metrics: Some(ConverseMetrics { latency_ms: 23 }), performance_config: Some(PerformanceConfiguration) })"
+          }
+        ],
+        "events": [
+          {
+            "event": "",
+            "data": {
+              "id": "fixed-message",
+              "choices": [],
+              "created": 1700000000,
+              "model": "fixture",
+              "service_tier": null,
+              "system_fingerprint": null,
+              "object": "chat.completion.chunk",
+              "usage": {
+                "prompt_tokens": 17,
+                "completion_tokens": 5,
+                "total_tokens": 22,
+                "prompt_tokens_details": {
+                  "cached_tokens": 0
+                },
+                "cache_read_input_tokens": 0
+              }
+            }
+          },
+          {
+            "event": "",
+            "data": "[DONE]"
+          }
+        ],
+        "frames": [
+          "data: {\"id\":\"fixed-message\",\"choices\":[],\"created\":1700000000,\"model\":\"fixture\",\"service_tier\":null,\"system_fingerprint\":null,\"object\":\"chat.completion.chunk\",\"usage\":{\"prompt_tokens\":17,\"completion_tokens\":5,\"total_tokens\":22,\"prompt_tokens_details\":{\"cached_tokens\":0},\"cache_read_input_tokens\":0}}\n\n",
+          "data: [DONE]\n\n"
+        ],
+        "error": null,
+        "stats": {
+          "input": 17,
+          "output": 5,
+          "total": 22,
+          "cached": 0,
+          "cacheWrite": null,
+          "reasoning": null,
+          "model": null,
+          "tier": null,
+          "firstToken": false
+        }
+      }
+    },
+    {
+      "name": "usage-0-None",
+      "direction": "messages",
+      "events": [
+        {
+          "type": "metadata",
+          "payload": "{\"usage\":{\"inputTokens\":17,\"outputTokens\":5,\"totalTokens\":22,\"cacheReadInputTokens\":0},\"metrics\":{\"latencyMs\":23},\"performanceConfig\":{}}"
+        }
+      ],
+      "bufferLimit": 65536,
+      "chunkSize": 0,
+      "expected": {
+        "decoded": [
+          {
+            "ok": "Metadata(ConverseStreamMetadataEvent { usage: Some(TokenUsage { input_tokens: 17, output_tokens: 5, total_tokens: 22, cache_read_input_tokens: Some(0), cache_write_input_tokens: None }), metrics: Some(ConverseMetrics { latency_ms: 23 }), performance_config: Some(PerformanceConfiguration) })"
+          }
+        ],
+        "events": [
+          {
+            "event": "message_stop",
+            "data": {
+              "type": "message_stop"
+            }
+          }
+        ],
+        "frames": [
+          "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+        ],
+        "error": null,
+        "stats": {
+          "input": 17,
+          "output": 5,
+          "total": 22,
+          "cached": 0,
+          "cacheWrite": null,
+          "reasoning": null,
+          "model": null,
+          "tier": null,
+          "firstToken": false
+        }
+      }
+    },
+    {
+      "name": "usage-None-0",
+      "direction": "chat",
+      "events": [
+        {
+          "type": "metadata",
+          "payload": "{\"usage\":{\"inputTokens\":17,\"outputTokens\":5,\"totalTokens\":22,\"cacheWriteInputTokens\":0},\"metrics\":{\"latencyMs\":23},\"performanceConfig\":{}}"
+        }
+      ],
+      "bufferLimit": 65536,
+      "chunkSize": 0,
+      "expected": {
+        "decoded": [
+          {
+            "ok": "Metadata(ConverseStreamMetadataEvent { usage: Some(TokenUsage { input_tokens: 17, output_tokens: 5, total_tokens: 22, cache_read_input_tokens: None, cache_write_input_tokens: Some(0) }), metrics: Some(ConverseMetrics { latency_ms: 23 }), performance_config: Some(PerformanceConfiguration) })"
+          }
+        ],
+        "events": [
+          {
+            "event": "",
+            "data": {
+              "id": "fixed-message",
+              "choices": [],
+              "created": 1700000000,
+              "model": "fixture",
+              "service_tier": null,
+              "system_fingerprint": null,
+              "object": "chat.completion.chunk",
+              "usage": {
+                "prompt_tokens": 17,
+                "completion_tokens": 5,
+                "total_tokens": 22,
+                "cache_creation_input_tokens": 0
+              }
+            }
+          },
+          {
+            "event": "",
+            "data": "[DONE]"
+          }
+        ],
+        "frames": [
+          "data: {\"id\":\"fixed-message\",\"choices\":[],\"created\":1700000000,\"model\":\"fixture\",\"service_tier\":null,\"system_fingerprint\":null,\"object\":\"chat.completion.chunk\",\"usage\":{\"prompt_tokens\":17,\"completion_tokens\":5,\"total_tokens\":22,\"cache_creation_input_tokens\":0}}\n\n",
+          "data: [DONE]\n\n"
+        ],
+        "error": null,
+        "stats": {
+          "input": 17,
+          "output": 5,
+          "total": 22,
+          "cached": null,
+          "cacheWrite": 0,
+          "reasoning": null,
+          "model": null,
+          "tier": null,
+          "firstToken": false
+        }
+      }
+    },
+    {
+      "name": "usage-None-0",
+      "direction": "messages",
+      "events": [
+        {
+          "type": "metadata",
+          "payload": "{\"usage\":{\"inputTokens\":17,\"outputTokens\":5,\"totalTokens\":22,\"cacheWriteInputTokens\":0},\"metrics\":{\"latencyMs\":23},\"performanceConfig\":{}}"
+        }
+      ],
+      "bufferLimit": 65536,
+      "chunkSize": 0,
+      "expected": {
+        "decoded": [
+          {
+            "ok": "Metadata(ConverseStreamMetadataEvent { usage: Some(TokenUsage { input_tokens: 17, output_tokens: 5, total_tokens: 22, cache_read_input_tokens: None, cache_write_input_tokens: Some(0) }), metrics: Some(ConverseMetrics { latency_ms: 23 }), performance_config: Some(PerformanceConfiguration) })"
+          }
+        ],
+        "events": [
+          {
+            "event": "message_stop",
+            "data": {
+              "type": "message_stop"
+            }
+          }
+        ],
+        "frames": [
+          "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+        ],
+        "error": null,
+        "stats": {
+          "input": 17,
+          "output": 5,
+          "total": 22,
+          "cached": null,
+          "cacheWrite": 0,
+          "reasoning": null,
+          "model": null,
+          "tier": null,
+          "firstToken": false
+        }
+      }
+    },
+    {
+      "name": "usage-3-4",
+      "direction": "chat",
+      "events": [
+        {
+          "type": "metadata",
+          "payload": "{\"usage\":{\"inputTokens\":17,\"outputTokens\":5,\"totalTokens\":22,\"cacheReadInputTokens\":3,\"cacheWriteInputTokens\":4},\"metrics\":{\"latencyMs\":23},\"performanceConfig\":{}}"
+        }
+      ],
+      "bufferLimit": 65536,
+      "chunkSize": 0,
+      "expected": {
+        "decoded": [
+          {
+            "ok": "Metadata(ConverseStreamMetadataEvent { usage: Some(TokenUsage { input_tokens: 17, output_tokens: 5, total_tokens: 22, cache_read_input_tokens: Some(3), cache_write_input_tokens: Some(4) }), metrics: Some(ConverseMetrics { latency_ms: 23 }), performance_config: Some(PerformanceConfiguration) })"
+          }
+        ],
+        "events": [
+          {
+            "event": "",
+            "data": {
+              "id": "fixed-message",
+              "choices": [],
+              "created": 1700000000,
+              "model": "fixture",
+              "service_tier": null,
+              "system_fingerprint": null,
+              "object": "chat.completion.chunk",
+              "usage": {
+                "prompt_tokens": 17,
+                "completion_tokens": 5,
+                "total_tokens": 22,
+                "prompt_tokens_details": {
+                  "cached_tokens": 3
+                },
+                "cache_read_input_tokens": 3,
+                "cache_creation_input_tokens": 4
+              }
+            }
+          },
+          {
+            "event": "",
+            "data": "[DONE]"
+          }
+        ],
+        "frames": [
+          "data: {\"id\":\"fixed-message\",\"choices\":[],\"created\":1700000000,\"model\":\"fixture\",\"service_tier\":null,\"system_fingerprint\":null,\"object\":\"chat.completion.chunk\",\"usage\":{\"prompt_tokens\":17,\"completion_tokens\":5,\"total_tokens\":22,\"prompt_tokens_details\":{\"cached_tokens\":3},\"cache_read_input_tokens\":3,\"cache_creation_input_tokens\":4}}\n\n",
+          "data: [DONE]\n\n"
+        ],
+        "error": null,
+        "stats": {
+          "input": 17,
+          "output": 5,
+          "total": 22,
+          "cached": 3,
+          "cacheWrite": 4,
+          "reasoning": null,
+          "model": null,
+          "tier": null,
+          "firstToken": false
+        }
+      }
+    },
+    {
+      "name": "usage-3-4",
+      "direction": "messages",
+      "events": [
+        {
+          "type": "metadata",
+          "payload": "{\"usage\":{\"inputTokens\":17,\"outputTokens\":5,\"totalTokens\":22,\"cacheReadInputTokens\":3,\"cacheWriteInputTokens\":4},\"metrics\":{\"latencyMs\":23},\"performanceConfig\":{}}"
+        }
+      ],
+      "bufferLimit": 65536,
+      "chunkSize": 0,
+      "expected": {
+        "decoded": [
+          {
+            "ok": "Metadata(ConverseStreamMetadataEvent { usage: Some(TokenUsage { input_tokens: 17, output_tokens: 5, total_tokens: 22, cache_read_input_tokens: Some(3), cache_write_input_tokens: Some(4) }), metrics: Some(ConverseMetrics { latency_ms: 23 }), performance_config: Some(PerformanceConfiguration) })"
+          }
+        ],
+        "events": [
+          {
+            "event": "message_stop",
+            "data": {
+              "type": "message_stop"
+            }
+          }
+        ],
+        "frames": [
+          "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+        ],
+        "error": null,
+        "stats": {
+          "input": 17,
+          "output": 5,
+          "total": 22,
+          "cached": 3,
+          "cacheWrite": 4,
+          "reasoning": null,
+          "model": null,
+          "tier": null,
+          "firstToken": false
+        }
+      }
+    },
+    {
+      "name": "usage-0-0",
+      "direction": "chat",
+      "events": [
+        {
+          "type": "metadata",
+          "payload": "{\"usage\":{\"inputTokens\":17,\"outputTokens\":5,\"totalTokens\":22,\"cacheReadInputTokens\":0,\"cacheWriteInputTokens\":0},\"metrics\":{\"latencyMs\":23},\"performanceConfig\":{}}"
+        }
+      ],
+      "bufferLimit": 65536,
+      "chunkSize": 0,
+      "expected": {
+        "decoded": [
+          {
+            "ok": "Metadata(ConverseStreamMetadataEvent { usage: Some(TokenUsage { input_tokens: 17, output_tokens: 5, total_tokens: 22, cache_read_input_tokens: Some(0), cache_write_input_tokens: Some(0) }), metrics: Some(ConverseMetrics { latency_ms: 23 }), performance_config: Some(PerformanceConfiguration) })"
+          }
+        ],
+        "events": [
+          {
+            "event": "",
+            "data": {
+              "id": "fixed-message",
+              "choices": [],
+              "created": 1700000000,
+              "model": "fixture",
+              "service_tier": null,
+              "system_fingerprint": null,
+              "object": "chat.completion.chunk",
+              "usage": {
+                "prompt_tokens": 17,
+                "completion_tokens": 5,
+                "total_tokens": 22,
+                "prompt_tokens_details": {
+                  "cached_tokens": 0
+                },
+                "cache_read_input_tokens": 0,
+                "cache_creation_input_tokens": 0
+              }
+            }
+          },
+          {
+            "event": "",
+            "data": "[DONE]"
+          }
+        ],
+        "frames": [
+          "data: {\"id\":\"fixed-message\",\"choices\":[],\"created\":1700000000,\"model\":\"fixture\",\"service_tier\":null,\"system_fingerprint\":null,\"object\":\"chat.completion.chunk\",\"usage\":{\"prompt_tokens\":17,\"completion_tokens\":5,\"total_tokens\":22,\"prompt_tokens_details\":{\"cached_tokens\":0},\"cache_read_input_tokens\":0,\"cache_creation_input_tokens\":0}}\n\n",
+          "data: [DONE]\n\n"
+        ],
+        "error": null,
+        "stats": {
+          "input": 17,
+          "output": 5,
+          "total": 22,
+          "cached": 0,
+          "cacheWrite": 0,
+          "reasoning": null,
+          "model": null,
+          "tier": null,
+          "firstToken": false
+        }
+      }
+    },
+    {
+      "name": "usage-0-0",
+      "direction": "messages",
+      "events": [
+        {
+          "type": "metadata",
+          "payload": "{\"usage\":{\"inputTokens\":17,\"outputTokens\":5,\"totalTokens\":22,\"cacheReadInputTokens\":0,\"cacheWriteInputTokens\":0},\"metrics\":{\"latencyMs\":23},\"performanceConfig\":{}}"
+        }
+      ],
+      "bufferLimit": 65536,
+      "chunkSize": 0,
+      "expected": {
+        "decoded": [
+          {
+            "ok": "Metadata(ConverseStreamMetadataEvent { usage: Some(TokenUsage { input_tokens: 17, output_tokens: 5, total_tokens: 22, cache_read_input_tokens: Some(0), cache_write_input_tokens: Some(0) }), metrics: Some(ConverseMetrics { latency_ms: 23 }), performance_config: Some(PerformanceConfiguration) })"
+          }
+        ],
+        "events": [
+          {
+            "event": "message_stop",
+            "data": {
+              "type": "message_stop"
+            }
+          }
+        ],
+        "frames": [
+          "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+        ],
+        "error": null,
+        "stats": {
+          "input": 17,
+          "output": 5,
+          "total": 22,
+          "cached": 0,
+          "cacheWrite": 0,
+          "reasoning": null,
+          "model": null,
+          "tier": null,
+          "firstToken": false
+        }
+      }
+    },
+    {
+      "name": "usage-zero",
+      "direction": "chat",
+      "events": [
+        {
+          "type": "metadata",
+          "payload": "{\"usage\":{\"inputTokens\":0,\"outputTokens\":0,\"totalTokens\":0},\"metrics\":{\"latencyMs\":23},\"performanceConfig\":{}}"
+        }
+      ],
+      "bufferLimit": 65536,
+      "chunkSize": 0,
+      "expected": {
+        "decoded": [
+          {
+            "ok": "Metadata(ConverseStreamMetadataEvent { usage: Some(TokenUsage { input_tokens: 0, output_tokens: 0, total_tokens: 0, cache_read_input_tokens: None, cache_write_input_tokens: None }), metrics: Some(ConverseMetrics { latency_ms: 23 }), performance_config: Some(PerformanceConfiguration) })"
+          }
+        ],
+        "events": [
+          {
+            "event": "",
+            "data": {
+              "id": "fixed-message",
+              "choices": [],
+              "created": 1700000000,
+              "model": "fixture",
+              "service_tier": null,
+              "system_fingerprint": null,
+              "object": "chat.completion.chunk",
+              "usage": {
+                "prompt_tokens": 0,
+                "completion_tokens": 0,
+                "total_tokens": 0
+              }
+            }
+          },
+          {
+            "event": "",
+            "data": "[DONE]"
+          }
+        ],
+        "frames": [
+          "data: {\"id\":\"fixed-message\",\"choices\":[],\"created\":1700000000,\"model\":\"fixture\",\"service_tier\":null,\"system_fingerprint\":null,\"object\":\"chat.completion.chunk\",\"usage\":{\"prompt_tokens\":0,\"completion_tokens\":0,\"total_tokens\":0}}\n\n",
+          "data: [DONE]\n\n"
+        ],
+        "error": null,
+        "stats": {
+          "input": 0,
+          "output": 0,
+          "total": 0,
+          "cached": null,
+          "cacheWrite": null,
+          "reasoning": null,
+          "model": null,
+          "tier": null,
+          "firstToken": false
+        }
+      }
+    },
+    {
+      "name": "usage-zero",
+      "direction": "messages",
+      "events": [
+        {
+          "type": "metadata",
+          "payload": "{\"usage\":{\"inputTokens\":0,\"outputTokens\":0,\"totalTokens\":0},\"metrics\":{\"latencyMs\":23},\"performanceConfig\":{}}"
+        }
+      ],
+      "bufferLimit": 65536,
+      "chunkSize": 0,
+      "expected": {
+        "decoded": [
+          {
+            "ok": "Metadata(ConverseStreamMetadataEvent { usage: Some(TokenUsage { input_tokens: 0, output_tokens: 0, total_tokens: 0, cache_read_input_tokens: None, cache_write_input_tokens: None }), metrics: Some(ConverseMetrics { latency_ms: 23 }), performance_config: Some(PerformanceConfiguration) })"
+          }
+        ],
+        "events": [
+          {
+            "event": "message_stop",
+            "data": {
+              "type": "message_stop"
+            }
+          }
+        ],
+        "frames": [
+          "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+        ],
+        "error": null,
+        "stats": {
+          "input": 0,
+          "output": 0,
+          "total": 0,
+          "cached": null,
+          "cacheWrite": null,
+          "reasoning": null,
+          "model": null,
+          "tier": null,
+          "firstToken": false
+        }
+      }
+    },
+    {
+      "name": "usage-large",
+      "direction": "chat",
+      "events": [
+        {
+          "type": "metadata",
+          "payload": "{\"usage\":{\"inputTokens\":4294967297,\"outputTokens\":4294967298,\"totalTokens\":8589934595},\"metrics\":{\"latencyMs\":23},\"performanceConfig\":{}}"
+        }
+      ],
+      "bufferLimit": 65536,
+      "chunkSize": 0,
+      "expected": {
+        "decoded": [
+          {
+            "ok": "Metadata(ConverseStreamMetadataEvent { usage: Some(TokenUsage { input_tokens: 4294967297, output_tokens: 4294967298, total_tokens: 8589934595, cache_read_input_tokens: None, cache_write_input_tokens: None }), metrics: Some(ConverseMetrics { latency_ms: 23 }), performance_config: Some(PerformanceConfiguration) })"
+          }
+        ],
+        "events": [
+          {
+            "event": "",
+            "data": {
+              "id": "fixed-message",
+              "choices": [],
+              "created": 1700000000,
+              "model": "fixture",
+              "service_tier": null,
+              "system_fingerprint": null,
+              "object": "chat.completion.chunk",
+              "usage": {
+                "prompt_tokens": 1,
+                "completion_tokens": 2,
+                "total_tokens": 3
+              }
+            }
+          },
+          {
+            "event": "",
+            "data": "[DONE]"
+          }
+        ],
+        "frames": [
+          "data: {\"id\":\"fixed-message\",\"choices\":[],\"created\":1700000000,\"model\":\"fixture\",\"service_tier\":null,\"system_fingerprint\":null,\"object\":\"chat.completion.chunk\",\"usage\":{\"prompt_tokens\":1,\"completion_tokens\":2,\"total_tokens\":3}}\n\n",
+          "data: [DONE]\n\n"
+        ],
+        "error": null,
+        "stats": {
+          "input": 4294967297,
+          "output": 4294967298,
+          "total": 8589934595,
+          "cached": null,
+          "cacheWrite": null,
+          "reasoning": null,
+          "model": null,
+          "tier": null,
+          "firstToken": false
+        }
+      }
+    },
+    {
+      "name": "usage-large",
+      "direction": "messages",
+      "events": [
+        {
+          "type": "metadata",
+          "payload": "{\"usage\":{\"inputTokens\":4294967297,\"outputTokens\":4294967298,\"totalTokens\":8589934595},\"metrics\":{\"latencyMs\":23},\"performanceConfig\":{}}"
+        }
+      ],
+      "bufferLimit": 65536,
+      "chunkSize": 0,
+      "expected": {
+        "decoded": [
+          {
+            "ok": "Metadata(ConverseStreamMetadataEvent { usage: Some(TokenUsage { input_tokens: 4294967297, output_tokens: 4294967298, total_tokens: 8589934595, cache_read_input_tokens: None, cache_write_input_tokens: None }), metrics: Some(ConverseMetrics { latency_ms: 23 }), performance_config: Some(PerformanceConfiguration) })"
+          }
+        ],
+        "events": [
+          {
+            "event": "message_stop",
+            "data": {
+              "type": "message_stop"
+            }
+          }
+        ],
+        "frames": [
+          "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+        ],
+        "error": null,
+        "stats": {
+          "input": 4294967297,
+          "output": 4294967298,
+          "total": 8589934595,
+          "cached": null,
+          "cacheWrite": null,
+          "reasoning": null,
+          "model": null,
+          "tier": null,
+          "firstToken": false
+        }
+      }
+    },
+    {
+      "name": "bytewise",
+      "direction": "chat",
+      "events": [
+        {
+          "type": "messageStart",
+          "payload": "{\"role\":\"assistant\"}"
+        },
+        {
+          "type": "contentBlockDelta",
+          "payload": "{\"contentBlockIndex\":0,\"delta\":{\"text\":\"你好\"}}"
+        },
+        {
+          "type": "messageStop",
+          "payload": "{\"stopReason\":\"end_turn\",\"additionalModelResponseFields\":{\"safety\":\"retained\"}}"
+        },
+        {
+          "type": "metadata",
+          "payload": "{\"usage\":{\"inputTokens\":17,\"outputTokens\":5,\"totalTokens\":22,\"cacheReadInputTokens\":3,\"cacheWriteInputTokens\":4},\"metrics\":{\"latencyMs\":23},\"performanceConfig\":{}}"
+        }
+      ],
+      "bufferLimit": 65536,
+      "chunkSize": 1,
+      "damage": "bytewise",
+      "expected": {
+        "decoded": [
+          {
+            "ok": "MessageStart(MessageStartEvent { role: Assistant })"
+          },
+          {
+            "ok": "ContentBlockDelta(ContentBlockDeltaEvent { delta: Some(Text(\"你好\")), content_block_index: 0 })"
+          },
+          {
+            "ok": "MessageStop(MessageStopEvent { stop_reason: EndTurn, additional_model_response_fields: Some(Object {\"safety\": String(\"retained\")}) })"
+          },
+          {
+            "ok": "Metadata(ConverseStreamMetadataEvent { usage: Some(TokenUsage { input_tokens: 17, output_tokens: 5, total_tokens: 22, cache_read_input_tokens: Some(3), cache_write_input_tokens: Some(4) }), metrics: Some(ConverseMetrics { latency_ms: 23 }), performance_config: Some(PerformanceConfiguration) })"
+          }
+        ],
+        "events": [
+          {
+            "event": "",
+            "data": {
+              "id": "fixed-message",
+              "choices": [
+                {
+                  "index": 0,
+                  "delta": {
+                    "content": null,
+                    "role": "assistant"
+                  }
+                }
+              ],
+              "created": 1700000000,
+              "model": "fixture",
+              "service_tier": null,
+              "system_fingerprint": null,
+              "object": "chat.completion.chunk",
+              "usage": null
+            }
+          },
+          {
+            "event": "",
+            "data": {
+              "id": "fixed-message",
+              "choices": [
+                {
+                  "index": 0,
+                  "delta": {
+                    "content": "你好"
+                  }
+                }
+              ],
+              "created": 1700000000,
+              "model": "fixture",
+              "service_tier": null,
+              "system_fingerprint": null,
+              "object": "chat.completion.chunk",
+              "usage": null
+            }
+          },
+          {
+            "event": "",
+            "data": {
+              "id": "fixed-message",
+              "choices": [
+                {
+                  "index": 0,
+                  "delta": {
+                    "content": null
+                  },
+                  "finish_reason": "stop"
+                }
+              ],
+              "created": 1700000000,
+              "model": "fixture",
+              "service_tier": null,
+              "system_fingerprint": null,
+              "object": "chat.completion.chunk",
+              "usage": null
+            }
+          },
+          {
+            "event": "",
+            "data": {
+              "id": "fixed-message",
+              "choices": [],
+              "created": 1700000000,
+              "model": "fixture",
+              "service_tier": null,
+              "system_fingerprint": null,
+              "object": "chat.completion.chunk",
+              "usage": {
+                "prompt_tokens": 17,
+                "completion_tokens": 5,
+                "total_tokens": 22,
+                "prompt_tokens_details": {
+                  "cached_tokens": 3
+                },
+                "cache_read_input_tokens": 3,
+                "cache_creation_input_tokens": 4
+              }
+            }
+          },
+          {
+            "event": "",
+            "data": "[DONE]"
+          }
+        ],
+        "frames": [
+          "data: {\"id\":\"fixed-message\",\"choices\":[{\"index\":0,\"delta\":{\"content\":null,\"role\":\"assistant\"}}],\"created\":1700000000,\"model\":\"fixture\",\"service_tier\":null,\"system_fingerprint\":null,\"object\":\"chat.completion.chunk\",\"usage\":null}\n\n",
+          "data: {\"id\":\"fixed-message\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"你好\"}}],\"created\":1700000000,\"model\":\"fixture\",\"service_tier\":null,\"system_fingerprint\":null,\"object\":\"chat.completion.chunk\",\"usage\":null}\n\n",
+          "data: {\"id\":\"fixed-message\",\"choices\":[{\"index\":0,\"delta\":{\"content\":null},\"finish_reason\":\"stop\"}],\"created\":1700000000,\"model\":\"fixture\",\"service_tier\":null,\"system_fingerprint\":null,\"object\":\"chat.completion.chunk\",\"usage\":null}\n\n",
+          "data: {\"id\":\"fixed-message\",\"choices\":[],\"created\":1700000000,\"model\":\"fixture\",\"service_tier\":null,\"system_fingerprint\":null,\"object\":\"chat.completion.chunk\",\"usage\":{\"prompt_tokens\":17,\"completion_tokens\":5,\"total_tokens\":22,\"prompt_tokens_details\":{\"cached_tokens\":3},\"cache_read_input_tokens\":3,\"cache_creation_input_tokens\":4}}\n\n",
+          "data: [DONE]\n\n"
+        ],
+        "error": null,
+        "stats": {
+          "input": 17,
+          "output": 5,
+          "total": 22,
+          "cached": 3,
+          "cacheWrite": 4,
+          "reasoning": null,
+          "model": null,
+          "tier": null,
+          "firstToken": true
+        }
+      }
+    },
+    {
+      "name": "truncated",
+      "direction": "chat",
+      "events": [
+        {
+          "type": "messageStart",
+          "payload": "{\"role\":\"assistant\"}"
+        },
+        {
+          "type": "contentBlockDelta",
+          "payload": "{\"contentBlockIndex\":0,\"delta\":{\"text\":\"你好\"}}"
+        },
+        {
+          "type": "messageStop",
+          "payload": "{\"stopReason\":\"end_turn\",\"additionalModelResponseFields\":{\"safety\":\"retained\"}}"
+        },
+        {
+          "type": "metadata",
+          "payload": "{\"usage\":{\"inputTokens\":17,\"outputTokens\":5,\"totalTokens\":22,\"cacheReadInputTokens\":3,\"cacheWriteInputTokens\":4},\"metrics\":{\"latencyMs\":23},\"performanceConfig\":{}}"
+        }
+      ],
+      "bufferLimit": 65536,
+      "chunkSize": 0,
+      "damage": "truncated",
+      "expected": {
+        "decoded": [
+          {
+            "ok": "MessageStart(MessageStartEvent { role: Assistant })"
+          },
+          {
+            "ok": "ContentBlockDelta(ContentBlockDeltaEvent { delta: Some(Text(\"你好\")), content_block_index: 0 })"
+          },
+          {
+            "ok": "MessageStop(MessageStopEvent { stop_reason: EndTurn, additional_model_response_fields: Some(Object {\"safety\": String(\"retained\")}) })"
+          },
+          {
+            "ok": "Metadata(ConverseStreamMetadataEvent { usage: Some(TokenUsage { input_tokens: 17, output_tokens: 5, total_tokens: 22, cache_read_input_tokens: Some(3), cache_write_input_tokens: Some(4) }), metrics: Some(ConverseMetrics { latency_ms: 23 }), performance_config: Some(PerformanceConfiguration) })"
+          }
+        ],
+        "events": [
+          {
+            "event": "",
+            "data": {
+              "id": "fixed-message",
+              "choices": [
+                {
+                  "index": 0,
+                  "delta": {
+                    "content": null,
+                    "role": "assistant"
+                  }
+                }
+              ],
+              "created": 1700000000,
+              "model": "fixture",
+              "service_tier": null,
+              "system_fingerprint": null,
+              "object": "chat.completion.chunk",
+              "usage": null
+            }
+          },
+          {
+            "event": "",
+            "data": {
+              "id": "fixed-message",
+              "choices": [
+                {
+                  "index": 0,
+                  "delta": {
+                    "content": "你好"
+                  }
+                }
+              ],
+              "created": 1700000000,
+              "model": "fixture",
+              "service_tier": null,
+              "system_fingerprint": null,
+              "object": "chat.completion.chunk",
+              "usage": null
+            }
+          },
+          {
+            "event": "",
+            "data": {
+              "id": "fixed-message",
+              "choices": [
+                {
+                  "index": 0,
+                  "delta": {
+                    "content": null
+                  },
+                  "finish_reason": "stop"
+                }
+              ],
+              "created": 1700000000,
+              "model": "fixture",
+              "service_tier": null,
+              "system_fingerprint": null,
+              "object": "chat.completion.chunk",
+              "usage": null
+            }
+          }
+        ],
+        "frames": [
+          "data: {\"id\":\"fixed-message\",\"choices\":[{\"index\":0,\"delta\":{\"content\":null,\"role\":\"assistant\"}}],\"created\":1700000000,\"model\":\"fixture\",\"service_tier\":null,\"system_fingerprint\":null,\"object\":\"chat.completion.chunk\",\"usage\":null}\n\ndata: {\"id\":\"fixed-message\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"你好\"}}],\"created\":1700000000,\"model\":\"fixture\",\"service_tier\":null,\"system_fingerprint\":null,\"object\":\"chat.completion.chunk\",\"usage\":null}\n\ndata: {\"id\":\"fixed-message\",\"choices\":[{\"index\":0,\"delta\":{\"content\":null},\"finish_reason\":\"stop\"}],\"created\":1700000000,\"model\":\"fixture\",\"service_tier\":null,\"system_fingerprint\":null,\"object\":\"chat.completion.chunk\",\"usage\":null}\n\n"
+        ],
+        "error": "bytes remaining on stream",
+        "stats": {
+          "input": null,
+          "output": null,
+          "total": null,
+          "cached": null,
+          "cacheWrite": null,
+          "reasoning": null,
+          "model": null,
+          "tier": null,
+          "firstToken": true
+        }
+      }
+    },
+    {
+      "name": "crc",
+      "direction": "chat",
+      "events": [
+        {
+          "type": "messageStart",
+          "payload": "{\"role\":\"assistant\"}"
+        },
+        {
+          "type": "contentBlockDelta",
+          "payload": "{\"contentBlockIndex\":0,\"delta\":{\"text\":\"你好\"}}"
+        },
+        {
+          "type": "messageStop",
+          "payload": "{\"stopReason\":\"end_turn\",\"additionalModelResponseFields\":{\"safety\":\"retained\"}}"
+        },
+        {
+          "type": "metadata",
+          "payload": "{\"usage\":{\"inputTokens\":17,\"outputTokens\":5,\"totalTokens\":22,\"cacheReadInputTokens\":3,\"cacheWriteInputTokens\":4},\"metrics\":{\"latencyMs\":23},\"performanceConfig\":{}}"
+        }
+      ],
+      "bufferLimit": 65536,
+      "chunkSize": 0,
+      "damage": "crc",
+      "expected": {
+        "decoded": [
+          {
+            "ok": "MessageStart(MessageStartEvent { role: Assistant })"
+          },
+          {
+            "ok": "ContentBlockDelta(ContentBlockDeltaEvent { delta: Some(Text(\"你好\")), content_block_index: 0 })"
+          },
+          {
+            "ok": "MessageStop(MessageStopEvent { stop_reason: EndTurn, additional_model_response_fields: Some(Object {\"safety\": String(\"retained\")}) })"
+          },
+          {
+            "ok": "Metadata(ConverseStreamMetadataEvent { usage: Some(TokenUsage { input_tokens: 17, output_tokens: 5, total_tokens: 22, cache_read_input_tokens: Some(3), cache_write_input_tokens: Some(4) }), metrics: Some(ConverseMetrics { latency_ms: 23 }), performance_config: Some(PerformanceConfiguration) })"
+          }
+        ],
+        "events": [],
+        "frames": [],
+        "error": "message checksum 0x826F0826 didn't match expected checksum 0x826F0827",
+        "stats": {
+          "input": null,
+          "output": null,
+          "total": null,
+          "cached": null,
+          "cacheWrite": null,
+          "reasoning": null,
+          "model": null,
+          "tier": null,
+          "firstToken": true
+        }
+      }
+    },
+    {
+      "name": "oversize",
+      "direction": "chat",
+      "events": [
+        {
+          "type": "messageStart",
+          "payload": "{\"role\":\"assistant\"}"
+        },
+        {
+          "type": "contentBlockDelta",
+          "payload": "{\"contentBlockIndex\":0,\"delta\":{\"text\":\"你好\"}}"
+        },
+        {
+          "type": "messageStop",
+          "payload": "{\"stopReason\":\"end_turn\",\"additionalModelResponseFields\":{\"safety\":\"retained\"}}"
+        },
+        {
+          "type": "metadata",
+          "payload": "{\"usage\":{\"inputTokens\":17,\"outputTokens\":5,\"totalTokens\":22,\"cacheReadInputTokens\":3,\"cacheWriteInputTokens\":4},\"metrics\":{\"latencyMs\":23},\"performanceConfig\":{}}"
+        }
+      ],
+      "bufferLimit": 32,
+      "chunkSize": 0,
+      "damage": "oversize",
+      "expected": {
+        "decoded": [
+          {
+            "ok": "MessageStart(MessageStartEvent { role: Assistant })"
+          },
+          {
+            "ok": "ContentBlockDelta(ContentBlockDeltaEvent { delta: Some(Text(\"你好\")), content_block_index: 0 })"
+          },
+          {
+            "ok": "MessageStop(MessageStopEvent { stop_reason: EndTurn, additional_model_response_fields: Some(Object {\"safety\": String(\"retained\")}) })"
+          },
+          {
+            "ok": "Metadata(ConverseStreamMetadataEvent { usage: Some(TokenUsage { input_tokens: 17, output_tokens: 5, total_tokens: 22, cache_read_input_tokens: Some(3), cache_write_input_tokens: Some(4) }), metrics: Some(ConverseMetrics { latency_ms: 23 }), performance_config: Some(PerformanceConfiguration) })"
+          }
+        ],
+        "events": [],
+        "frames": [],
+        "error": "eventstream frame size 63 exceeds buffer limit 32",
+        "stats": {
+          "input": null,
+          "output": null,
+          "total": null,
+          "cached": null,
+          "cacheWrite": null,
+          "reasoning": null,
+          "model": null,
+          "tier": null,
+          "firstToken": false
+        }
+      }
+    },
+    {
+      "name": "io-error",
+      "direction": "chat",
+      "events": [
+        {
+          "type": "messageStart",
+          "payload": "{\"role\":\"assistant\"}"
+        },
+        {
+          "type": "contentBlockDelta",
+          "payload": "{\"contentBlockIndex\":0,\"delta\":{\"text\":\"你好\"}}"
+        },
+        {
+          "type": "messageStop",
+          "payload": "{\"stopReason\":\"end_turn\",\"additionalModelResponseFields\":{\"safety\":\"retained\"}}"
+        },
+        {
+          "type": "metadata",
+          "payload": "{\"usage\":{\"inputTokens\":17,\"outputTokens\":5,\"totalTokens\":22,\"cacheReadInputTokens\":3,\"cacheWriteInputTokens\":4},\"metrics\":{\"latencyMs\":23},\"performanceConfig\":{}}"
+        }
+      ],
+      "bufferLimit": 65536,
+      "chunkSize": 0,
+      "damage": "io-error",
+      "expected": {
+        "decoded": [
+          {
+            "ok": "MessageStart(MessageStartEvent { role: Assistant })"
+          },
+          {
+            "ok": "ContentBlockDelta(ContentBlockDeltaEvent { delta: Some(Text(\"你好\")), content_block_index: 0 })"
+          },
+          {
+            "ok": "MessageStop(MessageStopEvent { stop_reason: EndTurn, additional_model_response_fields: Some(Object {\"safety\": String(\"retained\")}) })"
+          },
+          {
+            "ok": "Metadata(ConverseStreamMetadataEvent { usage: Some(TokenUsage { input_tokens: 17, output_tokens: 5, total_tokens: 22, cache_read_input_tokens: Some(3), cache_write_input_tokens: Some(4) }), metrics: Some(ConverseMetrics { latency_ms: 23 }), performance_config: Some(PerformanceConfiguration) })"
+          }
+        ],
+        "events": [
+          {
+            "event": "",
+            "data": {
+              "id": "fixed-message",
+              "choices": [
+                {
+                  "index": 0,
+                  "delta": {
+                    "content": null,
+                    "role": "assistant"
+                  }
+                }
+              ],
+              "created": 1700000000,
+              "model": "fixture",
+              "service_tier": null,
+              "system_fingerprint": null,
+              "object": "chat.completion.chunk",
+              "usage": null
+            }
+          },
+          {
+            "event": "",
+            "data": {
+              "id": "fixed-message",
+              "choices": [
+                {
+                  "index": 0,
+                  "delta": {
+                    "content": "你好"
+                  }
+                }
+              ],
+              "created": 1700000000,
+              "model": "fixture",
+              "service_tier": null,
+              "system_fingerprint": null,
+              "object": "chat.completion.chunk",
+              "usage": null
+            }
+          },
+          {
+            "event": "",
+            "data": {
+              "id": "fixed-message",
+              "choices": [
+                {
+                  "index": 0,
+                  "delta": {
+                    "content": null
+                  },
+                  "finish_reason": "stop"
+                }
+              ],
+              "created": 1700000000,
+              "model": "fixture",
+              "service_tier": null,
+              "system_fingerprint": null,
+              "object": "chat.completion.chunk",
+              "usage": null
+            }
+          },
+          {
+            "event": "",
+            "data": {
+              "id": "fixed-message",
+              "choices": [],
+              "created": 1700000000,
+              "model": "fixture",
+              "service_tier": null,
+              "system_fingerprint": null,
+              "object": "chat.completion.chunk",
+              "usage": {
+                "prompt_tokens": 17,
+                "completion_tokens": 5,
+                "total_tokens": 22,
+                "prompt_tokens_details": {
+                  "cached_tokens": 3
+                },
+                "cache_read_input_tokens": 3,
+                "cache_creation_input_tokens": 4
+              }
+            }
+          }
+        ],
+        "frames": [
+          "data: {\"id\":\"fixed-message\",\"choices\":[{\"index\":0,\"delta\":{\"content\":null,\"role\":\"assistant\"}}],\"created\":1700000000,\"model\":\"fixture\",\"service_tier\":null,\"system_fingerprint\":null,\"object\":\"chat.completion.chunk\",\"usage\":null}\n\ndata: {\"id\":\"fixed-message\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"你好\"}}],\"created\":1700000000,\"model\":\"fixture\",\"service_tier\":null,\"system_fingerprint\":null,\"object\":\"chat.completion.chunk\",\"usage\":null}\n\ndata: {\"id\":\"fixed-message\",\"choices\":[{\"index\":0,\"delta\":{\"content\":null},\"finish_reason\":\"stop\"}],\"created\":1700000000,\"model\":\"fixture\",\"service_tier\":null,\"system_fingerprint\":null,\"object\":\"chat.completion.chunk\",\"usage\":null}\n\ndata: {\"id\":\"fixed-message\",\"choices\":[],\"created\":1700000000,\"model\":\"fixture\",\"service_tier\":null,\"system_fingerprint\":null,\"object\":\"chat.completion.chunk\",\"usage\":{\"prompt_tokens\":17,\"completion_tokens\":5,\"total_tokens\":22,\"prompt_tokens_details\":{\"cached_tokens\":3},\"cache_read_input_tokens\":3,\"cache_creation_input_tokens\":4}}\n\n"
+        ],
+        "error": "original upstream failure",
+        "stats": {
+          "input": 17,
+          "output": 5,
+          "total": 22,
+          "cached": 3,
+          "cacheWrite": 4,
+          "reasoning": null,
+          "model": null,
+          "tier": null,
+          "firstToken": true
+        }
+      }
+    }
+  ]
+}

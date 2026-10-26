@@ -1,0 +1,1684 @@
+{
+  "maps": [
+    {
+      "names": [
+        "valid",
+        "danger.tool",
+        "",
+        "tool",
+        "a/b",
+        "a_b",
+        "a.b",
+        "工具",
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "éééééééééééééééééééééééééééééééé",
+        "________________________________________________________________",
+        "_________________________________________________________________",
+        "danger_tool",
+        "valid"
+      ],
+      "probes": [
+        "unknown",
+        "danger_tool",
+        "a_b",
+        "工具",
+        "tool"
+      ],
+      "expected": {
+        "registrations": [
+          {
+            "mapped": "valid",
+            "restored": "valid",
+            "empty": true
+          },
+          {
+            "mapped": "danger_tool",
+            "restored": "danger.tool",
+            "empty": false
+          },
+          {
+            "mapped": "tool",
+            "restored": "tool",
+            "empty": false
+          },
+          {
+            "mapped": "tool",
+            "restored": "tool",
+            "empty": false
+          },
+          {
+            "mapped": "a_b",
+            "restored": "a/b",
+            "empty": false
+          },
+          {
+            "mapped": "a_b_58b35e",
+            "restored": "a_b",
+            "empty": false
+          },
+          {
+            "mapped": "a_b_e5080a",
+            "restored": "a.b",
+            "empty": false
+          },
+          {
+            "mapped": "__",
+            "restored": "工具",
+            "empty": false
+          },
+          {
+            "mapped": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "restored": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "empty": false
+          },
+          {
+            "mapped": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "restored": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "empty": false
+          },
+          {
+            "mapped": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa_11ec84",
+            "restored": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "empty": false
+          },
+          {
+            "mapped": "________________________________",
+            "restored": "éééééééééééééééééééééééééééééééé",
+            "empty": false
+          },
+          {
+            "mapped": "________________________________________________________________",
+            "restored": "________________________________________________________________",
+            "empty": false
+          },
+          {
+            "mapped": "__________________________________________________________899c66",
+            "restored": "_________________________________________________________________",
+            "empty": false
+          },
+          {
+            "mapped": "danger_tool_229e0d",
+            "restored": "danger_tool",
+            "empty": false
+          },
+          {
+            "mapped": "valid",
+            "restored": "valid",
+            "empty": false
+          }
+        ],
+        "probes": [
+          "unknown",
+          "danger.tool",
+          "a/b",
+          "工具",
+          "tool"
+        ]
+      }
+    },
+    {
+      "names": [
+        "valid",
+        "danger_tool",
+        "_________________________________________________________________",
+        "________________________________________________________________",
+        "éééééééééééééééééééééééééééééééé",
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "工具",
+        "a.b",
+        "a_b",
+        "a/b",
+        "tool",
+        "",
+        "danger.tool",
+        "valid"
+      ],
+      "probes": [
+        "unknown",
+        "danger_tool",
+        "a_b",
+        "工具",
+        "tool"
+      ],
+      "expected": {
+        "registrations": [
+          {
+            "mapped": "valid",
+            "restored": "valid",
+            "empty": true
+          },
+          {
+            "mapped": "danger_tool",
+            "restored": "danger_tool",
+            "empty": true
+          },
+          {
+            "mapped": "__________________________________________________________899c66",
+            "restored": "_________________________________________________________________",
+            "empty": false
+          },
+          {
+            "mapped": "________________________________________________________________",
+            "restored": "________________________________________________________________",
+            "empty": false
+          },
+          {
+            "mapped": "________________________________",
+            "restored": "éééééééééééééééééééééééééééééééé",
+            "empty": false
+          },
+          {
+            "mapped": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa_11ec84",
+            "restored": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "empty": false
+          },
+          {
+            "mapped": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "restored": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "empty": false
+          },
+          {
+            "mapped": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "restored": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "empty": false
+          },
+          {
+            "mapped": "__",
+            "restored": "工具",
+            "empty": false
+          },
+          {
+            "mapped": "a_b",
+            "restored": "a.b",
+            "empty": false
+          },
+          {
+            "mapped": "a_b_58b35e",
+            "restored": "a_b",
+            "empty": false
+          },
+          {
+            "mapped": "a_b_a18f2a",
+            "restored": "a/b",
+            "empty": false
+          },
+          {
+            "mapped": "tool",
+            "restored": "tool",
+            "empty": false
+          },
+          {
+            "mapped": "tool",
+            "restored": "tool",
+            "empty": false
+          },
+          {
+            "mapped": "danger_tool_fb7342",
+            "restored": "danger.tool",
+            "empty": false
+          },
+          {
+            "mapped": "valid",
+            "restored": "valid",
+            "empty": false
+          }
+        ],
+        "probes": [
+          "unknown",
+          "danger_tool",
+          "a.b",
+          "工具",
+          "tool"
+        ]
+      }
+    },
+    {
+      "names": [
+        "a.b",
+        "a_b",
+        "a/b"
+      ],
+      "probes": [
+        "unknown",
+        "danger_tool",
+        "a_b",
+        "工具",
+        "tool"
+      ],
+      "expected": {
+        "registrations": [
+          {
+            "mapped": "a_b",
+            "restored": "a.b",
+            "empty": false
+          },
+          {
+            "mapped": "a_b_58b35e",
+            "restored": "a_b",
+            "empty": false
+          },
+          {
+            "mapped": "a_b_a18f2a",
+            "restored": "a/b",
+            "empty": false
+          }
+        ],
+        "probes": [
+          "unknown",
+          "danger_tool",
+          "a.b",
+          "工具",
+          "tool"
+        ]
+      }
+    },
+    {
+      "names": [
+        "a_b",
+        "a.b",
+        "a/b"
+      ],
+      "probes": [
+        "unknown",
+        "danger_tool",
+        "a_b",
+        "工具",
+        "tool"
+      ],
+      "expected": {
+        "registrations": [
+          {
+            "mapped": "a_b",
+            "restored": "a_b",
+            "empty": true
+          },
+          {
+            "mapped": "a_b_e5080a",
+            "restored": "a.b",
+            "empty": false
+          },
+          {
+            "mapped": "a_b_a18f2a",
+            "restored": "a/b",
+            "empty": false
+          }
+        ],
+        "probes": [
+          "unknown",
+          "danger_tool",
+          "a_b",
+          "工具",
+          "tool"
+        ]
+      }
+    },
+    {
+      "names": [
+        "a_b",
+        "a_b_e5080a",
+        "a_b_e5080a_1",
+        "a.b"
+      ],
+      "probes": [
+        "a_b",
+        "a_b_e5080a"
+      ],
+      "expected": {
+        "registrations": [
+          {
+            "mapped": "a_b",
+            "restored": "a_b",
+            "empty": true
+          },
+          {
+            "mapped": "a_b_e5080a",
+            "restored": "a_b_e5080a",
+            "empty": true
+          },
+          {
+            "mapped": "a_b_e5080a_1",
+            "restored": "a_b_e5080a_1",
+            "empty": true
+          },
+          {
+            "mapped": "a_b_e5080a_1_2",
+            "restored": "a.b",
+            "empty": false
+          }
+        ],
+        "probes": [
+          "a_b",
+          "a_b_e5080a"
+        ]
+      }
+    }
+  ],
+  "responses": [
+    {
+      "name": "full",
+      "input": {
+        "output": {
+          "message": {
+            "role": "assistant",
+            "content": [
+              {
+                "text": "first"
+              },
+              {
+                "reasoningContent": {
+                  "reasoningText": {
+                    "text": "private",
+                    "signature": "signature-secure"
+                  }
+                }
+              },
+              {
+                "toolUse": {
+                  "toolUseId": "call-original",
+                  "name": "danger_tool",
+                  "input": {
+                    "x": 1
+                  }
+                }
+              },
+              {
+                "text": "last"
+              },
+              {
+                "image": {
+                  "format": "png",
+                  "source": {
+                    "bytes": "AQID"
+                  }
+                }
+              },
+              {
+                "toolResult": {
+                  "toolUseId": "call-original",
+                  "content": [
+                    {
+                      "text": "done"
+                    }
+                  ],
+                  "status": "success"
+                }
+              },
+              {
+                "cachePoint": {
+                  "type": "default"
+                }
+              }
+            ]
+          }
+        },
+        "stopReason": "tool_use",
+        "usage": null
+      },
+      "expected": {
+        "ok": {
+          "id": "msg_fixture",
+          "type": "message",
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "first"
+            },
+            {
+              "type": "thinking",
+              "thinking": "private",
+              "signature": "signature-secure"
+            },
+            {
+              "type": "tool_use",
+              "id": "call-original",
+              "name": "danger.tool",
+              "input": {
+                "x": 1
+              }
+            },
+            {
+              "type": "text",
+              "text": "last"
+            },
+            {
+              "type": "image",
+              "source": {
+                "type": "base64",
+                "media_type": "image/png",
+                "data": "AQID"
+              }
+            }
+          ],
+          "model": "fixture",
+          "stop_reason": "tool_use",
+          "stop_sequence": null,
+          "usage": {
+            "input_tokens": 0,
+            "output_tokens": 0
+          }
+        }
+      }
+    },
+    {
+      "name": "full",
+      "input": {
+        "output": {
+          "message": {
+            "role": "assistant",
+            "content": [
+              {
+                "text": "first"
+              },
+              {
+                "reasoningContent": {
+                  "reasoningText": {
+                    "text": "private",
+                    "signature": "signature-secure"
+                  }
+                }
+              },
+              {
+                "toolUse": {
+                  "toolUseId": "call-original",
+                  "name": "danger_tool",
+                  "input": {
+                    "x": 1
+                  }
+                }
+              },
+              {
+                "text": "last"
+              },
+              {
+                "image": {
+                  "format": "png",
+                  "source": {
+                    "bytes": "AQID"
+                  }
+                }
+              },
+              {
+                "toolResult": {
+                  "toolUseId": "call-original",
+                  "content": [
+                    {
+                      "text": "done"
+                    }
+                  ],
+                  "status": "success"
+                }
+              },
+              {
+                "cachePoint": {
+                  "type": "default"
+                }
+              }
+            ]
+          }
+        },
+        "stopReason": "tool_use",
+        "usage": {
+          "inputTokens": 17,
+          "outputTokens": 5,
+          "totalTokens": 22
+        }
+      },
+      "expected": {
+        "ok": {
+          "id": "msg_fixture",
+          "type": "message",
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "first"
+            },
+            {
+              "type": "thinking",
+              "thinking": "private",
+              "signature": "signature-secure"
+            },
+            {
+              "type": "tool_use",
+              "id": "call-original",
+              "name": "danger.tool",
+              "input": {
+                "x": 1
+              }
+            },
+            {
+              "type": "text",
+              "text": "last"
+            },
+            {
+              "type": "image",
+              "source": {
+                "type": "base64",
+                "media_type": "image/png",
+                "data": "AQID"
+              }
+            }
+          ],
+          "model": "fixture",
+          "stop_reason": "tool_use",
+          "stop_sequence": null,
+          "usage": {
+            "input_tokens": 17,
+            "output_tokens": 5
+          }
+        }
+      }
+    },
+    {
+      "name": "full",
+      "input": {
+        "output": {
+          "message": {
+            "role": "assistant",
+            "content": [
+              {
+                "text": "first"
+              },
+              {
+                "reasoningContent": {
+                  "reasoningText": {
+                    "text": "private",
+                    "signature": "signature-secure"
+                  }
+                }
+              },
+              {
+                "toolUse": {
+                  "toolUseId": "call-original",
+                  "name": "danger_tool",
+                  "input": {
+                    "x": 1
+                  }
+                }
+              },
+              {
+                "text": "last"
+              },
+              {
+                "image": {
+                  "format": "png",
+                  "source": {
+                    "bytes": "AQID"
+                  }
+                }
+              },
+              {
+                "toolResult": {
+                  "toolUseId": "call-original",
+                  "content": [
+                    {
+                      "text": "done"
+                    }
+                  ],
+                  "status": "success"
+                }
+              },
+              {
+                "cachePoint": {
+                  "type": "default"
+                }
+              }
+            ]
+          }
+        },
+        "stopReason": "tool_use",
+        "usage": {
+          "inputTokens": 17,
+          "outputTokens": 5,
+          "totalTokens": 22,
+          "cacheReadInputTokens": 0,
+          "cacheWriteInputTokens": 0
+        }
+      },
+      "expected": {
+        "ok": {
+          "id": "msg_fixture",
+          "type": "message",
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "first"
+            },
+            {
+              "type": "thinking",
+              "thinking": "private",
+              "signature": "signature-secure"
+            },
+            {
+              "type": "tool_use",
+              "id": "call-original",
+              "name": "danger.tool",
+              "input": {
+                "x": 1
+              }
+            },
+            {
+              "type": "text",
+              "text": "last"
+            },
+            {
+              "type": "image",
+              "source": {
+                "type": "base64",
+                "media_type": "image/png",
+                "data": "AQID"
+              }
+            }
+          ],
+          "model": "fixture",
+          "stop_reason": "tool_use",
+          "stop_sequence": null,
+          "usage": {
+            "input_tokens": 17,
+            "output_tokens": 5,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0
+          }
+        }
+      }
+    },
+    {
+      "name": "full",
+      "input": {
+        "output": {
+          "message": {
+            "role": "assistant",
+            "content": [
+              {
+                "text": "first"
+              },
+              {
+                "reasoningContent": {
+                  "reasoningText": {
+                    "text": "private",
+                    "signature": "signature-secure"
+                  }
+                }
+              },
+              {
+                "toolUse": {
+                  "toolUseId": "call-original",
+                  "name": "danger_tool",
+                  "input": {
+                    "x": 1
+                  }
+                }
+              },
+              {
+                "text": "last"
+              },
+              {
+                "image": {
+                  "format": "png",
+                  "source": {
+                    "bytes": "AQID"
+                  }
+                }
+              },
+              {
+                "toolResult": {
+                  "toolUseId": "call-original",
+                  "content": [
+                    {
+                      "text": "done"
+                    }
+                  ],
+                  "status": "success"
+                }
+              },
+              {
+                "cachePoint": {
+                  "type": "default"
+                }
+              }
+            ]
+          }
+        },
+        "stopReason": "tool_use",
+        "usage": {
+          "inputTokens": 17,
+          "outputTokens": 5,
+          "totalTokens": 22,
+          "cacheReadInputTokens": 3,
+          "cacheWriteInputTokens": 4
+        }
+      },
+      "expected": {
+        "ok": {
+          "id": "msg_fixture",
+          "type": "message",
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "first"
+            },
+            {
+              "type": "thinking",
+              "thinking": "private",
+              "signature": "signature-secure"
+            },
+            {
+              "type": "tool_use",
+              "id": "call-original",
+              "name": "danger.tool",
+              "input": {
+                "x": 1
+              }
+            },
+            {
+              "type": "text",
+              "text": "last"
+            },
+            {
+              "type": "image",
+              "source": {
+                "type": "base64",
+                "media_type": "image/png",
+                "data": "AQID"
+              }
+            }
+          ],
+          "model": "fixture",
+          "stop_reason": "tool_use",
+          "stop_sequence": null,
+          "usage": {
+            "input_tokens": 17,
+            "output_tokens": 5,
+            "cache_creation_input_tokens": 4,
+            "cache_read_input_tokens": 3
+          }
+        }
+      }
+    },
+    {
+      "name": "empty",
+      "input": {
+        "output": {
+          "message": {
+            "role": "assistant",
+            "content": []
+          }
+        },
+        "stopReason": "tool_use",
+        "usage": null
+      },
+      "expected": {
+        "ok": {
+          "id": "msg_fixture",
+          "type": "message",
+          "role": "assistant",
+          "content": [],
+          "model": "fixture",
+          "stop_reason": "tool_use",
+          "stop_sequence": null,
+          "usage": {
+            "input_tokens": 0,
+            "output_tokens": 0
+          }
+        }
+      }
+    },
+    {
+      "name": "empty",
+      "input": {
+        "output": {
+          "message": {
+            "role": "assistant",
+            "content": []
+          }
+        },
+        "stopReason": "tool_use",
+        "usage": {
+          "inputTokens": 17,
+          "outputTokens": 5,
+          "totalTokens": 22
+        }
+      },
+      "expected": {
+        "ok": {
+          "id": "msg_fixture",
+          "type": "message",
+          "role": "assistant",
+          "content": [],
+          "model": "fixture",
+          "stop_reason": "tool_use",
+          "stop_sequence": null,
+          "usage": {
+            "input_tokens": 17,
+            "output_tokens": 5
+          }
+        }
+      }
+    },
+    {
+      "name": "empty",
+      "input": {
+        "output": {
+          "message": {
+            "role": "assistant",
+            "content": []
+          }
+        },
+        "stopReason": "tool_use",
+        "usage": {
+          "inputTokens": 17,
+          "outputTokens": 5,
+          "totalTokens": 22,
+          "cacheReadInputTokens": 0,
+          "cacheWriteInputTokens": 0
+        }
+      },
+      "expected": {
+        "ok": {
+          "id": "msg_fixture",
+          "type": "message",
+          "role": "assistant",
+          "content": [],
+          "model": "fixture",
+          "stop_reason": "tool_use",
+          "stop_sequence": null,
+          "usage": {
+            "input_tokens": 17,
+            "output_tokens": 5,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0
+          }
+        }
+      }
+    },
+    {
+      "name": "empty",
+      "input": {
+        "output": {
+          "message": {
+            "role": "assistant",
+            "content": []
+          }
+        },
+        "stopReason": "tool_use",
+        "usage": {
+          "inputTokens": 17,
+          "outputTokens": 5,
+          "totalTokens": 22,
+          "cacheReadInputTokens": 3,
+          "cacheWriteInputTokens": 4
+        }
+      },
+      "expected": {
+        "ok": {
+          "id": "msg_fixture",
+          "type": "message",
+          "role": "assistant",
+          "content": [],
+          "model": "fixture",
+          "stop_reason": "tool_use",
+          "stop_sequence": null,
+          "usage": {
+            "input_tokens": 17,
+            "output_tokens": 5,
+            "cache_creation_input_tokens": 4,
+            "cache_read_input_tokens": 3
+          }
+        }
+      }
+    },
+    {
+      "name": "simple-reason",
+      "input": {
+        "output": {
+          "message": {
+            "role": "assistant",
+            "content": [
+              {
+                "reasoningContent": {
+                  "text": "simple"
+                }
+              }
+            ]
+          }
+        },
+        "stopReason": "tool_use",
+        "usage": null
+      },
+      "expected": {
+        "ok": {
+          "id": "msg_fixture",
+          "type": "message",
+          "role": "assistant",
+          "content": [
+            {
+              "type": "thinking",
+              "thinking": "simple",
+              "signature": ""
+            }
+          ],
+          "model": "fixture",
+          "stop_reason": "tool_use",
+          "stop_sequence": null,
+          "usage": {
+            "input_tokens": 0,
+            "output_tokens": 0
+          }
+        }
+      }
+    },
+    {
+      "name": "simple-reason",
+      "input": {
+        "output": {
+          "message": {
+            "role": "assistant",
+            "content": [
+              {
+                "reasoningContent": {
+                  "text": "simple"
+                }
+              }
+            ]
+          }
+        },
+        "stopReason": "tool_use",
+        "usage": {
+          "inputTokens": 17,
+          "outputTokens": 5,
+          "totalTokens": 22
+        }
+      },
+      "expected": {
+        "ok": {
+          "id": "msg_fixture",
+          "type": "message",
+          "role": "assistant",
+          "content": [
+            {
+              "type": "thinking",
+              "thinking": "simple",
+              "signature": ""
+            }
+          ],
+          "model": "fixture",
+          "stop_reason": "tool_use",
+          "stop_sequence": null,
+          "usage": {
+            "input_tokens": 17,
+            "output_tokens": 5
+          }
+        }
+      }
+    },
+    {
+      "name": "simple-reason",
+      "input": {
+        "output": {
+          "message": {
+            "role": "assistant",
+            "content": [
+              {
+                "reasoningContent": {
+                  "text": "simple"
+                }
+              }
+            ]
+          }
+        },
+        "stopReason": "tool_use",
+        "usage": {
+          "inputTokens": 17,
+          "outputTokens": 5,
+          "totalTokens": 22,
+          "cacheReadInputTokens": 0,
+          "cacheWriteInputTokens": 0
+        }
+      },
+      "expected": {
+        "ok": {
+          "id": "msg_fixture",
+          "type": "message",
+          "role": "assistant",
+          "content": [
+            {
+              "type": "thinking",
+              "thinking": "simple",
+              "signature": ""
+            }
+          ],
+          "model": "fixture",
+          "stop_reason": "tool_use",
+          "stop_sequence": null,
+          "usage": {
+            "input_tokens": 17,
+            "output_tokens": 5,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0
+          }
+        }
+      }
+    },
+    {
+      "name": "simple-reason",
+      "input": {
+        "output": {
+          "message": {
+            "role": "assistant",
+            "content": [
+              {
+                "reasoningContent": {
+                  "text": "simple"
+                }
+              }
+            ]
+          }
+        },
+        "stopReason": "tool_use",
+        "usage": {
+          "inputTokens": 17,
+          "outputTokens": 5,
+          "totalTokens": 22,
+          "cacheReadInputTokens": 3,
+          "cacheWriteInputTokens": 4
+        }
+      },
+      "expected": {
+        "ok": {
+          "id": "msg_fixture",
+          "type": "message",
+          "role": "assistant",
+          "content": [
+            {
+              "type": "thinking",
+              "thinking": "simple",
+              "signature": ""
+            }
+          ],
+          "model": "fixture",
+          "stop_reason": "tool_use",
+          "stop_sequence": null,
+          "usage": {
+            "input_tokens": 17,
+            "output_tokens": 5,
+            "cache_creation_input_tokens": 4,
+            "cache_read_input_tokens": 3
+          }
+        }
+      }
+    },
+    {
+      "name": "empty-signature",
+      "input": {
+        "output": {
+          "message": {
+            "role": "assistant",
+            "content": [
+              {
+                "reasoningContent": {
+                  "reasoningText": {
+                    "text": "",
+                    "signature": ""
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "stopReason": "tool_use",
+        "usage": null
+      },
+      "expected": {
+        "ok": {
+          "id": "msg_fixture",
+          "type": "message",
+          "role": "assistant",
+          "content": [
+            {
+              "type": "thinking",
+              "thinking": "",
+              "signature": ""
+            }
+          ],
+          "model": "fixture",
+          "stop_reason": "tool_use",
+          "stop_sequence": null,
+          "usage": {
+            "input_tokens": 0,
+            "output_tokens": 0
+          }
+        }
+      }
+    },
+    {
+      "name": "empty-signature",
+      "input": {
+        "output": {
+          "message": {
+            "role": "assistant",
+            "content": [
+              {
+                "reasoningContent": {
+                  "reasoningText": {
+                    "text": "",
+                    "signature": ""
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "stopReason": "tool_use",
+        "usage": {
+          "inputTokens": 17,
+          "outputTokens": 5,
+          "totalTokens": 22
+        }
+      },
+      "expected": {
+        "ok": {
+          "id": "msg_fixture",
+          "type": "message",
+          "role": "assistant",
+          "content": [
+            {
+              "type": "thinking",
+              "thinking": "",
+              "signature": ""
+            }
+          ],
+          "model": "fixture",
+          "stop_reason": "tool_use",
+          "stop_sequence": null,
+          "usage": {
+            "input_tokens": 17,
+            "output_tokens": 5
+          }
+        }
+      }
+    },
+    {
+      "name": "empty-signature",
+      "input": {
+        "output": {
+          "message": {
+            "role": "assistant",
+            "content": [
+              {
+                "reasoningContent": {
+                  "reasoningText": {
+                    "text": "",
+                    "signature": ""
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "stopReason": "tool_use",
+        "usage": {
+          "inputTokens": 17,
+          "outputTokens": 5,
+          "totalTokens": 22,
+          "cacheReadInputTokens": 0,
+          "cacheWriteInputTokens": 0
+        }
+      },
+      "expected": {
+        "ok": {
+          "id": "msg_fixture",
+          "type": "message",
+          "role": "assistant",
+          "content": [
+            {
+              "type": "thinking",
+              "thinking": "",
+              "signature": ""
+            }
+          ],
+          "model": "fixture",
+          "stop_reason": "tool_use",
+          "stop_sequence": null,
+          "usage": {
+            "input_tokens": 17,
+            "output_tokens": 5,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0
+          }
+        }
+      }
+    },
+    {
+      "name": "empty-signature",
+      "input": {
+        "output": {
+          "message": {
+            "role": "assistant",
+            "content": [
+              {
+                "reasoningContent": {
+                  "reasoningText": {
+                    "text": "",
+                    "signature": ""
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "stopReason": "tool_use",
+        "usage": {
+          "inputTokens": 17,
+          "outputTokens": 5,
+          "totalTokens": 22,
+          "cacheReadInputTokens": 3,
+          "cacheWriteInputTokens": 4
+        }
+      },
+      "expected": {
+        "ok": {
+          "id": "msg_fixture",
+          "type": "message",
+          "role": "assistant",
+          "content": [
+            {
+              "type": "thinking",
+              "thinking": "",
+              "signature": ""
+            }
+          ],
+          "model": "fixture",
+          "stop_reason": "tool_use",
+          "stop_sequence": null,
+          "usage": {
+            "input_tokens": 17,
+            "output_tokens": 5,
+            "cache_creation_input_tokens": 4,
+            "cache_read_input_tokens": 3
+          }
+        }
+      }
+    },
+    {
+      "name": "two-reason",
+      "input": {
+        "output": {
+          "message": {
+            "role": "assistant",
+            "content": [
+              {
+                "reasoningContent": {
+                  "reasoningText": {
+                    "text": "private",
+                    "signature": "signature-secure"
+                  }
+                }
+              },
+              {
+                "reasoningContent": {
+                  "text": "last"
+                }
+              }
+            ]
+          }
+        },
+        "stopReason": "tool_use",
+        "usage": null
+      },
+      "expected": {
+        "ok": {
+          "id": "msg_fixture",
+          "type": "message",
+          "role": "assistant",
+          "content": [
+            {
+              "type": "thinking",
+              "thinking": "private",
+              "signature": "signature-secure"
+            },
+            {
+              "type": "thinking",
+              "thinking": "last",
+              "signature": ""
+            }
+          ],
+          "model": "fixture",
+          "stop_reason": "tool_use",
+          "stop_sequence": null,
+          "usage": {
+            "input_tokens": 0,
+            "output_tokens": 0
+          }
+        }
+      }
+    },
+    {
+      "name": "two-reason",
+      "input": {
+        "output": {
+          "message": {
+            "role": "assistant",
+            "content": [
+              {
+                "reasoningContent": {
+                  "reasoningText": {
+                    "text": "private",
+                    "signature": "signature-secure"
+                  }
+                }
+              },
+              {
+                "reasoningContent": {
+                  "text": "last"
+                }
+              }
+            ]
+          }
+        },
+        "stopReason": "tool_use",
+        "usage": {
+          "inputTokens": 17,
+          "outputTokens": 5,
+          "totalTokens": 22
+        }
+      },
+      "expected": {
+        "ok": {
+          "id": "msg_fixture",
+          "type": "message",
+          "role": "assistant",
+          "content": [
+            {
+              "type": "thinking",
+              "thinking": "private",
+              "signature": "signature-secure"
+            },
+            {
+              "type": "thinking",
+              "thinking": "last",
+              "signature": ""
+            }
+          ],
+          "model": "fixture",
+          "stop_reason": "tool_use",
+          "stop_sequence": null,
+          "usage": {
+            "input_tokens": 17,
+            "output_tokens": 5
+          }
+        }
+      }
+    },
+    {
+      "name": "two-reason",
+      "input": {
+        "output": {
+          "message": {
+            "role": "assistant",
+            "content": [
+              {
+                "reasoningContent": {
+                  "reasoningText": {
+                    "text": "private",
+                    "signature": "signature-secure"
+                  }
+                }
+              },
+              {
+                "reasoningContent": {
+                  "text": "last"
+                }
+              }
+            ]
+          }
+        },
+        "stopReason": "tool_use",
+        "usage": {
+          "inputTokens": 17,
+          "outputTokens": 5,
+          "totalTokens": 22,
+          "cacheReadInputTokens": 0,
+          "cacheWriteInputTokens": 0
+        }
+      },
+      "expected": {
+        "ok": {
+          "id": "msg_fixture",
+          "type": "message",
+          "role": "assistant",
+          "content": [
+            {
+              "type": "thinking",
+              "thinking": "private",
+              "signature": "signature-secure"
+            },
+            {
+              "type": "thinking",
+              "thinking": "last",
+              "signature": ""
+            }
+          ],
+          "model": "fixture",
+          "stop_reason": "tool_use",
+          "stop_sequence": null,
+          "usage": {
+            "input_tokens": 17,
+            "output_tokens": 5,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0
+          }
+        }
+      }
+    },
+    {
+      "name": "two-reason",
+      "input": {
+        "output": {
+          "message": {
+            "role": "assistant",
+            "content": [
+              {
+                "reasoningContent": {
+                  "reasoningText": {
+                    "text": "private",
+                    "signature": "signature-secure"
+                  }
+                }
+              },
+              {
+                "reasoningContent": {
+                  "text": "last"
+                }
+              }
+            ]
+          }
+        },
+        "stopReason": "tool_use",
+        "usage": {
+          "inputTokens": 17,
+          "outputTokens": 5,
+          "totalTokens": 22,
+          "cacheReadInputTokens": 3,
+          "cacheWriteInputTokens": 4
+        }
+      },
+      "expected": {
+        "ok": {
+          "id": "msg_fixture",
+          "type": "message",
+          "role": "assistant",
+          "content": [
+            {
+              "type": "thinking",
+              "thinking": "private",
+              "signature": "signature-secure"
+            },
+            {
+              "type": "thinking",
+              "thinking": "last",
+              "signature": ""
+            }
+          ],
+          "model": "fixture",
+          "stop_reason": "tool_use",
+          "stop_sequence": null,
+          "usage": {
+            "input_tokens": 17,
+            "output_tokens": 5,
+            "cache_creation_input_tokens": 4,
+            "cache_read_input_tokens": 3
+          }
+        }
+      }
+    },
+    {
+      "name": "unknown-content",
+      "input": {
+        "output": {
+          "message": {
+            "role": "assistant",
+            "content": [
+              {
+                "future": {
+                  "secret": "x"
+                }
+              }
+            ]
+          }
+        },
+        "stopReason": "tool_use",
+        "usage": null
+      },
+      "expected": {
+        "parseError": "unknown variant `future`, expected one of `text`, `image`, `toolResult`, `toolUse`, `reasoningContent`, `cachePoint`"
+      }
+    },
+    {
+      "name": "unknown-content",
+      "input": {
+        "output": {
+          "message": {
+            "role": "assistant",
+            "content": [
+              {
+                "future": {
+                  "secret": "x"
+                }
+              }
+            ]
+          }
+        },
+        "stopReason": "tool_use",
+        "usage": {
+          "inputTokens": 17,
+          "outputTokens": 5,
+          "totalTokens": 22
+        }
+      },
+      "expected": {
+        "parseError": "unknown variant `future`, expected one of `text`, `image`, `toolResult`, `toolUse`, `reasoningContent`, `cachePoint`"
+      }
+    },
+    {
+      "name": "unknown-content",
+      "input": {
+        "output": {
+          "message": {
+            "role": "assistant",
+            "content": [
+              {
+                "future": {
+                  "secret": "x"
+                }
+              }
+            ]
+          }
+        },
+        "stopReason": "tool_use",
+        "usage": {
+          "inputTokens": 17,
+          "outputTokens": 5,
+          "totalTokens": 22,
+          "cacheReadInputTokens": 0,
+          "cacheWriteInputTokens": 0
+        }
+      },
+      "expected": {
+        "parseError": "unknown variant `future`, expected one of `text`, `image`, `toolResult`, `toolUse`, `reasoningContent`, `cachePoint`"
+      }
+    },
+    {
+      "name": "unknown-content",
+      "input": {
+        "output": {
+          "message": {
+            "role": "assistant",
+            "content": [
+              {
+                "future": {
+                  "secret": "x"
+                }
+              }
+            ]
+          }
+        },
+        "stopReason": "tool_use",
+        "usage": {
+          "inputTokens": 17,
+          "outputTokens": 5,
+          "totalTokens": 22,
+          "cacheReadInputTokens": 3,
+          "cacheWriteInputTokens": 4
+        }
+      },
+      "expected": {
+        "parseError": "unknown variant `future`, expected one of `text`, `image`, `toolResult`, `toolUse`, `reasoningContent`, `cachePoint`"
+      }
+    },
+    {
+      "name": "missing-or-unknown",
+      "input": {
+        "output": null,
+        "stopReason": "end_turn"
+      },
+      "expected": {
+        "error": "IncompleteResponse",
+        "display": "response was missing fields"
+      }
+    },
+    {
+      "name": "missing-or-unknown",
+      "input": {
+        "output": {
+          "future": {}
+        },
+        "stopReason": "end_turn"
+      },
+      "expected": {
+        "parseError": "invalid type: map, expected unit"
+      }
+    },
+    {
+      "name": "unsupported-stop",
+      "input": {
+        "output": {
+          "message": {
+            "role": "assistant",
+            "content": []
+          }
+        },
+        "stopReason": "future"
+      },
+      "expected": {
+        "parseError": "unknown variant `future`, expected one of `content_filtered`, `end_turn`, `guardrail_intervened`, `max_tokens`, `model_context_window_exceeded`, `stop_sequence`, `tool_use`"
+      }
+    }
+  ]
+}

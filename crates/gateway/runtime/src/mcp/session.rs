@@ -13,7 +13,7 @@ use platform_core::prelude::AssertSize;
 use platform_core::version::BuildInfo;
 use rmcp::model::{
 	ClientInfo, ClientJsonRpcMessage, ClientNotification, ClientRequest, ConstString, GetMeta,
-	Implementation, InitializeRequest, JsonRpcRequest, ProtocolVersion, Reference, RequestId,
+	Implementation, InitializeRequest, JsonRpcRequest, ProtocolVersion, RequestId,
 	ServerJsonRpcMessage,
 };
 use rmcp::transport::common::http_header::{EVENT_STREAM_MIME_TYPE, JSON_MIME_TYPE};
@@ -21,14 +21,16 @@ use sse_stream::{KeepAlive, Sse, SseBody, SseStream};
 use tokio::sync::mpsc::{Receiver, Sender};
 
 use crate::http::Response;
+use crate::mcp::ClientError;
+use crate::mcp::execution_bridge::SessionHost;
 use crate::mcp::handler::{Relay, RelayInputs};
-use crate::mcp::mergestream::Messages;
+use crate::mcp::rbac::CelExecWrapper;
 use crate::mcp::streamablehttp::{ServerSseMessage, StreamableHttpPostResponse};
 use crate::mcp::upstream::{IncomingRequestContext, UpstreamError};
-use crate::mcp::{ClientError, rbac};
 use crate::proxy::ProxyError;
 use crate::telemetry::log::{AsyncLog, SpanWriteOnDrop};
 use crate::{mcp, *};
+use gateway_mcp::execution::{DispatchError, DispatchOutcome, RouteContext};
 
 #[derive(Debug, Clone)]
 pub struct Session {
@@ -47,6 +49,35 @@ struct SessionEntry {
 }
 
 const SESSION_REAP_INTERVAL: Duration = Duration::from_secs(30);
+
+async fn dispatch_component(
+	relay: &Relay,
+	request: JsonRpcRequest<ClientRequest>,
+	ctx: IncomingRequestContext,
+	span: &mut SpanWriteOnDrop,
+	log: &AsyncLog<crate::mcp::MCPInfo>,
+	cel: CelExecWrapper,
+	mcp_log: Option<AsyncLog<crate::mcp::MCPInfo>>,
+) -> Result<Response, UpstreamError> {
+	let id = request.id.clone();
+	let method = request.request.method().to_string();
+	let downstream_modern = super::handler::ctx_downstream_modern(&ctx);
+	let route_context = RouteContext {
+		default_target: relay.default_target_name(),
+	};
+	let mut host = SessionHost::new(relay, span, log, cel);
+	match gateway_mcp::execution::dispatch(request, route_context, &mut host, ctx).await {
+		Ok(DispatchOutcome::Messages(stream)) => {
+			super::handler::messages_to_response(id, stream, mcp_log, downstream_modern)
+		},
+		Ok(DispatchOutcome::Unsupported) => Err(UpstreamError::InvalidMethod(method)),
+		Err(DispatchError::Host(error)) => Err(error),
+		Err(DispatchError::Route(gateway_mcp::routing::Error::UnsupportedReference)) => {
+			Err(UpstreamError::InvalidMethod(method))
+		},
+		Err(DispatchError::Route(error)) => Err(UpstreamError::InvalidRequest(error.to_string())),
+	}
+}
 
 impl Session {
 	/// send a message to upstream server(s)
@@ -89,20 +120,21 @@ impl Session {
 				client_info.protocol_version = protocol_version;
 			}
 			let init_request = rmcp::model::InitializeRequest::new(client_info);
-			// first, determine how widely to send the initialize
-			match request_type {
-				Some(ClientRequest::CallToolRequest(_)) | Some(ClientRequest::GetPromptRequest(_)) => {
-					// Single-target methods only hit one backend, so initialize/initialized should be scoped
-					// to that backend rather than fanning out.
-					let name = match request_type {
-						Some(ClientRequest::CallToolRequest(ctr)) => ctr.params.name.to_string(),
-						Some(ClientRequest::GetPromptRequest(gpr)) => gpr.params.name.clone(),
-						_ => unreachable!("match arm guarantees single-target request type"),
-					};
-					let (service_name, _) = match self.relay.parse_resource_name(&name) {
-						Ok(target) => target,
-						Err(err) => return Self::handle_error(req_id.clone(), Err(err)).await,
-					};
+			let target = match gateway_mcp::routing::legacy_initialization_target(
+				self.relay.default_target_name(),
+				request_type,
+			) {
+				Ok(target) => target,
+				Err(error) => {
+					return Self::handle_error(
+						req_id.clone(),
+						Err(UpstreamError::InvalidRequest(error.to_string())),
+					)
+					.await;
+				},
+			};
+			match target.as_deref() {
+				Some(service_name) => {
 					let res = self
 						.send_init_single(parts.clone(), init_request, service_name)
 						.await;
@@ -148,101 +180,8 @@ impl Session {
 	}
 
 	pub fn with_inputs(mut self, inputs: RelayInputs) -> Self {
-		self.relay = Arc::new(Relay {
-			upstreams: self.relay.upstreams.clone(),
-			policies: inputs.policies,
-			mcp_guardrails: inputs.mcp_guardrails,
-			security_pipeline: inputs.security_pipeline,
-			security_audit: inputs.security_audit,
-			policy_client: inputs.client,
-		});
+		self.relay = Arc::new(self.relay.with_inputs(inputs));
 		self
-	}
-
-	fn authorize_prompt_request<'a, 'b: 'a>(
-		&'a self,
-		name: &'b str,
-		method: &str,
-		span: &mut SpanWriteOnDrop,
-		log: &AsyncLog<mcp::MCPInfo>,
-		cel: &rbac::CelExecWrapper,
-	) -> Result<(&'a str, &'b str), UpstreamError> {
-		let (service_name, prompt) = self.relay.parse_resource_name(name)?;
-		span.rename_span(format!("{method} {service_name}"));
-		log.non_atomic_mutate(|l| {
-			l.set_prompt(service_name.to_string(), prompt.to_string());
-		});
-		if !self.relay.policies.validate(
-			&rbac::ResourceType::Prompt(rbac::ResourceId::new(
-				service_name.to_string(),
-				prompt.to_string(),
-			)),
-			cel,
-		) {
-			return Err(UpstreamError::Authorization {
-				resource_type: "prompt".to_string(),
-				resource_name: name.to_string(),
-			});
-		}
-		Ok((service_name, prompt))
-	}
-
-	fn authorize_resource_request(
-		&self,
-		service_name: &str,
-		uri: &str,
-		method: &str,
-		span: &mut SpanWriteOnDrop,
-		log: &AsyncLog<mcp::MCPInfo>,
-		cel: &rbac::CelExecWrapper,
-	) -> Result<(), UpstreamError> {
-		span.rename_span(format!("{method} {service_name}"));
-		log.non_atomic_mutate(|l| {
-			l.set_resource(service_name.to_string(), uri.to_string());
-		});
-		if !self.relay.policies.validate(
-			&rbac::ResourceType::Resource(rbac::ResourceId::new(
-				service_name.to_string(),
-				uri.to_string(),
-			)),
-			cel,
-		) {
-			return Err(UpstreamError::Authorization {
-				resource_type: "resource".to_string(),
-				resource_name: uri.to_string(),
-			});
-		}
-		Ok(())
-	}
-
-	#[allow(clippy::too_many_arguments)]
-	async fn authorize_with_ctx<P>(
-		&self,
-		backend: &str,
-		method: &str,
-		params: &mut P,
-		ctx: &mut IncomingRequestContext,
-		res: rbac::ResourceType,
-		resource_type: &str,
-		resource_name: &str,
-	) -> Result<(), UpstreamError>
-	where
-		P: serde::Serialize + serde::de::DeserializeOwned,
-	{
-		// run guardrails before other policies, as it may add context to CEL
-		self
-			.relay
-			.maybe_run_guardrails_call_request(backend, method, params, ctx)
-			.await?;
-		let cel = rbac::CelExecWrapper::new(ctx.as_request().map(|_| ()));
-		if self.relay.policies.validate(&res, &cel) {
-			Ok(())
-		} else {
-			Err(UpstreamError::Authorization {
-				resource_type: resource_type.to_string(),
-				resource_name: resource_name.to_string(),
-			})
-		}
 	}
 
 	/// delete any active sessions
@@ -276,7 +215,7 @@ impl Session {
 				let (body, _encoding) =
 					crate::http::compression::decompress_body(resp.into_body(), content_encoding.as_ref())
 						.map_err(ClientError::new)?;
-				let event_stream = SseStream::from_byte_stream(body.into_data_stream()).boxed();
+				let event_stream = SseStream::from_bytes_stream(body.into_data_stream()).boxed();
 				StreamableHttpPostResponse::Sse(event_stream, None)
 			},
 			Some(ct) if ct.as_bytes().starts_with(JSON_MIME_TYPE.as_bytes()) => {
@@ -291,7 +230,7 @@ impl Session {
 				return Ok(());
 			},
 		};
-		let mut ms: Messages = sse.try_into()?;
+		let mut ms = crate::mcp::mergestream::from_post_response(sse)?;
 		tokio::spawn(async move {
 			while let Some(Ok(msg)) = ms.next().await {
 				let Ok(()) = tx.send(msg).await else {
@@ -320,6 +259,10 @@ impl Session {
 	) -> Result<Response, ProxyError> {
 		match d {
 			Ok(r) => Ok(r),
+			Err(UpstreamError::Security(error)) => {
+				tracing::warn!(kind = error.kind().as_str(), "MCP security check failed");
+				Err(mcp::Error::Security(req_id, error.kind()).into())
+			},
 			Err(UpstreamError::Http(ClientError::Status(resp))) => {
 				let resp = http::SendDirectResponse::new(*resp)
 					.await
@@ -406,48 +349,16 @@ impl Session {
 		// It's very common to not have any notifications, though.
 		match message {
 			message @ (ClientJsonRpcMessage::Response(_) | ClientJsonRpcMessage::Error(_)) => {
-				let mut ctx = IncomingRequestContext::new(&parts);
-				let http = ctx.as_request();
-				let access = http
-					.extensions()
-					.get::<super::session_security::SessionAccess>()
-					.ok_or_else(|| {
-						UpstreamError::InvalidRequest("reverse response requires protected session".into())
-					})?;
-				let (server, message, action, response_ticket) =
-					super::session_security::reverse::response(access, message)?;
-				if let Some(ticket) = &response_ticket {
-					ctx.extensions_mut().insert(ticket.clone());
-				}
-				ctx
-					.extensions_mut()
-					.insert(super::security::McpEgressContext {
-						server: server.clone(),
-						action,
-						supported: true,
-					});
-				let send = Box::pin(
+				Box::pin(
 					self
 						.relay
-						.upstreams
-						.get(&server)?
-						.generic_response(message, &ctx),
-				);
-				if let Some(ticket) = &response_ticket {
-					ticket.run(send).await?;
-				} else {
-					send.await?;
-				}
-				Ok(
-					::http::Response::builder()
-						.status(StatusCode::ACCEPTED)
-						.body(http::Body::empty())
-						.expect("static response"),
+						.send_reverse_response(message, IncomingRequestContext::new(&parts)),
 				)
+				.await
 			},
 			ClientJsonRpcMessage::Request(mut r) => {
 				let method = r.request.method().to_string();
-				let mut ctx = IncomingRequestContext::new(&parts);
+				let ctx = IncomingRequestContext::new(&parts);
 				let (mut span, log, cel) = mcp::handler::setup_request_log(parts, &method);
 				let session_id = self.id.to_string();
 				log.non_atomic_mutate(|l| {
@@ -506,17 +417,16 @@ impl Session {
 							self.strip_unsupported_client_capabilities(&mut ir.params.capabilities);
 						}
 
-						let pv = ir.params.protocol_version.clone();
-						let res = Box::pin(
-							self.relay.send_fanout(
-								r,
-								ctx,
-								self
-									.relay
-									.merge_initialize(pv, self.relay.is_multiplexing()),
-							),
-						)
-						.await;
+						let res = Box::pin(dispatch_component(
+							&self.relay,
+							r,
+							ctx,
+							&mut span,
+							&log,
+							cel,
+							None,
+						))
+						.await?;
 						if self.binding.is_none()
 							&& let Some(sessions) = self.relay.get_sessions()
 						{
@@ -527,280 +437,39 @@ impl Session {
 								self.id = id.into();
 							}
 						}
-						res
+						Ok(res)
 					},
-					ClientRequest::DiscoverRequest(_) => {
-						Box::pin(self.relay.send_fanout(
+					_ => {
+						let mcp_log =
+							matches!(&r.request, ClientRequest::CallToolRequest(_)).then(|| log.clone());
+						Box::pin(dispatch_component(
+							&self.relay,
 							r,
 							ctx,
-							self.relay.merge_discover(self.relay.is_multiplexing()),
-						))
-						.await
-					},
-					ClientRequest::ListToolsRequest(_) => {
-						let merge = self.relay.merge_tools(
-							r.id.to_string(),
-							crate::mcp::security::identity_from_context(&ctx),
-						);
-						Box::pin(self.relay.send_fanout(r, ctx, merge)).await
-					},
-					// TODO(keithmattix): should we forward pings or should we do our own independent pings
-					// as heuristic for the connection pool (and handle client pings as a local reply from agentgateway)?
-					ClientRequest::PingRequest(_) | ClientRequest::SetLevelRequest(_) => {
-						Box::pin(self.relay.send_fanout(r, ctx, self.relay.merge_empty())).await
-					},
-					ClientRequest::SubscriptionsListenRequest(slr) => {
-						let subscription_id = r.id.clone();
-						let target_names = if let Some(resource_subscriptions) =
-							&mut slr.params.notifications.resource_subscriptions
-						{
-							let mut target_name = None;
-							for uri in resource_subscriptions.iter_mut() {
-								let requested_uri = uri.clone();
-								let (service_name, original_uri) = self.relay.parse_resource_uri(&requested_uri)?;
-								if let Some(target_name) = &target_name
-									&& target_name != service_name
-								{
-									return Err(UpstreamError::InvalidRequest(
-										"subscriptions/listen resourceSubscriptions must target one upstream"
-											.to_string(),
-									));
-								}
-								self.authorize_resource_request(
-									service_name,
-									&original_uri,
-									&method,
-									&mut span,
-									&log,
-									&cel,
-								)?;
-								target_name = Some(service_name.to_string());
-								*uri = original_uri;
-							}
-							target_name.map(|target| vec![target])
-						} else {
-							None
-						};
-						Box::pin(self.relay.send_fanout_to(
-							r,
-							ctx,
-							self.relay.merge_subscriptions_listen(subscription_id),
-							target_names,
-						))
-						.await
-					},
-					ClientRequest::ListPromptsRequest(_) => {
-						let merge = self.relay.merge_prompts(
-							r.id.to_string(),
-							crate::mcp::security::identity_from_context(&ctx),
-						);
-						Box::pin(self.relay.send_fanout(r, ctx, merge)).await
-					},
-					ClientRequest::ListResourcesRequest(_) => {
-						let merge = self.relay.merge_resources(
-							r.id.to_string(),
-							crate::mcp::security::identity_from_context(&ctx),
-						);
-						Box::pin(self.relay.send_fanout(r, ctx, merge)).await
-					},
-					ClientRequest::ListResourceTemplatesRequest(_) => {
-						let merge = self.relay.merge_resource_templates(
-							r.id.to_string(),
-							crate::mcp::security::identity_from_context(&ctx),
-						);
-						Box::pin(self.relay.send_fanout(r, ctx, merge)).await
-					},
-					ClientRequest::CallToolRequest(ctr) => {
-						let name = ctr.params.name.clone();
-						let (service_name, tool) = self.relay.parse_resource_name(&name)?;
-						span.rename_span(format!("{method} {service_name}"));
-						let call_arguments = ctr.params.arguments.clone();
-						log.non_atomic_mutate(|l| {
-							l.set_tool(service_name.to_string(), tool.to_string());
-							l.capture_call_arguments(call_arguments);
-						});
-						let tn = tool.to_string();
-						ctr.params.name = tn.into();
-						Box::pin(self.authorize_with_ctx(
-							service_name,
-							mcp::guardrails::methods::TOOLS_CALL,
-							&mut ctr.params,
-							&mut ctx,
-							rbac::ResourceType::Tool(rbac::ResourceId::new(
-								service_name.to_string(),
-								tool.to_string(),
-							)),
-							"tool",
-							&name,
-						))
-						.await?;
-						Box::pin(
-							self
-								.relay
-								.send_single(r, ctx, service_name, Some(log.clone())),
-						)
-						.await
-					},
-					ClientRequest::GetPromptRequest(gpr) => {
-						let name = gpr.params.name.clone();
-						let (service_name, prompt) = self.relay.parse_resource_name(&name)?;
-						span.rename_span(format!("{method} {service_name}"));
-						log.non_atomic_mutate(|l| {
-							l.set_prompt(service_name.to_string(), prompt.to_string());
-						});
-						gpr.params.name = prompt.to_string();
-						Box::pin(self.authorize_with_ctx(
-							service_name,
-							mcp::guardrails::methods::PROMPTS_GET,
-							&mut gpr.params,
-							&mut ctx,
-							rbac::ResourceType::Prompt(rbac::ResourceId::new(
-								service_name.to_string(),
-								prompt.to_string(),
-							)),
-							"prompt",
-							&name,
-						))
-						.await?;
-						Box::pin(self.relay.send_single(r, ctx, service_name, None)).await
-					},
-					ClientRequest::ReadResourceRequest(rrr) => {
-						let uri = rrr.params.uri.clone();
-						let (service_name, original_uri) = self.relay.parse_resource_uri(&uri)?;
-						span.rename_span(format!("{method} {service_name}"));
-						log.non_atomic_mutate(|l| {
-							l.set_resource(service_name.to_string(), original_uri.to_string());
-						});
-						rrr.params.uri = original_uri.clone();
-						Box::pin(self.authorize_with_ctx(
-							service_name,
-							mcp::guardrails::methods::RESOURCES_READ,
-							&mut rrr.params,
-							&mut ctx,
-							rbac::ResourceType::Resource(rbac::ResourceId::new(
-								service_name.to_string(),
-								original_uri,
-							)),
-							"resource",
-							&uri,
-						))
-						.await?;
-						Box::pin(self.relay.send_single(r, ctx, service_name, None)).await
-					},
-					ClientRequest::SubscribeRequest(sr) => {
-						let uri = sr.params.uri.clone();
-						let (service_name, original_uri) = self.relay.parse_resource_uri(&uri)?;
-						self.authorize_resource_request(
-							service_name,
-							&original_uri,
-							&method,
 							&mut span,
 							&log,
-							&cel,
-						)?;
-						sr.params.uri = original_uri;
-						Box::pin(self.relay.send_single(r, ctx, service_name, None)).await
-					},
-					ClientRequest::UnsubscribeRequest(ur) => {
-						let uri = ur.params.uri.clone();
-						let (service_name, original_uri) = self.relay.parse_resource_uri(&uri)?;
-						self.authorize_resource_request(
-							service_name,
-							&original_uri,
-							&method,
-							&mut span,
-							&log,
-							&cel,
-						)?;
-						ur.params.uri = original_uri;
-						Box::pin(self.relay.send_single(r, ctx, service_name, None)).await
-					},
-
-					ClientRequest::ListTasksRequest(_) | ClientRequest::CustomRequest(_) => {
-						// TODO(https://github.com/agentgateway/agentgateway/issues/404)
-						Err(UpstreamError::InvalidMethod(r.request.method().to_string()))
-					},
-					ClientRequest::GetTaskRequest(_)
-					| ClientRequest::GetTaskPayloadRequest(_)
-					| ClientRequest::CancelTaskRequest(_) => {
-						let server = super::session_security::tasks::route(&mut r, &mut ctx)?;
-						Box::pin(self.relay.send_single(r, ctx, &server, None)).await
-					},
-					ClientRequest::CompleteRequest(cr) => match &cr.params.r#ref {
-						Reference::Prompt(prompt) => {
-							let name = prompt.name.clone();
-							let (service_name, prompt_name) =
-								self.authorize_prompt_request(&name, &method, &mut span, &log, &cel)?;
-							cr.params.r#ref = Reference::for_prompt(prompt_name.to_string());
-							Box::pin(self.relay.send_single(r, ctx, service_name, None)).await
-						},
-						Reference::Resource(resource) => {
-							let uri = resource.uri.clone();
-							let (service_name, original_uri) = self.relay.parse_resource_uri(&uri)?;
-							self.authorize_resource_request(
-								service_name,
-								&original_uri,
-								&method,
-								&mut span,
-								&log,
-								&cel,
-							)?;
-							cr.params.r#ref = Reference::for_resource(original_uri);
-							Box::pin(self.relay.send_single(r, ctx, service_name, None)).await
-						},
-						_ => Err(UpstreamError::InvalidMethod(method)),
+							cel,
+							mcp_log,
+						))
+						.await
 					},
 				}
 			},
 			ClientJsonRpcMessage::Notification(mut r) => {
 				if matches!(r.notification, ClientNotification::CancelledNotification(_))
-					&& let Some(access) = parts
+					&& parts
 						.extensions
 						.get::<super::session_security::SessionAccess>()
+						.is_some()
 				{
-					let server = super::session_security::reverse::cancel(access, &r.notification)?;
-					let mut ctx = IncomingRequestContext::new(&parts);
-					let action = security_pipeline::mcp_operation_for_identity(
-						uuid::Uuid::new_v4().to_string(),
-						crate::security::identity_from_extensions(&parts.extensions),
-						"notifications/cancelled/request",
-						security_types::ResourceType::McpServer,
-						&server,
-					);
-					ctx
-						.extensions_mut()
-						.insert(super::security::McpEgressContext {
-							server: server.clone(),
-							action,
-							supported: true,
-						});
-					// Drop arbitrary client cancellation reasons instead of disclosing them.
-					if let ClientNotification::CancelledNotification(n) = &mut r.notification {
-						n.params.reason = None;
-					}
-					Box::pin(
+					return Box::pin(
 						self
 							.relay
-							.upstreams
-							.get(&server)?
-							.generic_notification(r.notification, &ctx),
+							.send_reverse_cancel(r.notification, IncomingRequestContext::new(&parts)),
 					)
-					.await?;
-					return Ok(
-						::http::Response::builder()
-							.status(StatusCode::ACCEPTED)
-							.body(http::Body::empty())
-							.expect("static response"),
-					);
+					.await;
 				}
-				let method = match &r.notification {
-					ClientNotification::CancelledNotification(r) => r.method.as_str(),
-					ClientNotification::ProgressNotification(r) => r.method.as_str(),
-					ClientNotification::InitializedNotification(r) => r.method.as_str(),
-					ClientNotification::RootsListChangedNotification(r) => r.method.as_str(),
-					ClientNotification::TaskStatusNotification(r) => r.method.as_str(),
-					ClientNotification::CustomNotification(r) => r.method.as_str(),
-				};
+				let method = gateway_mcp::notification_method(&r.notification);
 				let ctx = IncomingRequestContext::new(&parts);
 				let (_span, log, _cel) = mcp::handler::setup_request_log(parts, method);
 				let session_id = self.id.to_string();
@@ -859,6 +528,24 @@ impl SessionManager {
 			sessions: Arc::new(RwLock::new(HashMap::new())),
 			idle_reaper: OnceLock::new(),
 		})
+	}
+
+	pub(super) fn shutdown(&self) {
+		if let Some(abort) = self.idle_reaper.get() {
+			abort.abort();
+		}
+		let mut sessions = self
+			.sessions
+			.write()
+			.unwrap_or_else(|error| error.into_inner());
+		for entry in sessions.values() {
+			if let Some(binding) = &entry.session.binding {
+				binding
+					.closed
+					.store(true, std::sync::atomic::Ordering::Release);
+			}
+		}
+		sessions.clear();
 	}
 
 	pub fn ensure_idle_running(&self) {

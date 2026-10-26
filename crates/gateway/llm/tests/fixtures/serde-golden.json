@@ -1,0 +1,3060 @@
+{
+  "provenance": {
+    "head": "5d43f288a9823577fd6500bb48250518cfa4db3b",
+    "capturedBeforeProductionMigration": true,
+    "sourceHashes": {
+      "crates/gateway/runtime/src/llm/mod.rs": "543da1e2deb005c24fbb3cc619b8be80ff9d31b2cf1dff3d8bd181613d1623b3",
+      "crates/gateway/runtime/src/llm/types/messages.rs": "2d284dc85d633631a5a511de20056dfeca8bebe6696a42932b20bc58f2cf7fea",
+      "crates/gateway/runtime/src/llm/types/responses.rs": "24d41e0a6e44c876d663c6dd55d9bf5d74d2b94ab8e77314e874b819c2256f9a",
+      "crates/gateway/runtime/src/llm/types/completions.rs": "57f3d9d133bf2ea896e47dc1df5cf0eb35dfef7c71fc662769dd4d72f0754866",
+      "crates/gateway/runtime/src/llm/types/mod.rs": "1d0d7f304180fb552bfcfa6f84a2dcdcf26a3d5dc918e66f871d1be476b900e5",
+      "crates/gateway/runtime/src/llm/types/rerank.rs": "f9436cfb9ebeccaf1282379a2d00c1254f8301fd231e1c866f9ca29894008169",
+      "crates/gateway/runtime/src/llm/types/bedrock.rs": "68bf4ec3a167f32f4645bd41a60abc81f9c8c98ac5792b511b5730e2294218f4",
+      "crates/gateway/runtime/src/llm/types/embeddings.rs": "2c53efe0cb1c1b9df9925c160eb68cd4736133db4304d9cb118b6eaad5456d10",
+      "crates/gateway/runtime/src/llm/types/vertex.rs": "a032abdf975b9bdfe59cd8bd983c9f4388745422677c320cfde5a56a38c6be7d",
+      "crates/gateway/runtime/src/llm/types/count_tokens.rs": "150d661ceac53fd6b6ab3a98d3e3a9ec73f5523aa6bf42774e11327be692a609",
+      "crates/gateway/runtime/src/llm/types/detect.rs": "3041f5071028df6061bff7afceca94ae3766b8800ce976bcdfb933e7c471464b"
+    },
+    "captureCommand": "cargo test --offline -p ai-security-platform-runtime --lib capture_original_wire_contracts",
+    "observationsSha256": "5eca124c147534b7ea2ec9889f432a89f59eaaeff0de42daae78143d923cf787"
+  },
+  "cases": [
+    {
+      "kind": "chat-request",
+      "name": "chat-request-normal",
+      "input": "{\"model\":\"gpt-4.1\",\"messages\":[{\"role\":\"user\",\"content\":\"你好\"}]}",
+      "expected": {
+        "json": {
+          "messages": [
+            {
+              "role": "user",
+              "content": "你好"
+            }
+          ],
+          "model": "gpt-4.1"
+        },
+        "wire": "{\"messages\":[{\"role\":\"user\",\"content\":\"你好\"}],\"model\":\"gpt-4.1\"}"
+      }
+    },
+    {
+      "kind": "chat-request",
+      "name": "chat-request-unknown",
+      "input": "{\"model\":\"gpt-4.1\",\"messages\":[{\"role\":\"user\",\"content\":\"你好\"}],\"future_extension\":{\"nested\":[1,null,\"值\"]}}",
+      "expected": {
+        "json": {
+          "messages": [
+            {
+              "role": "user",
+              "content": "你好"
+            }
+          ],
+          "model": "gpt-4.1",
+          "future_extension": {
+            "nested": [
+              1,
+              null,
+              "值"
+            ]
+          }
+        },
+        "wire": "{\"messages\":[{\"role\":\"user\",\"content\":\"你好\"}],\"model\":\"gpt-4.1\",\"future_extension\":{\"nested\":[1,null,\"值\"]}}"
+      }
+    },
+    {
+      "kind": "chat-request",
+      "name": "chat-request-empty",
+      "input": "{}",
+      "expected": {
+        "error": "missing field `messages` at line 1 column 2",
+        "category": "Data",
+        "line": 1,
+        "column": 2
+      }
+    },
+    {
+      "kind": "chat-request",
+      "name": "chat-request-null",
+      "input": "null",
+      "expected": {
+        "error": "invalid type: null, expected struct Request at line 1 column 4",
+        "category": "Data",
+        "line": 1,
+        "column": 4
+      }
+    },
+    {
+      "kind": "chat-request",
+      "name": "chat-request-wrong-root",
+      "input": "[]",
+      "expected": {
+        "error": "invalid type: sequence, expected struct Request at line 1 column 0",
+        "category": "Data",
+        "line": 1,
+        "column": 0
+      }
+    },
+    {
+      "kind": "chat-request",
+      "name": "chat-request-truncated",
+      "input": "{",
+      "expected": {
+        "error": "EOF while parsing an object at line 1 column 1",
+        "category": "Eof",
+        "line": 1,
+        "column": 1
+      }
+    },
+    {
+      "kind": "chat-request",
+      "name": "chat-request-empty-messages",
+      "input": "{\"messages\":[]}",
+      "expected": {
+        "json": {
+          "messages": []
+        },
+        "wire": "{\"messages\":[]}"
+      }
+    },
+    {
+      "kind": "chat-request",
+      "name": "chat-request-multimodal",
+      "input": "{\"messages\":[{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"look\"},{\"type\":\"image_url\",\"image_url\":{\"url\":\"data:image/png;base64,AA==\"}}]}]}",
+      "expected": {
+        "json": {
+          "messages": [
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "look"
+                },
+                {
+                  "type": "image_url",
+                  "image_url": {
+                    "url": "data:image/png;base64,AA=="
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        "wire": "{\"messages\":[{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"look\"},{\"type\":\"image_url\",\"image_url\":{\"url\":\"data:image/png;base64,AA==\"}}]}]}"
+      }
+    },
+    {
+      "kind": "chat-request",
+      "name": "chat-request-tool-call",
+      "input": "{\"messages\":[{\"role\":\"assistant\",\"tool_calls\":[{\"id\":\"c1\",\"type\":\"function\",\"function\":{\"name\":\"lookup\",\"arguments\":\"{\\\"tenant\\\":\\\"a\\\",\\\"n\\\":2}\"}}],\"reasoning_content\":\"thought\",\"reasoning_signature\":\"sig\"}],\"tools\":[{\"type\":\"function\",\"function\":{\"name\":\"lookup\",\"parameters\":{\"type\":\"object\"}}}]}",
+      "expected": {
+        "json": {
+          "messages": [
+            {
+              "role": "assistant",
+              "tool_calls": [
+                {
+                  "id": "c1",
+                  "type": "function",
+                  "function": {
+                    "name": "lookup",
+                    "arguments": "{\"tenant\":\"a\",\"n\":2}"
+                  }
+                }
+              ],
+              "reasoning_content": "thought",
+              "reasoning_signature": "sig"
+            }
+          ],
+          "tools": [
+            {
+              "type": "function",
+              "function": {
+                "name": "lookup",
+                "parameters": {
+                  "type": "object"
+                }
+              }
+            }
+          ]
+        },
+        "wire": "{\"messages\":[{\"role\":\"assistant\",\"tool_calls\":[{\"id\":\"c1\",\"type\":\"function\",\"function\":{\"name\":\"lookup\",\"arguments\":\"{\\\"tenant\\\":\\\"a\\\",\\\"n\\\":2}\"}}],\"reasoning_content\":\"thought\",\"reasoning_signature\":\"sig\"}],\"tools\":[{\"type\":\"function\",\"function\":{\"name\":\"lookup\",\"parameters\":{\"type\":\"object\"}}}]}"
+      }
+    },
+    {
+      "kind": "chat-request",
+      "name": "chat-request-invalid-temperature",
+      "input": "{\"messages\":[],\"temperature\":\"hot\"}",
+      "expected": {
+        "error": "invalid type: string \"hot\", expected f32 at line 1 column 34",
+        "category": "Data",
+        "line": 1,
+        "column": 34
+      }
+    },
+    {
+      "kind": "chat-request",
+      "name": "chat-request-missing-role",
+      "input": "{\"messages\":[{\"content\":\"x\"}]}",
+      "expected": {
+        "error": "missing field `role` at line 1 column 28",
+        "category": "Data",
+        "line": 1,
+        "column": 28
+      }
+    },
+    {
+      "kind": "chat-request",
+      "name": "chat-request-duplicate-model",
+      "input": "{\"messages\":[],\"model\":\"a\",\"model\":\"b\"}",
+      "expected": {
+        "error": "duplicate field `model` at line 1 column 34",
+        "category": "Data",
+        "line": 1,
+        "column": 34
+      }
+    },
+    {
+      "kind": "chat-request",
+      "name": "chat-request-null-options",
+      "input": "{\"messages\":[],\"model\":null,\"tools\":null}",
+      "expected": {
+        "json": {
+          "messages": []
+        },
+        "wire": "{\"messages\":[]}"
+      }
+    },
+    {
+      "kind": "chat-response",
+      "name": "chat-response-normal",
+      "input": "{\"model\":\"gpt-4.1\",\"choices\":[{\"message\":{\"role\":\"assistant\",\"content\":\"ok\"}}],\"usage\":{\"prompt_tokens\":10,\"completion_tokens\":3,\"total_tokens\":13,\"prompt_tokens_details\":{\"cached_tokens\":4,\"audio_tokens\":1},\"completion_tokens_details\":{\"reasoning_tokens\":2}}}",
+      "expected": {
+        "json": {
+          "model": "gpt-4.1",
+          "usage": {
+            "prompt_tokens": 10,
+            "completion_tokens": 3,
+            "total_tokens": 13,
+            "completion_tokens_details": {
+              "reasoning_tokens": 2
+            },
+            "prompt_tokens_details": {
+              "cached_tokens": 4,
+              "audio_tokens": 1
+            }
+          },
+          "choices": [
+            {
+              "message": {
+                "content": "ok",
+                "role": "assistant"
+              }
+            }
+          ]
+        },
+        "wire": "{\"model\":\"gpt-4.1\",\"usage\":{\"prompt_tokens\":10,\"completion_tokens\":3,\"total_tokens\":13,\"completion_tokens_details\":{\"reasoning_tokens\":2},\"prompt_tokens_details\":{\"cached_tokens\":4,\"audio_tokens\":1}},\"choices\":[{\"message\":{\"content\":\"ok\",\"role\":\"assistant\"}}]}"
+      }
+    },
+    {
+      "kind": "chat-response",
+      "name": "chat-response-unknown",
+      "input": "{\"model\":\"gpt-4.1\",\"choices\":[{\"message\":{\"role\":\"assistant\",\"content\":\"ok\"}}],\"usage\":{\"prompt_tokens\":10,\"completion_tokens\":3,\"total_tokens\":13,\"prompt_tokens_details\":{\"cached_tokens\":4,\"audio_tokens\":1},\"completion_tokens_details\":{\"reasoning_tokens\":2}},\"future_extension\":{\"nested\":[1,null,\"值\"]}}",
+      "expected": {
+        "json": {
+          "model": "gpt-4.1",
+          "usage": {
+            "prompt_tokens": 10,
+            "completion_tokens": 3,
+            "total_tokens": 13,
+            "completion_tokens_details": {
+              "reasoning_tokens": 2
+            },
+            "prompt_tokens_details": {
+              "cached_tokens": 4,
+              "audio_tokens": 1
+            }
+          },
+          "choices": [
+            {
+              "message": {
+                "content": "ok",
+                "role": "assistant"
+              }
+            }
+          ],
+          "future_extension": {
+            "nested": [
+              1,
+              null,
+              "值"
+            ]
+          }
+        },
+        "wire": "{\"model\":\"gpt-4.1\",\"usage\":{\"prompt_tokens\":10,\"completion_tokens\":3,\"total_tokens\":13,\"completion_tokens_details\":{\"reasoning_tokens\":2},\"prompt_tokens_details\":{\"cached_tokens\":4,\"audio_tokens\":1}},\"choices\":[{\"message\":{\"content\":\"ok\",\"role\":\"assistant\"}}],\"future_extension\":{\"nested\":[1,null,\"值\"]}}"
+      }
+    },
+    {
+      "kind": "chat-response",
+      "name": "chat-response-empty",
+      "input": "{}",
+      "expected": {
+        "error": "missing field `model` at line 1 column 2",
+        "category": "Data",
+        "line": 1,
+        "column": 2
+      }
+    },
+    {
+      "kind": "chat-response",
+      "name": "chat-response-null",
+      "input": "null",
+      "expected": {
+        "error": "invalid type: null, expected struct Response at line 1 column 4",
+        "category": "Data",
+        "line": 1,
+        "column": 4
+      }
+    },
+    {
+      "kind": "chat-response",
+      "name": "chat-response-wrong-root",
+      "input": "[]",
+      "expected": {
+        "error": "invalid type: sequence, expected struct Response at line 1 column 0",
+        "category": "Data",
+        "line": 1,
+        "column": 0
+      }
+    },
+    {
+      "kind": "chat-response",
+      "name": "chat-response-truncated",
+      "input": "{",
+      "expected": {
+        "error": "EOF while parsing an object at line 1 column 1",
+        "category": "Eof",
+        "line": 1,
+        "column": 1
+      }
+    },
+    {
+      "kind": "chat-response",
+      "name": "chat-response-defaults",
+      "input": "{\"model\":\"x\"}",
+      "expected": {
+        "json": {
+          "model": "x",
+          "usage": null,
+          "choices": []
+        },
+        "wire": "{\"model\":\"x\",\"usage\":null,\"choices\":[]}"
+      }
+    },
+    {
+      "kind": "chat-response",
+      "name": "chat-response-empty-choice",
+      "input": "{\"model\":\"x\",\"choices\":[{}]}",
+      "expected": {
+        "json": {
+          "model": "x",
+          "usage": null,
+          "choices": [
+            {
+              "message": {}
+            }
+          ]
+        },
+        "wire": "{\"model\":\"x\",\"usage\":null,\"choices\":[{\"message\":{}}]}"
+      }
+    },
+    {
+      "kind": "chat-response",
+      "name": "chat-response-negative-usage",
+      "input": "{\"model\":\"x\",\"usage\":{\"prompt_tokens\":-1}}",
+      "expected": {
+        "error": "invalid value: integer `-1`, expected u32 at line 1 column 40",
+        "category": "Data",
+        "line": 1,
+        "column": 40
+      }
+    },
+    {
+      "kind": "chat-response",
+      "name": "chat-response-tool-result",
+      "input": "{\"model\":\"x\",\"choices\":[{\"message\":{\"role\":\"assistant\",\"tool_calls\":[{\"function\":{\"arguments\":\"{}\"}}]}}]}",
+      "expected": {
+        "json": {
+          "model": "x",
+          "usage": null,
+          "choices": [
+            {
+              "message": {
+                "role": "assistant",
+                "tool_calls": [
+                  {
+                    "function": {
+                      "arguments": "{}"
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        "wire": "{\"model\":\"x\",\"usage\":null,\"choices\":[{\"message\":{\"role\":\"assistant\",\"tool_calls\":[{\"function\":{\"arguments\":\"{}\"}}]}}]}"
+      }
+    },
+    {
+      "kind": "chat-typed-request",
+      "name": "chat-typed-request-normal",
+      "input": "{\"model\":\"gpt-4.1\",\"messages\":[{\"role\":\"assistant\",\"content\":null,\"reasoning_content\":\"thought\",\"reasoning_signature\":\"sig\",\"tool_calls\":[{\"id\":\"call1\",\"type\":\"function\",\"function\":{\"name\":\"lookup\",\"arguments\":\"{\\\"x\\\":1}\"}}]}]}",
+      "expected": {
+        "json": {
+          "messages": [
+            {
+              "role": "assistant",
+              "tool_calls": [
+                {
+                  "type": "function",
+                  "id": "call1",
+                  "function": {
+                    "name": "lookup",
+                    "arguments": "{\"x\":1}"
+                  }
+                }
+              ],
+              "reasoning_content": "thought",
+              "reasoning_signature": "sig"
+            }
+          ],
+          "model": "gpt-4.1"
+        },
+        "wire": "{\"messages\":[{\"role\":\"assistant\",\"tool_calls\":[{\"type\":\"function\",\"id\":\"call1\",\"function\":{\"name\":\"lookup\",\"arguments\":\"{\\\"x\\\":1}\"}}],\"reasoning_content\":\"thought\",\"reasoning_signature\":\"sig\"}],\"model\":\"gpt-4.1\"}"
+      }
+    },
+    {
+      "kind": "chat-typed-request",
+      "name": "chat-typed-request-unknown",
+      "input": "{\"model\":\"gpt-4.1\",\"messages\":[{\"role\":\"assistant\",\"content\":null,\"reasoning_content\":\"thought\",\"reasoning_signature\":\"sig\",\"tool_calls\":[{\"id\":\"call1\",\"type\":\"function\",\"function\":{\"name\":\"lookup\",\"arguments\":\"{\\\"x\\\":1}\"}}]}],\"future_extension\":{\"nested\":[1,null,\"值\"]}}",
+      "expected": {
+        "json": {
+          "messages": [
+            {
+              "role": "assistant",
+              "tool_calls": [
+                {
+                  "type": "function",
+                  "id": "call1",
+                  "function": {
+                    "name": "lookup",
+                    "arguments": "{\"x\":1}"
+                  }
+                }
+              ],
+              "reasoning_content": "thought",
+              "reasoning_signature": "sig"
+            }
+          ],
+          "model": "gpt-4.1"
+        },
+        "wire": "{\"messages\":[{\"role\":\"assistant\",\"tool_calls\":[{\"type\":\"function\",\"id\":\"call1\",\"function\":{\"name\":\"lookup\",\"arguments\":\"{\\\"x\\\":1}\"}}],\"reasoning_content\":\"thought\",\"reasoning_signature\":\"sig\"}],\"model\":\"gpt-4.1\"}"
+      }
+    },
+    {
+      "kind": "chat-typed-request",
+      "name": "chat-typed-request-empty",
+      "input": "{}",
+      "expected": {
+        "error": "missing field `messages` at line 1 column 2",
+        "category": "Data",
+        "line": 1,
+        "column": 2
+      }
+    },
+    {
+      "kind": "chat-typed-request",
+      "name": "chat-typed-request-null",
+      "input": "null",
+      "expected": {
+        "error": "invalid type: null, expected struct Request at line 1 column 4",
+        "category": "Data",
+        "line": 1,
+        "column": 4
+      }
+    },
+    {
+      "kind": "chat-typed-request",
+      "name": "chat-typed-request-wrong-root",
+      "input": "[]",
+      "expected": {
+        "error": "invalid length 0, expected struct Request with 31 elements at line 1 column 2",
+        "category": "Data",
+        "line": 1,
+        "column": 2
+      }
+    },
+    {
+      "kind": "chat-typed-request",
+      "name": "chat-typed-request-truncated",
+      "input": "{",
+      "expected": {
+        "error": "EOF while parsing an object at line 1 column 1",
+        "category": "Eof",
+        "line": 1,
+        "column": 1
+      }
+    },
+    {
+      "kind": "chat-typed-request",
+      "name": "chat-typed-request-bad-role",
+      "input": "{\"model\":\"x\",\"messages\":[{\"role\":\"alien\",\"content\":\"x\"}]}",
+      "expected": {
+        "error": "unknown variant `alien`, expected one of `developer`, `system`, `user`, `assistant`, `tool`, `function` at line 1 column 40",
+        "category": "Data",
+        "line": 1,
+        "column": 40
+      }
+    },
+    {
+      "kind": "chat-typed-request",
+      "name": "chat-typed-request-empty-messages",
+      "input": "{\"model\":\"x\",\"messages\":[]}",
+      "expected": {
+        "json": {
+          "messages": [],
+          "model": "x"
+        },
+        "wire": "{\"messages\":[],\"model\":\"x\"}"
+      }
+    },
+    {
+      "kind": "chat-typed-request",
+      "name": "chat-typed-request-vendor-extension",
+      "input": "{\"model\":\"x\",\"messages\":[],\"top_k\":3,\"thinking_budget_tokens\":9}",
+      "expected": {
+        "json": {
+          "messages": [],
+          "model": "x"
+        },
+        "wire": "{\"messages\":[],\"model\":\"x\"}"
+      }
+    },
+    {
+      "kind": "chat-error",
+      "name": "chat-error-normal",
+      "input": "{\"error\":{\"message\":\"bad\",\"type\":\"invalid_request_error\",\"param\":\"messages\",\"code\":\"bad_request\"}}",
+      "expected": {
+        "json": {
+          "event_id": null,
+          "error": {
+            "type": "invalid_request_error",
+            "message": "bad",
+            "param": "messages",
+            "code": "bad_request"
+          }
+        },
+        "wire": "{\"event_id\":null,\"error\":{\"type\":\"invalid_request_error\",\"message\":\"bad\",\"param\":\"messages\",\"code\":\"bad_request\"}}"
+      }
+    },
+    {
+      "kind": "chat-error",
+      "name": "chat-error-unknown",
+      "input": "{\"error\":{\"message\":\"bad\",\"type\":\"invalid_request_error\",\"param\":\"messages\",\"code\":\"bad_request\"},\"future_extension\":{\"nested\":[1,null,\"值\"]}}",
+      "expected": {
+        "json": {
+          "event_id": null,
+          "error": {
+            "type": "invalid_request_error",
+            "message": "bad",
+            "param": "messages",
+            "code": "bad_request"
+          }
+        },
+        "wire": "{\"event_id\":null,\"error\":{\"type\":\"invalid_request_error\",\"message\":\"bad\",\"param\":\"messages\",\"code\":\"bad_request\"}}"
+      }
+    },
+    {
+      "kind": "chat-error",
+      "name": "chat-error-empty",
+      "input": "{}",
+      "expected": {
+        "error": "missing field `error` at line 1 column 2",
+        "category": "Data",
+        "line": 1,
+        "column": 2
+      }
+    },
+    {
+      "kind": "chat-error",
+      "name": "chat-error-null",
+      "input": "null",
+      "expected": {
+        "error": "invalid type: null, expected struct ChatCompletionErrorResponse at line 1 column 4",
+        "category": "Data",
+        "line": 1,
+        "column": 4
+      }
+    },
+    {
+      "kind": "chat-error",
+      "name": "chat-error-wrong-root",
+      "input": "[]",
+      "expected": {
+        "error": "invalid length 0, expected struct ChatCompletionErrorResponse with 2 elements at line 1 column 2",
+        "category": "Data",
+        "line": 1,
+        "column": 2
+      }
+    },
+    {
+      "kind": "chat-error",
+      "name": "chat-error-truncated",
+      "input": "{",
+      "expected": {
+        "error": "EOF while parsing an object at line 1 column 1",
+        "category": "Eof",
+        "line": 1,
+        "column": 1
+      }
+    },
+    {
+      "kind": "chat-error",
+      "name": "chat-error-minimal",
+      "input": "{\"error\":{\"message\":\"oops\"}}",
+      "expected": {
+        "json": {
+          "event_id": null,
+          "error": {
+            "message": "oops"
+          }
+        },
+        "wire": "{\"event_id\":null,\"error\":{\"message\":\"oops\"}}"
+      }
+    },
+    {
+      "kind": "chat-error",
+      "name": "chat-error-wrong-message",
+      "input": "{\"error\":{\"message\":4}}",
+      "expected": {
+        "error": "invalid type: integer `4`, expected a string at line 1 column 21",
+        "category": "Data",
+        "line": 1,
+        "column": 21
+      }
+    },
+    {
+      "kind": "responses-response",
+      "name": "responses-response-normal",
+      "input": "{\"id\":\"r1\",\"status\":\"completed\",\"model\":\"gpt-4.1\",\"output\":[{\"id\":\"m1\",\"type\":\"message\",\"role\":\"assistant\",\"status\":\"completed\",\"content\":[{\"type\":\"output_text\",\"text\":\"ok\",\"annotations\":[]}]}],\"usage\":{\"input_tokens\":20,\"output_tokens\":3,\"input_tokens_details\":{\"cached_tokens\":7},\"output_tokens_details\":{\"reasoning_tokens\":2}}}",
+      "expected": {
+        "json": {
+          "id": "r1",
+          "status": "completed",
+          "output": [
+            {
+              "type": "message",
+              "content": [
+                {
+                  "type": "output_text",
+                  "annotations": [],
+                  "logprobs": null,
+                  "text": "ok"
+                }
+              ],
+              "id": "m1",
+              "role": "assistant",
+              "status": "completed"
+            }
+          ],
+          "model": "gpt-4.1",
+          "usage": {
+            "input_tokens": 20,
+            "output_tokens": 3,
+            "input_tokens_details": {
+              "cached_tokens": 7
+            },
+            "output_tokens_details": {
+              "reasoning_tokens": 2
+            }
+          }
+        },
+        "wire": "{\"id\":\"r1\",\"status\":\"completed\",\"output\":[{\"type\":\"message\",\"content\":[{\"type\":\"output_text\",\"annotations\":[],\"logprobs\":null,\"text\":\"ok\"}],\"id\":\"m1\",\"role\":\"assistant\",\"status\":\"completed\"}],\"model\":\"gpt-4.1\",\"usage\":{\"input_tokens\":20,\"output_tokens\":3,\"input_tokens_details\":{\"cached_tokens\":7},\"output_tokens_details\":{\"reasoning_tokens\":2}}}"
+      }
+    },
+    {
+      "kind": "responses-response",
+      "name": "responses-response-unknown",
+      "input": "{\"id\":\"r1\",\"status\":\"completed\",\"model\":\"gpt-4.1\",\"output\":[{\"id\":\"m1\",\"type\":\"message\",\"role\":\"assistant\",\"status\":\"completed\",\"content\":[{\"type\":\"output_text\",\"text\":\"ok\",\"annotations\":[]}]}],\"usage\":{\"input_tokens\":20,\"output_tokens\":3,\"input_tokens_details\":{\"cached_tokens\":7},\"output_tokens_details\":{\"reasoning_tokens\":2}},\"future_extension\":{\"nested\":[1,null,\"值\"]}}",
+      "expected": {
+        "json": {
+          "id": "r1",
+          "status": "completed",
+          "output": [
+            {
+              "type": "message",
+              "content": [
+                {
+                  "type": "output_text",
+                  "annotations": [],
+                  "logprobs": null,
+                  "text": "ok"
+                }
+              ],
+              "id": "m1",
+              "role": "assistant",
+              "status": "completed"
+            }
+          ],
+          "model": "gpt-4.1",
+          "usage": {
+            "input_tokens": 20,
+            "output_tokens": 3,
+            "input_tokens_details": {
+              "cached_tokens": 7
+            },
+            "output_tokens_details": {
+              "reasoning_tokens": 2
+            }
+          },
+          "future_extension": {
+            "nested": [
+              1,
+              null,
+              "值"
+            ]
+          }
+        },
+        "wire": "{\"id\":\"r1\",\"status\":\"completed\",\"output\":[{\"type\":\"message\",\"content\":[{\"type\":\"output_text\",\"annotations\":[],\"logprobs\":null,\"text\":\"ok\"}],\"id\":\"m1\",\"role\":\"assistant\",\"status\":\"completed\"}],\"model\":\"gpt-4.1\",\"usage\":{\"input_tokens\":20,\"output_tokens\":3,\"input_tokens_details\":{\"cached_tokens\":7},\"output_tokens_details\":{\"reasoning_tokens\":2}},\"future_extension\":{\"nested\":[1,null,\"值\"]}}"
+      }
+    },
+    {
+      "kind": "responses-response",
+      "name": "responses-response-empty",
+      "input": "{}",
+      "expected": {
+        "error": "missing field `id` at line 1 column 2",
+        "category": "Data",
+        "line": 1,
+        "column": 2
+      }
+    },
+    {
+      "kind": "responses-response",
+      "name": "responses-response-null",
+      "input": "null",
+      "expected": {
+        "error": "invalid type: null, expected struct Response at line 1 column 4",
+        "category": "Data",
+        "line": 1,
+        "column": 4
+      }
+    },
+    {
+      "kind": "responses-response",
+      "name": "responses-response-wrong-root",
+      "input": "[]",
+      "expected": {
+        "error": "invalid type: sequence, expected struct Response at line 1 column 0",
+        "category": "Data",
+        "line": 1,
+        "column": 0
+      }
+    },
+    {
+      "kind": "responses-response",
+      "name": "responses-response-truncated",
+      "input": "{",
+      "expected": {
+        "error": "EOF while parsing an object at line 1 column 1",
+        "category": "Eof",
+        "line": 1,
+        "column": 1
+      }
+    },
+    {
+      "kind": "responses-response",
+      "name": "responses-response-empty-output",
+      "input": "{\"id\":\"r2\",\"status\":\"completed\",\"model\":\"x\",\"output\":[]}",
+      "expected": {
+        "json": {
+          "id": "r2",
+          "status": "completed",
+          "output": [],
+          "model": "x"
+        },
+        "wire": "{\"id\":\"r2\",\"status\":\"completed\",\"output\":[],\"model\":\"x\"}"
+      }
+    },
+    {
+      "kind": "responses-response",
+      "name": "responses-response-unknown-output",
+      "input": "{\"id\":\"r2\",\"status\":\"x\",\"model\":\"x\",\"output\":[{\"type\":\"future_kind\"}]}",
+      "expected": {
+        "error": "unknown variant `future_kind`, expected one of `message`, `file_search_call`, `function_call`, `function_call_output`, `web_search_call`, `computer_call`, `computer_call_output`, `reasoning`, `compaction`, `image_generation_call`, `code_interpreter_call`, `local_shell_call`, `shell_call`, `shell_call_output`, `apply_patch_call`, `apply_patch_call_output`, `mcp_call`, `mcp_list_tools`, `mcp_approval_request`, `custom_tool_call`, `custom_tool_call_output`, `tool_search_call`, `tool_search_output` at line 1 column 67",
+        "category": "Data",
+        "line": 1,
+        "column": 67
+      }
+    },
+    {
+      "kind": "responses-response",
+      "name": "responses-response-tool-call",
+      "input": "{\"id\":\"r1\",\"status\":\"completed\",\"model\":\"x\",\"output\":[{\"id\":\"fc\",\"type\":\"function_call\",\"call_id\":\"call1\",\"name\":\"lookup\",\"arguments\":\"{\\\"x\\\":1}\",\"status\":\"completed\"}]}",
+      "expected": {
+        "json": {
+          "id": "r1",
+          "status": "completed",
+          "output": [
+            {
+              "type": "function_call",
+              "arguments": "{\"x\":1}",
+              "call_id": "call1",
+              "name": "lookup",
+              "id": "fc",
+              "status": "completed"
+            }
+          ],
+          "model": "x"
+        },
+        "wire": "{\"id\":\"r1\",\"status\":\"completed\",\"output\":[{\"type\":\"function_call\",\"arguments\":\"{\\\"x\\\":1}\",\"call_id\":\"call1\",\"name\":\"lookup\",\"id\":\"fc\",\"status\":\"completed\"}],\"model\":\"x\"}"
+      }
+    },
+    {
+      "kind": "responses-vendor",
+      "name": "responses-vendor-normal",
+      "input": "{\"thinking_budget_tokens\":4096,\"custom\":{\"enabled\":true}}",
+      "expected": {
+        "json": {
+          "thinking_budget_tokens": 4096,
+          "custom": {
+            "enabled": true
+          }
+        },
+        "wire": "{\"thinking_budget_tokens\":4096,\"custom\":{\"enabled\":true}}"
+      }
+    },
+    {
+      "kind": "responses-vendor",
+      "name": "responses-vendor-unknown",
+      "input": "{\"thinking_budget_tokens\":4096,\"custom\":{\"enabled\":true},\"future_extension\":{\"nested\":[1,null,\"值\"]}}",
+      "expected": {
+        "json": {
+          "thinking_budget_tokens": 4096,
+          "custom": {
+            "enabled": true
+          },
+          "future_extension": {
+            "nested": [
+              1,
+              null,
+              "值"
+            ]
+          }
+        },
+        "wire": "{\"thinking_budget_tokens\":4096,\"custom\":{\"enabled\":true},\"future_extension\":{\"nested\":[1,null,\"值\"]}}"
+      }
+    },
+    {
+      "kind": "responses-vendor",
+      "name": "responses-vendor-empty",
+      "input": "{}",
+      "expected": {
+        "json": {},
+        "wire": "{}"
+      }
+    },
+    {
+      "kind": "responses-vendor",
+      "name": "responses-vendor-null",
+      "input": "null",
+      "expected": {
+        "error": "invalid type: null, expected struct RequestVendorExtensions at line 1 column 4",
+        "category": "Data",
+        "line": 1,
+        "column": 4
+      }
+    },
+    {
+      "kind": "responses-vendor",
+      "name": "responses-vendor-wrong-root",
+      "input": "[]",
+      "expected": {
+        "error": "invalid type: sequence, expected struct RequestVendorExtensions at line 1 column 0",
+        "category": "Data",
+        "line": 1,
+        "column": 0
+      }
+    },
+    {
+      "kind": "responses-vendor",
+      "name": "responses-vendor-truncated",
+      "input": "{",
+      "expected": {
+        "error": "EOF while parsing an object at line 1 column 1",
+        "category": "Eof",
+        "line": 1,
+        "column": 1
+      }
+    },
+    {
+      "kind": "messages-request",
+      "name": "messages-request-normal",
+      "input": "{\"model\":\"claude\",\"messages\":[{\"role\":\"user\",\"content\":\"你好\"}],\"system\":[{\"type\":\"text\",\"text\":\"sys\",\"cache_control\":{\"type\":\"ephemeral\"}}]}",
+      "expected": {
+        "json": {
+          "messages": [
+            {
+              "role": "user",
+              "content": "你好"
+            }
+          ],
+          "model": "claude",
+          "system": [
+            {
+              "type": "text",
+              "text": "sys",
+              "cache_control": {
+                "type": "ephemeral"
+              }
+            }
+          ]
+        },
+        "wire": "{\"messages\":[{\"role\":\"user\",\"content\":\"你好\"}],\"model\":\"claude\",\"system\":[{\"type\":\"text\",\"text\":\"sys\",\"cache_control\":{\"type\":\"ephemeral\"}}]}"
+      }
+    },
+    {
+      "kind": "messages-request",
+      "name": "messages-request-unknown",
+      "input": "{\"model\":\"claude\",\"messages\":[{\"role\":\"user\",\"content\":\"你好\"}],\"system\":[{\"type\":\"text\",\"text\":\"sys\",\"cache_control\":{\"type\":\"ephemeral\"}}],\"future_extension\":{\"nested\":[1,null,\"值\"]}}",
+      "expected": {
+        "json": {
+          "messages": [
+            {
+              "role": "user",
+              "content": "你好"
+            }
+          ],
+          "model": "claude",
+          "system": [
+            {
+              "type": "text",
+              "text": "sys",
+              "cache_control": {
+                "type": "ephemeral"
+              }
+            }
+          ],
+          "future_extension": {
+            "nested": [
+              1,
+              null,
+              "值"
+            ]
+          }
+        },
+        "wire": "{\"messages\":[{\"role\":\"user\",\"content\":\"你好\"}],\"model\":\"claude\",\"system\":[{\"type\":\"text\",\"text\":\"sys\",\"cache_control\":{\"type\":\"ephemeral\"}}],\"future_extension\":{\"nested\":[1,null,\"值\"]}}"
+      }
+    },
+    {
+      "kind": "messages-request",
+      "name": "messages-request-empty",
+      "input": "{}",
+      "expected": {
+        "error": "missing field `messages` at line 1 column 2",
+        "category": "Data",
+        "line": 1,
+        "column": 2
+      }
+    },
+    {
+      "kind": "messages-request",
+      "name": "messages-request-null",
+      "input": "null",
+      "expected": {
+        "error": "invalid type: null, expected struct Request at line 1 column 4",
+        "category": "Data",
+        "line": 1,
+        "column": 4
+      }
+    },
+    {
+      "kind": "messages-request",
+      "name": "messages-request-wrong-root",
+      "input": "[]",
+      "expected": {
+        "error": "invalid type: sequence, expected struct Request at line 1 column 0",
+        "category": "Data",
+        "line": 1,
+        "column": 0
+      }
+    },
+    {
+      "kind": "messages-request",
+      "name": "messages-request-truncated",
+      "input": "{",
+      "expected": {
+        "error": "EOF while parsing an object at line 1 column 1",
+        "category": "Eof",
+        "line": 1,
+        "column": 1
+      }
+    },
+    {
+      "kind": "messages-request",
+      "name": "messages-request-empty-messages",
+      "input": "{\"messages\":[]}",
+      "expected": {
+        "json": {
+          "messages": []
+        },
+        "wire": "{\"messages\":[]}"
+      }
+    },
+    {
+      "kind": "messages-request",
+      "name": "messages-request-unknown-block",
+      "input": "{\"messages\":[{\"role\":\"user\",\"content\":[{\"type\":\"new_block\",\"payload\":4}]}]}",
+      "expected": {
+        "json": {
+          "messages": [
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "new_block",
+                  "payload": 4
+                }
+              ]
+            }
+          ]
+        },
+        "wire": "{\"messages\":[{\"role\":\"user\",\"content\":[{\"type\":\"new_block\",\"payload\":4}]}]}"
+      }
+    },
+    {
+      "kind": "messages-request",
+      "name": "messages-request-multimodal",
+      "input": "{\"messages\":[{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"see\"},{\"type\":\"image\",\"source\":{\"type\":\"base64\",\"media_type\":\"image/png\",\"data\":\"AA==\"}}]}]}",
+      "expected": {
+        "json": {
+          "messages": [
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "see"
+                },
+                {
+                  "type": "image",
+                  "source": {
+                    "type": "base64",
+                    "media_type": "image/png",
+                    "data": "AA=="
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        "wire": "{\"messages\":[{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"see\"},{\"type\":\"image\",\"source\":{\"type\":\"base64\",\"media_type\":\"image/png\",\"data\":\"AA==\"}}]}]}"
+      }
+    },
+    {
+      "kind": "messages-request",
+      "name": "messages-request-wrong-messages",
+      "input": "{\"messages\":\"bad\"}",
+      "expected": {
+        "error": "invalid type: string \"bad\", expected a sequence at line 1 column 17",
+        "category": "Data",
+        "line": 1,
+        "column": 17
+      }
+    },
+    {
+      "kind": "messages-request",
+      "name": "messages-request-missing-role",
+      "input": "{\"messages\":[{}]}",
+      "expected": {
+        "error": "missing field `role` at line 1 column 15",
+        "category": "Data",
+        "line": 1,
+        "column": 15
+      }
+    },
+    {
+      "kind": "messages-response",
+      "name": "messages-response-normal",
+      "input": "{\"id\":\"msg1\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"claude\",\"content\":[{\"type\":\"text\",\"text\":\"ok\"}],\"usage\":{\"input_tokens\":5,\"output_tokens\":2,\"cache_creation_input_tokens\":6,\"cache_read_input_tokens\":7,\"service_tier\":\"standard\"},\"input_audio_tokens\":99,\"output_audio_tokens\":99}",
+      "expected": {
+        "json": {
+          "id": "msg1",
+          "type": "message",
+          "role": "assistant",
+          "model": "claude",
+          "stop_reason": null,
+          "stop_sequence": null,
+          "usage": {
+            "input_tokens": 5,
+            "output_tokens": 2,
+            "cache_creation_input_tokens": 6,
+            "cache_read_input_tokens": 7,
+            "service_tier": "standard"
+          },
+          "content": [
+            {
+              "text": "ok",
+              "type": "text"
+            }
+          ],
+          "input_audio_tokens": 99,
+          "output_audio_tokens": 99
+        },
+        "wire": "{\"id\":\"msg1\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"claude\",\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":5,\"output_tokens\":2,\"cache_creation_input_tokens\":6,\"cache_read_input_tokens\":7,\"service_tier\":\"standard\"},\"content\":[{\"text\":\"ok\",\"type\":\"text\"}],\"input_audio_tokens\":99,\"output_audio_tokens\":99}"
+      }
+    },
+    {
+      "kind": "messages-response",
+      "name": "messages-response-unknown",
+      "input": "{\"id\":\"msg1\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"claude\",\"content\":[{\"type\":\"text\",\"text\":\"ok\"}],\"usage\":{\"input_tokens\":5,\"output_tokens\":2,\"cache_creation_input_tokens\":6,\"cache_read_input_tokens\":7,\"service_tier\":\"standard\"},\"input_audio_tokens\":99,\"output_audio_tokens\":99,\"future_extension\":{\"nested\":[1,null,\"值\"]}}",
+      "expected": {
+        "json": {
+          "id": "msg1",
+          "type": "message",
+          "role": "assistant",
+          "model": "claude",
+          "stop_reason": null,
+          "stop_sequence": null,
+          "usage": {
+            "input_tokens": 5,
+            "output_tokens": 2,
+            "cache_creation_input_tokens": 6,
+            "cache_read_input_tokens": 7,
+            "service_tier": "standard"
+          },
+          "content": [
+            {
+              "text": "ok",
+              "type": "text"
+            }
+          ],
+          "input_audio_tokens": 99,
+          "output_audio_tokens": 99,
+          "future_extension": {
+            "nested": [
+              1,
+              null,
+              "值"
+            ]
+          }
+        },
+        "wire": "{\"id\":\"msg1\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"claude\",\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":5,\"output_tokens\":2,\"cache_creation_input_tokens\":6,\"cache_read_input_tokens\":7,\"service_tier\":\"standard\"},\"content\":[{\"text\":\"ok\",\"type\":\"text\"}],\"input_audio_tokens\":99,\"output_audio_tokens\":99,\"future_extension\":{\"nested\":[1,null,\"值\"]}}"
+      }
+    },
+    {
+      "kind": "messages-response",
+      "name": "messages-response-empty",
+      "input": "{}",
+      "expected": {
+        "error": "missing field `id` at line 1 column 2",
+        "category": "Data",
+        "line": 1,
+        "column": 2
+      }
+    },
+    {
+      "kind": "messages-response",
+      "name": "messages-response-null",
+      "input": "null",
+      "expected": {
+        "error": "invalid type: null, expected struct Response at line 1 column 4",
+        "category": "Data",
+        "line": 1,
+        "column": 4
+      }
+    },
+    {
+      "kind": "messages-response",
+      "name": "messages-response-wrong-root",
+      "input": "[]",
+      "expected": {
+        "error": "invalid type: sequence, expected struct Response at line 1 column 0",
+        "category": "Data",
+        "line": 1,
+        "column": 0
+      }
+    },
+    {
+      "kind": "messages-response",
+      "name": "messages-response-truncated",
+      "input": "{",
+      "expected": {
+        "error": "EOF while parsing an object at line 1 column 1",
+        "category": "Eof",
+        "line": 1,
+        "column": 1
+      }
+    },
+    {
+      "kind": "messages-response",
+      "name": "messages-response-empty-content",
+      "input": "{\"id\":\"m\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"x\",\"content\":[],\"usage\":{\"input_tokens\":0,\"output_tokens\":0}}",
+      "expected": {
+        "json": {
+          "id": "m",
+          "type": "message",
+          "role": "assistant",
+          "model": "x",
+          "stop_reason": null,
+          "stop_sequence": null,
+          "usage": {
+            "input_tokens": 0,
+            "output_tokens": 0
+          },
+          "content": []
+        },
+        "wire": "{\"id\":\"m\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"x\",\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":0,\"output_tokens\":0},\"content\":[]}"
+      }
+    },
+    {
+      "kind": "messages-typed-request",
+      "name": "messages-typed-request-normal",
+      "input": "{\"model\":\"claude\",\"max_tokens\":100,\"messages\":[{\"role\":\"user\",\"content\":\"hello\"}]}",
+      "expected": {
+        "json": {
+          "messages": [
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "hello"
+                }
+              ]
+            }
+          ],
+          "model": "claude",
+          "max_tokens": 100
+        },
+        "wire": "{\"messages\":[{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"hello\"}]}],\"model\":\"claude\",\"max_tokens\":100}"
+      }
+    },
+    {
+      "kind": "messages-typed-request",
+      "name": "messages-typed-request-unknown",
+      "input": "{\"model\":\"claude\",\"max_tokens\":100,\"messages\":[{\"role\":\"user\",\"content\":\"hello\"}],\"future_extension\":{\"nested\":[1,null,\"值\"]}}",
+      "expected": {
+        "json": {
+          "messages": [
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "hello"
+                }
+              ]
+            }
+          ],
+          "model": "claude",
+          "max_tokens": 100
+        },
+        "wire": "{\"messages\":[{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"hello\"}]}],\"model\":\"claude\",\"max_tokens\":100}"
+      }
+    },
+    {
+      "kind": "messages-typed-request",
+      "name": "messages-typed-request-empty",
+      "input": "{}",
+      "expected": {
+        "error": "missing field `messages` at line 1 column 2",
+        "category": "Data",
+        "line": 1,
+        "column": 2
+      }
+    },
+    {
+      "kind": "messages-typed-request",
+      "name": "messages-typed-request-null",
+      "input": "null",
+      "expected": {
+        "error": "invalid type: null, expected struct Request at line 1 column 4",
+        "category": "Data",
+        "line": 1,
+        "column": 4
+      }
+    },
+    {
+      "kind": "messages-typed-request",
+      "name": "messages-typed-request-wrong-root",
+      "input": "[]",
+      "expected": {
+        "error": "invalid length 0, expected struct Request with 14 elements at line 1 column 2",
+        "category": "Data",
+        "line": 1,
+        "column": 2
+      }
+    },
+    {
+      "kind": "messages-typed-request",
+      "name": "messages-typed-request-truncated",
+      "input": "{",
+      "expected": {
+        "error": "EOF while parsing an object at line 1 column 1",
+        "category": "Eof",
+        "line": 1,
+        "column": 1
+      }
+    },
+    {
+      "kind": "messages-typed-request",
+      "name": "messages-typed-request-default-role",
+      "input": "{\"model\":\"x\",\"max_tokens\":10,\"messages\":[{\"content\":[]}]}",
+      "expected": {
+        "error": "missing field `role` at line 1 column 55",
+        "category": "Data",
+        "line": 1,
+        "column": 55
+      }
+    },
+    {
+      "kind": "messages-typed-request",
+      "name": "messages-typed-request-tool",
+      "input": "{\"model\":\"x\",\"max_tokens\":10,\"messages\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"id\":\"t1\",\"name\":\"lookup\",\"input\":{\"x\":1}},{\"type\":\"thinking\",\"thinking\":\"thought\",\"signature\":\"sig\"}]}]}",
+      "expected": {
+        "json": {
+          "messages": [
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "tool_use",
+                  "id": "t1",
+                  "name": "lookup",
+                  "input": {
+                    "x": 1
+                  }
+                },
+                {
+                  "type": "thinking",
+                  "thinking": "thought",
+                  "signature": "sig"
+                }
+              ]
+            }
+          ],
+          "model": "x",
+          "max_tokens": 10
+        },
+        "wire": "{\"messages\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"id\":\"t1\",\"name\":\"lookup\",\"input\":{\"x\":1}},{\"type\":\"thinking\",\"thinking\":\"thought\",\"signature\":\"sig\"}]}],\"model\":\"x\",\"max_tokens\":10}"
+      }
+    },
+    {
+      "kind": "messages-typed-request",
+      "name": "messages-typed-request-unknown-content",
+      "input": "{\"model\":\"x\",\"max_tokens\":10,\"messages\":[{\"content\":[{\"type\":\"future\",\"x\":1}]}]}",
+      "expected": {
+        "error": "missing field `role` at line 1 column 78",
+        "category": "Data",
+        "line": 1,
+        "column": 78
+      }
+    },
+    {
+      "kind": "messages-typed-request",
+      "name": "messages-typed-request-invalid-max",
+      "input": "{\"model\":\"x\",\"max_tokens\":-1,\"messages\":[]}",
+      "expected": {
+        "error": "invalid value: integer `-1`, expected usize at line 1 column 28",
+        "category": "Data",
+        "line": 1,
+        "column": 28
+      }
+    },
+    {
+      "kind": "embeddings-request",
+      "name": "embeddings-request-normal",
+      "input": "{\"model\":\"embed\",\"input\":[\"a\",\"b\"],\"encoding_format\":\"float\",\"dimensions\":4}",
+      "expected": {
+        "json": {
+          "model": "embed",
+          "input": [
+            "a",
+            "b"
+          ],
+          "encoding_format": "float",
+          "dimensions": 4
+        },
+        "wire": "{\"model\":\"embed\",\"input\":[\"a\",\"b\"],\"encoding_format\":\"float\",\"dimensions\":4}"
+      }
+    },
+    {
+      "kind": "embeddings-request",
+      "name": "embeddings-request-unknown",
+      "input": "{\"model\":\"embed\",\"input\":[\"a\",\"b\"],\"encoding_format\":\"float\",\"dimensions\":4,\"future_extension\":{\"nested\":[1,null,\"值\"]}}",
+      "expected": {
+        "json": {
+          "model": "embed",
+          "input": [
+            "a",
+            "b"
+          ],
+          "encoding_format": "float",
+          "dimensions": 4,
+          "future_extension": {
+            "nested": [
+              1,
+              null,
+              "值"
+            ]
+          }
+        },
+        "wire": "{\"model\":\"embed\",\"input\":[\"a\",\"b\"],\"encoding_format\":\"float\",\"dimensions\":4,\"future_extension\":{\"nested\":[1,null,\"值\"]}}"
+      }
+    },
+    {
+      "kind": "embeddings-request",
+      "name": "embeddings-request-empty",
+      "input": "{}",
+      "expected": {
+        "error": "missing field `input` at line 1 column 2",
+        "category": "Data",
+        "line": 1,
+        "column": 2
+      }
+    },
+    {
+      "kind": "embeddings-request",
+      "name": "embeddings-request-null",
+      "input": "null",
+      "expected": {
+        "error": "invalid type: null, expected struct Request at line 1 column 4",
+        "category": "Data",
+        "line": 1,
+        "column": 4
+      }
+    },
+    {
+      "kind": "embeddings-request",
+      "name": "embeddings-request-wrong-root",
+      "input": "[]",
+      "expected": {
+        "error": "invalid type: sequence, expected struct Request at line 1 column 0",
+        "category": "Data",
+        "line": 1,
+        "column": 0
+      }
+    },
+    {
+      "kind": "embeddings-request",
+      "name": "embeddings-request-truncated",
+      "input": "{",
+      "expected": {
+        "error": "EOF while parsing an object at line 1 column 1",
+        "category": "Eof",
+        "line": 1,
+        "column": 1
+      }
+    },
+    {
+      "kind": "embeddings-request",
+      "name": "embeddings-request-string",
+      "input": "{\"input\":\"a\"}",
+      "expected": {
+        "json": {
+          "model": null,
+          "input": "a"
+        },
+        "wire": "{\"model\":null,\"input\":\"a\"}"
+      }
+    },
+    {
+      "kind": "embeddings-request",
+      "name": "embeddings-request-empty-array",
+      "input": "{\"input\":[]}",
+      "expected": {
+        "json": {
+          "model": null,
+          "input": []
+        },
+        "wire": "{\"model\":null,\"input\":[]}"
+      }
+    },
+    {
+      "kind": "embeddings-request",
+      "name": "embeddings-request-invalid-encoding",
+      "input": "{\"input\":\"x\",\"encoding_format\":\"unknown\"}",
+      "expected": {
+        "error": "unknown variant `unknown`, expected `float` or `base64` at line 1 column 40",
+        "category": "Data",
+        "line": 1,
+        "column": 40
+      }
+    },
+    {
+      "kind": "embeddings-request",
+      "name": "embeddings-request-numeric-input",
+      "input": "{\"input\":[1,2]}",
+      "expected": {
+        "json": {
+          "model": null,
+          "input": [
+            1,
+            2
+          ]
+        },
+        "wire": "{\"model\":null,\"input\":[1,2]}"
+      }
+    },
+    {
+      "kind": "embeddings-request",
+      "name": "embeddings-request-invalid-dimensions",
+      "input": "{\"input\":\"x\",\"dimensions\":-1}",
+      "expected": {
+        "error": "invalid value: integer `-1`, expected u32 at line 1 column 28",
+        "category": "Data",
+        "line": 1,
+        "column": 28
+      }
+    },
+    {
+      "kind": "embeddings-response",
+      "name": "embeddings-response-normal",
+      "input": "{\"object\":\"list\",\"model\":\"embed\",\"data\":[{\"object\":\"embedding\",\"index\":0,\"embedding\":[0.5,-0.25]}],\"usage\":{\"prompt_tokens\":2,\"total_tokens\":2}}",
+      "expected": {
+        "json": {
+          "object": "list",
+          "model": "embed",
+          "usage": {
+            "prompt_tokens": 2,
+            "total_tokens": 2
+          },
+          "data": [
+            {
+              "object": "embedding",
+              "index": 0,
+              "embedding": [
+                0.5,
+                -0.25
+              ]
+            }
+          ]
+        },
+        "wire": "{\"object\":\"list\",\"model\":\"embed\",\"usage\":{\"prompt_tokens\":2,\"total_tokens\":2},\"data\":[{\"object\":\"embedding\",\"index\":0,\"embedding\":[0.5,-0.25]}]}"
+      }
+    },
+    {
+      "kind": "embeddings-response",
+      "name": "embeddings-response-unknown",
+      "input": "{\"object\":\"list\",\"model\":\"embed\",\"data\":[{\"object\":\"embedding\",\"index\":0,\"embedding\":[0.5,-0.25]}],\"usage\":{\"prompt_tokens\":2,\"total_tokens\":2},\"future_extension\":{\"nested\":[1,null,\"值\"]}}",
+      "expected": {
+        "json": {
+          "object": "list",
+          "model": "embed",
+          "usage": {
+            "prompt_tokens": 2,
+            "total_tokens": 2
+          },
+          "data": [
+            {
+              "object": "embedding",
+              "index": 0,
+              "embedding": [
+                0.5,
+                -0.25
+              ]
+            }
+          ],
+          "future_extension": {
+            "nested": [
+              1,
+              null,
+              "值"
+            ]
+          }
+        },
+        "wire": "{\"object\":\"list\",\"model\":\"embed\",\"usage\":{\"prompt_tokens\":2,\"total_tokens\":2},\"data\":[{\"object\":\"embedding\",\"index\":0,\"embedding\":[0.5,-0.25]}],\"future_extension\":{\"nested\":[1,null,\"值\"]}}"
+      }
+    },
+    {
+      "kind": "embeddings-response",
+      "name": "embeddings-response-empty",
+      "input": "{}",
+      "expected": {
+        "error": "missing field `object` at line 1 column 2",
+        "category": "Data",
+        "line": 1,
+        "column": 2
+      }
+    },
+    {
+      "kind": "embeddings-response",
+      "name": "embeddings-response-null",
+      "input": "null",
+      "expected": {
+        "error": "invalid type: null, expected struct Response at line 1 column 4",
+        "category": "Data",
+        "line": 1,
+        "column": 4
+      }
+    },
+    {
+      "kind": "embeddings-response",
+      "name": "embeddings-response-wrong-root",
+      "input": "[]",
+      "expected": {
+        "error": "invalid type: sequence, expected struct Response at line 1 column 0",
+        "category": "Data",
+        "line": 1,
+        "column": 0
+      }
+    },
+    {
+      "kind": "embeddings-response",
+      "name": "embeddings-response-truncated",
+      "input": "{",
+      "expected": {
+        "error": "EOF while parsing an object at line 1 column 1",
+        "category": "Eof",
+        "line": 1,
+        "column": 1
+      }
+    },
+    {
+      "kind": "embeddings-response",
+      "name": "embeddings-response-zero-usage",
+      "input": "{\"object\":\"list\",\"model\":\"x\",\"usage\":{\"prompt_tokens\":0,\"total_tokens\":0}}",
+      "expected": {
+        "json": {
+          "object": "list",
+          "model": "x",
+          "usage": {
+            "prompt_tokens": 0,
+            "total_tokens": 0
+          }
+        },
+        "wire": "{\"object\":\"list\",\"model\":\"x\",\"usage\":{\"prompt_tokens\":0,\"total_tokens\":0}}"
+      }
+    },
+    {
+      "kind": "embeddings-response",
+      "name": "embeddings-response-missing-usage",
+      "input": "{\"object\":\"list\",\"model\":\"x\"}",
+      "expected": {
+        "error": "missing field `usage` at line 1 column 29",
+        "category": "Data",
+        "line": 1,
+        "column": 29
+      }
+    },
+    {
+      "kind": "embeddings-typed-request",
+      "name": "embeddings-typed-request-normal",
+      "input": "{\"model\":\"embed\",\"input\":[\"a\",\"b\"]}",
+      "expected": {
+        "json": {
+          "model": "embed",
+          "input": [
+            "a",
+            "b"
+          ]
+        },
+        "wire": "{\"model\":\"embed\",\"input\":[\"a\",\"b\"]}"
+      }
+    },
+    {
+      "kind": "embeddings-typed-request",
+      "name": "embeddings-typed-request-unknown",
+      "input": "{\"model\":\"embed\",\"input\":[\"a\",\"b\"],\"future_extension\":{\"nested\":[1,null,\"值\"]}}",
+      "expected": {
+        "json": {
+          "model": "embed",
+          "input": [
+            "a",
+            "b"
+          ]
+        },
+        "wire": "{\"model\":\"embed\",\"input\":[\"a\",\"b\"]}"
+      }
+    },
+    {
+      "kind": "embeddings-typed-request",
+      "name": "embeddings-typed-request-empty",
+      "input": "{}",
+      "expected": {
+        "error": "missing field `model` at line 1 column 2",
+        "category": "Data",
+        "line": 1,
+        "column": 2
+      }
+    },
+    {
+      "kind": "embeddings-typed-request",
+      "name": "embeddings-typed-request-null",
+      "input": "null",
+      "expected": {
+        "error": "invalid type: null, expected struct Request at line 1 column 4",
+        "category": "Data",
+        "line": 1,
+        "column": 4
+      }
+    },
+    {
+      "kind": "embeddings-typed-request",
+      "name": "embeddings-typed-request-wrong-root",
+      "input": "[]",
+      "expected": {
+        "error": "invalid length 0, expected struct Request with 5 elements at line 1 column 2",
+        "category": "Data",
+        "line": 1,
+        "column": 2
+      }
+    },
+    {
+      "kind": "embeddings-typed-request",
+      "name": "embeddings-typed-request-truncated",
+      "input": "{",
+      "expected": {
+        "error": "EOF while parsing an object at line 1 column 1",
+        "category": "Eof",
+        "line": 1,
+        "column": 1
+      }
+    },
+    {
+      "kind": "embeddings-typed-request",
+      "name": "embeddings-typed-request-numeric-input",
+      "input": "{\"model\":\"x\",\"input\":[1,2]}",
+      "expected": {
+        "error": "data did not match any variant of untagged enum EmbeddingInput at line 1 column 27",
+        "category": "Data",
+        "line": 1,
+        "column": 27
+      }
+    },
+    {
+      "kind": "embeddings-typed-request",
+      "name": "embeddings-typed-request-empty-array",
+      "input": "{\"model\":\"x\",\"input\":[]}",
+      "expected": {
+        "json": {
+          "model": "x",
+          "input": []
+        },
+        "wire": "{\"model\":\"x\",\"input\":[]}"
+      }
+    },
+    {
+      "kind": "embeddings-typed-request",
+      "name": "embeddings-typed-request-base64",
+      "input": "{\"model\":\"x\",\"input\":\"a\",\"encoding_format\":\"base64\"}",
+      "expected": {
+        "json": {
+          "model": "x",
+          "input": "a",
+          "encoding_format": "base64"
+        },
+        "wire": "{\"model\":\"x\",\"input\":\"a\",\"encoding_format\":\"base64\"}"
+      }
+    },
+    {
+      "kind": "count-request",
+      "name": "count-request-normal",
+      "input": "{\"model\":\"claude\",\"messages\":[{\"role\":\"user\",\"content\":\"a\"}],\"system\":\"sys\"}",
+      "expected": {
+        "json": {
+          "messages": [
+            {
+              "role": "user",
+              "content": "a"
+            }
+          ],
+          "model": "claude",
+          "system": "sys"
+        },
+        "wire": "{\"messages\":[{\"role\":\"user\",\"content\":\"a\"}],\"model\":\"claude\",\"system\":\"sys\"}"
+      }
+    },
+    {
+      "kind": "count-request",
+      "name": "count-request-unknown",
+      "input": "{\"model\":\"claude\",\"messages\":[{\"role\":\"user\",\"content\":\"a\"}],\"system\":\"sys\",\"future_extension\":{\"nested\":[1,null,\"值\"]}}",
+      "expected": {
+        "json": {
+          "messages": [
+            {
+              "role": "user",
+              "content": "a"
+            }
+          ],
+          "model": "claude",
+          "system": "sys",
+          "future_extension": {
+            "nested": [
+              1,
+              null,
+              "值"
+            ]
+          }
+        },
+        "wire": "{\"messages\":[{\"role\":\"user\",\"content\":\"a\"}],\"model\":\"claude\",\"system\":\"sys\",\"future_extension\":{\"nested\":[1,null,\"值\"]}}"
+      }
+    },
+    {
+      "kind": "count-request",
+      "name": "count-request-empty",
+      "input": "{}",
+      "expected": {
+        "error": "missing field `messages` at line 1 column 2",
+        "category": "Data",
+        "line": 1,
+        "column": 2
+      }
+    },
+    {
+      "kind": "count-request",
+      "name": "count-request-null",
+      "input": "null",
+      "expected": {
+        "error": "invalid type: null, expected struct Request at line 1 column 4",
+        "category": "Data",
+        "line": 1,
+        "column": 4
+      }
+    },
+    {
+      "kind": "count-request",
+      "name": "count-request-wrong-root",
+      "input": "[]",
+      "expected": {
+        "error": "invalid type: sequence, expected struct Request at line 1 column 0",
+        "category": "Data",
+        "line": 1,
+        "column": 0
+      }
+    },
+    {
+      "kind": "count-request",
+      "name": "count-request-truncated",
+      "input": "{",
+      "expected": {
+        "error": "EOF while parsing an object at line 1 column 1",
+        "category": "Eof",
+        "line": 1,
+        "column": 1
+      }
+    },
+    {
+      "kind": "count-request",
+      "name": "count-request-empty-messages",
+      "input": "{\"messages\":[]}",
+      "expected": {
+        "json": {
+          "messages": []
+        },
+        "wire": "{\"messages\":[]}"
+      }
+    },
+    {
+      "kind": "count-request",
+      "name": "count-request-missing-role",
+      "input": "{\"messages\":[{}]}",
+      "expected": {
+        "error": "missing field `role` at line 1 column 15",
+        "category": "Data",
+        "line": 1,
+        "column": 15
+      }
+    },
+    {
+      "kind": "count-response",
+      "name": "count-response-normal",
+      "input": "{\"input_tokens\":12}",
+      "expected": {
+        "json": {
+          "input_tokens": 12
+        },
+        "wire": "{\"input_tokens\":12}"
+      }
+    },
+    {
+      "kind": "count-response",
+      "name": "count-response-unknown",
+      "input": "{\"input_tokens\":12,\"future_extension\":{\"nested\":[1,null,\"值\"]}}",
+      "expected": {
+        "json": {
+          "input_tokens": 12
+        },
+        "wire": "{\"input_tokens\":12}"
+      }
+    },
+    {
+      "kind": "count-response",
+      "name": "count-response-empty",
+      "input": "{}",
+      "expected": {
+        "error": "missing field `input_tokens` at line 1 column 2",
+        "category": "Data",
+        "line": 1,
+        "column": 2
+      }
+    },
+    {
+      "kind": "count-response",
+      "name": "count-response-null",
+      "input": "null",
+      "expected": {
+        "error": "invalid type: null, expected struct Response at line 1 column 4",
+        "category": "Data",
+        "line": 1,
+        "column": 4
+      }
+    },
+    {
+      "kind": "count-response",
+      "name": "count-response-wrong-root",
+      "input": "[]",
+      "expected": {
+        "error": "invalid length 0, expected struct Response with 1 element at line 1 column 2",
+        "category": "Data",
+        "line": 1,
+        "column": 2
+      }
+    },
+    {
+      "kind": "count-response",
+      "name": "count-response-truncated",
+      "input": "{",
+      "expected": {
+        "error": "EOF while parsing an object at line 1 column 1",
+        "category": "Eof",
+        "line": 1,
+        "column": 1
+      }
+    },
+    {
+      "kind": "count-response",
+      "name": "count-response-alias",
+      "input": "{\"inputTokens\":12}",
+      "expected": {
+        "json": {
+          "input_tokens": 12
+        },
+        "wire": "{\"input_tokens\":12}"
+      }
+    },
+    {
+      "kind": "count-response",
+      "name": "count-response-negative",
+      "input": "{\"input_tokens\":-1}",
+      "expected": {
+        "error": "invalid value: integer `-1`, expected u64 at line 1 column 18",
+        "category": "Data",
+        "line": 1,
+        "column": 18
+      }
+    },
+    {
+      "kind": "count-response",
+      "name": "count-response-overflow",
+      "input": "{\"input_tokens\":18446744073709551616}",
+      "expected": {
+        "error": "invalid type: floating point `1.8446744073709552e+19`, expected u64 at line 1 column 36",
+        "category": "Data",
+        "line": 1,
+        "column": 36
+      }
+    },
+    {
+      "kind": "count-response",
+      "name": "count-response-duplicate-alias",
+      "input": "{\"input_tokens\":1,\"inputTokens\":2}",
+      "expected": {
+        "error": "duplicate field `input_tokens` at line 1 column 31",
+        "category": "Data",
+        "line": 1,
+        "column": 31
+      }
+    },
+    {
+      "kind": "count-response",
+      "name": "count-response-null-count",
+      "input": "{\"input_tokens\":null}",
+      "expected": {
+        "error": "invalid type: null, expected u64 at line 1 column 20",
+        "category": "Data",
+        "line": 1,
+        "column": 20
+      }
+    },
+    {
+      "kind": "count-response",
+      "name": "count-response-zero",
+      "input": "{\"input_tokens\":0}",
+      "expected": {
+        "json": {
+          "input_tokens": 0
+        },
+        "wire": "{\"input_tokens\":0}"
+      }
+    },
+    {
+      "kind": "rerank-request",
+      "name": "rerank-request-normal",
+      "input": "{\"model\":\"reranker\",\"query\":\"q\",\"documents\":[\"a\",{\"text\":\"b\",\"tenant\":\"t\"}],\"top_n\":1}",
+      "expected": {
+        "json": {
+          "model": "reranker",
+          "query": "q",
+          "documents": [
+            "a",
+            {
+              "text": "b",
+              "tenant": "t"
+            }
+          ],
+          "top_n": 1
+        },
+        "wire": "{\"model\":\"reranker\",\"query\":\"q\",\"documents\":[\"a\",{\"text\":\"b\",\"tenant\":\"t\"}],\"top_n\":1}"
+      }
+    },
+    {
+      "kind": "rerank-request",
+      "name": "rerank-request-unknown",
+      "input": "{\"model\":\"reranker\",\"query\":\"q\",\"documents\":[\"a\",{\"text\":\"b\",\"tenant\":\"t\"}],\"top_n\":1,\"future_extension\":{\"nested\":[1,null,\"值\"]}}",
+      "expected": {
+        "json": {
+          "model": "reranker",
+          "query": "q",
+          "documents": [
+            "a",
+            {
+              "text": "b",
+              "tenant": "t"
+            }
+          ],
+          "top_n": 1,
+          "future_extension": {
+            "nested": [
+              1,
+              null,
+              "值"
+            ]
+          }
+        },
+        "wire": "{\"model\":\"reranker\",\"query\":\"q\",\"documents\":[\"a\",{\"text\":\"b\",\"tenant\":\"t\"}],\"top_n\":1,\"future_extension\":{\"nested\":[1,null,\"值\"]}}"
+      }
+    },
+    {
+      "kind": "rerank-request",
+      "name": "rerank-request-empty",
+      "input": "{}",
+      "expected": {
+        "error": "missing field `query` at line 1 column 2",
+        "category": "Data",
+        "line": 1,
+        "column": 2
+      }
+    },
+    {
+      "kind": "rerank-request",
+      "name": "rerank-request-null",
+      "input": "null",
+      "expected": {
+        "error": "invalid type: null, expected struct Request at line 1 column 4",
+        "category": "Data",
+        "line": 1,
+        "column": 4
+      }
+    },
+    {
+      "kind": "rerank-request",
+      "name": "rerank-request-wrong-root",
+      "input": "[]",
+      "expected": {
+        "error": "invalid type: sequence, expected struct Request at line 1 column 0",
+        "category": "Data",
+        "line": 1,
+        "column": 0
+      }
+    },
+    {
+      "kind": "rerank-request",
+      "name": "rerank-request-truncated",
+      "input": "{",
+      "expected": {
+        "error": "EOF while parsing an object at line 1 column 1",
+        "category": "Eof",
+        "line": 1,
+        "column": 1
+      }
+    },
+    {
+      "kind": "rerank-request",
+      "name": "rerank-request-empty-explicit",
+      "input": "{\"query\":\"\",\"documents\":[]}",
+      "expected": {
+        "json": {
+          "query": "",
+          "documents": []
+        },
+        "wire": "{\"query\":\"\",\"documents\":[]}"
+      }
+    },
+    {
+      "kind": "rerank-request",
+      "name": "rerank-request-invalid-document",
+      "input": "{\"query\":\"q\",\"documents\":[1]}",
+      "expected": {
+        "error": "data did not match any variant of untagged enum Document at line 1 column 28",
+        "category": "Data",
+        "line": 1,
+        "column": 28
+      }
+    },
+    {
+      "kind": "rerank-request",
+      "name": "rerank-request-invalid-top",
+      "input": "{\"query\":\"q\",\"documents\":[],\"top_n\":-1}",
+      "expected": {
+        "error": "invalid value: integer `-1`, expected u32 at line 1 column 38",
+        "category": "Data",
+        "line": 1,
+        "column": 38
+      }
+    },
+    {
+      "kind": "rerank-response",
+      "name": "rerank-response-normal",
+      "input": "{\"results\":[{\"index\":0,\"relevance_score\":0.75,\"document\":{\"text\":\"a\"}}],\"meta\":{\"tokens\":{\"input_tokens\":1.5,\"output_tokens\":0.0},\"billed_units\":{\"total_tokens\":2}}}",
+      "expected": {
+        "json": {
+          "results": [
+            {
+              "index": 0,
+              "relevance_score": 0.75,
+              "document": {
+                "text": "a"
+              }
+            }
+          ],
+          "meta": {
+            "billed_units": {
+              "total_tokens": 2
+            },
+            "tokens": {
+              "input_tokens": 1.5,
+              "output_tokens": 0.0
+            }
+          }
+        },
+        "wire": "{\"results\":[{\"index\":0,\"relevance_score\":0.75,\"document\":{\"text\":\"a\"}}],\"meta\":{\"billed_units\":{\"total_tokens\":2},\"tokens\":{\"input_tokens\":1.5,\"output_tokens\":0.0}}}"
+      }
+    },
+    {
+      "kind": "rerank-response",
+      "name": "rerank-response-unknown",
+      "input": "{\"results\":[{\"index\":0,\"relevance_score\":0.75,\"document\":{\"text\":\"a\"}}],\"meta\":{\"tokens\":{\"input_tokens\":1.5,\"output_tokens\":0.0},\"billed_units\":{\"total_tokens\":2}},\"future_extension\":{\"nested\":[1,null,\"值\"]}}",
+      "expected": {
+        "json": {
+          "results": [
+            {
+              "index": 0,
+              "relevance_score": 0.75,
+              "document": {
+                "text": "a"
+              }
+            }
+          ],
+          "meta": {
+            "billed_units": {
+              "total_tokens": 2
+            },
+            "tokens": {
+              "input_tokens": 1.5,
+              "output_tokens": 0.0
+            }
+          },
+          "future_extension": {
+            "nested": [
+              1,
+              null,
+              "值"
+            ]
+          }
+        },
+        "wire": "{\"results\":[{\"index\":0,\"relevance_score\":0.75,\"document\":{\"text\":\"a\"}}],\"meta\":{\"billed_units\":{\"total_tokens\":2},\"tokens\":{\"input_tokens\":1.5,\"output_tokens\":0.0}},\"future_extension\":{\"nested\":[1,null,\"值\"]}}"
+      }
+    },
+    {
+      "kind": "rerank-response",
+      "name": "rerank-response-empty",
+      "input": "{}",
+      "expected": {
+        "error": "missing field `results` at line 1 column 2",
+        "category": "Data",
+        "line": 1,
+        "column": 2
+      }
+    },
+    {
+      "kind": "rerank-response",
+      "name": "rerank-response-null",
+      "input": "null",
+      "expected": {
+        "error": "invalid type: null, expected struct Response at line 1 column 4",
+        "category": "Data",
+        "line": 1,
+        "column": 4
+      }
+    },
+    {
+      "kind": "rerank-response",
+      "name": "rerank-response-wrong-root",
+      "input": "[]",
+      "expected": {
+        "error": "invalid type: sequence, expected struct Response at line 1 column 0",
+        "category": "Data",
+        "line": 1,
+        "column": 0
+      }
+    },
+    {
+      "kind": "rerank-response",
+      "name": "rerank-response-truncated",
+      "input": "{",
+      "expected": {
+        "error": "EOF while parsing an object at line 1 column 1",
+        "category": "Eof",
+        "line": 1,
+        "column": 1
+      }
+    },
+    {
+      "kind": "rerank-response",
+      "name": "rerank-response-empty-explicit",
+      "input": "{\"results\":[]}",
+      "expected": {
+        "json": {
+          "results": []
+        },
+        "wire": "{\"results\":[]}"
+      }
+    },
+    {
+      "kind": "rerank-response",
+      "name": "rerank-response-missing-score",
+      "input": "{\"results\":[{\"index\":0}]}",
+      "expected": {
+        "error": "missing field `relevance_score` at line 1 column 23",
+        "category": "Data",
+        "line": 1,
+        "column": 23
+      }
+    },
+    {
+      "kind": "rerank-lenient",
+      "name": "voyage",
+      "input": "{\"data\":[{\"index\":0,\"relevance_score\":0.8}]}",
+      "expected": {
+        "json": {
+          "results": [
+            {
+              "index": 0,
+              "relevance_score": 0.8
+            }
+          ]
+        },
+        "wire": "{\"results\":[{\"index\":0,\"relevance_score\":0.8}]}"
+      }
+    },
+    {
+      "kind": "rerank-lenient",
+      "name": "canonical-wins",
+      "input": "{\"results\":[],\"data\":[{\"index\":0,\"relevance_score\":0.8}]}",
+      "expected": {
+        "json": {
+          "results": [],
+          "data": [
+            {
+              "index": 0,
+              "relevance_score": 0.8
+            }
+          ]
+        },
+        "wire": "{\"results\":[],\"data\":[{\"index\":0,\"relevance_score\":0.8}]}"
+      }
+    },
+    {
+      "kind": "rerank-lenient",
+      "name": "malformed",
+      "input": "{\"data\":[{\"index\":-1}]}",
+      "expected": {
+        "error": "invalid value: integer `-1`, expected u32",
+        "category": "Data",
+        "line": 0,
+        "column": 0
+      }
+    },
+    {
+      "kind": "bedrock-message",
+      "name": "bedrock-message-normal",
+      "input": "{\"role\":\"assistant\",\"content\":[{\"text\":\"hi\"},{\"toolUse\":{\"toolUseId\":\"c1\",\"name\":\"lookup\",\"input\":{\"x\":[1,null]}}},{\"reasoningContent\":{\"reasoningText\":{\"text\":\"thought\",\"signature\":\"sig\"}}},{\"cachePoint\":{\"type\":\"default\"}}]}",
+      "expected": {
+        "json": {
+          "role": "assistant",
+          "content": [
+            {
+              "text": "hi"
+            },
+            {
+              "toolUse": {
+                "toolUseId": "c1",
+                "name": "lookup",
+                "input": {
+                  "x": [
+                    1,
+                    null
+                  ]
+                }
+              }
+            },
+            {
+              "reasoningContent": {
+                "reasoningText": {
+                  "text": "thought",
+                  "signature": "sig"
+                }
+              }
+            },
+            {
+              "cachePoint": {
+                "type": "default"
+              }
+            }
+          ]
+        },
+        "wire": "{\"role\":\"assistant\",\"content\":[{\"text\":\"hi\"},{\"toolUse\":{\"toolUseId\":\"c1\",\"name\":\"lookup\",\"input\":{\"x\":[1,null]}}},{\"reasoningContent\":{\"reasoningText\":{\"text\":\"thought\",\"signature\":\"sig\"}}},{\"cachePoint\":{\"type\":\"default\"}}]}"
+      }
+    },
+    {
+      "kind": "bedrock-message",
+      "name": "bedrock-message-unknown",
+      "input": "{\"role\":\"assistant\",\"content\":[{\"text\":\"hi\"},{\"toolUse\":{\"toolUseId\":\"c1\",\"name\":\"lookup\",\"input\":{\"x\":[1,null]}}},{\"reasoningContent\":{\"reasoningText\":{\"text\":\"thought\",\"signature\":\"sig\"}}},{\"cachePoint\":{\"type\":\"default\"}}],\"future_extension\":{\"nested\":[1,null,\"值\"]}}",
+      "expected": {
+        "json": {
+          "role": "assistant",
+          "content": [
+            {
+              "text": "hi"
+            },
+            {
+              "toolUse": {
+                "toolUseId": "c1",
+                "name": "lookup",
+                "input": {
+                  "x": [
+                    1,
+                    null
+                  ]
+                }
+              }
+            },
+            {
+              "reasoningContent": {
+                "reasoningText": {
+                  "text": "thought",
+                  "signature": "sig"
+                }
+              }
+            },
+            {
+              "cachePoint": {
+                "type": "default"
+              }
+            }
+          ]
+        },
+        "wire": "{\"role\":\"assistant\",\"content\":[{\"text\":\"hi\"},{\"toolUse\":{\"toolUseId\":\"c1\",\"name\":\"lookup\",\"input\":{\"x\":[1,null]}}},{\"reasoningContent\":{\"reasoningText\":{\"text\":\"thought\",\"signature\":\"sig\"}}},{\"cachePoint\":{\"type\":\"default\"}}]}"
+      }
+    },
+    {
+      "kind": "bedrock-message",
+      "name": "bedrock-message-empty",
+      "input": "{}",
+      "expected": {
+        "error": "missing field `role` at line 1 column 2",
+        "category": "Data",
+        "line": 1,
+        "column": 2
+      }
+    },
+    {
+      "kind": "bedrock-message",
+      "name": "bedrock-message-null",
+      "input": "null",
+      "expected": {
+        "error": "invalid type: null, expected struct Message at line 1 column 4",
+        "category": "Data",
+        "line": 1,
+        "column": 4
+      }
+    },
+    {
+      "kind": "bedrock-message",
+      "name": "bedrock-message-wrong-root",
+      "input": "[]",
+      "expected": {
+        "error": "invalid length 0, expected struct Message with 2 elements at line 1 column 2",
+        "category": "Data",
+        "line": 1,
+        "column": 2
+      }
+    },
+    {
+      "kind": "bedrock-message",
+      "name": "bedrock-message-truncated",
+      "input": "{",
+      "expected": {
+        "error": "EOF while parsing an object at line 1 column 1",
+        "category": "Eof",
+        "line": 1,
+        "column": 1
+      }
+    },
+    {
+      "kind": "bedrock-message",
+      "name": "bedrock-message-invalid-role",
+      "input": "{\"role\":\"alien\",\"content\":[]}",
+      "expected": {
+        "error": "unknown variant `alien`, expected `user` or `assistant` at line 1 column 15",
+        "category": "Data",
+        "line": 1,
+        "column": 15
+      }
+    },
+    {
+      "kind": "bedrock-message",
+      "name": "bedrock-message-multimodal",
+      "input": "{\"role\":\"user\",\"content\":[{\"image\":{\"format\":\"png\",\"source\":{\"bytes\":\"AA==\"}}},{\"toolResult\":{\"toolUseId\":\"c1\",\"content\":[{\"json\":{\"ok\":true}}],\"status\":\"success\"}}]}",
+      "expected": {
+        "json": {
+          "role": "user",
+          "content": [
+            {
+              "image": {
+                "format": "png",
+                "source": {
+                  "bytes": "AA=="
+                }
+              }
+            },
+            {
+              "toolResult": {
+                "toolUseId": "c1",
+                "content": [
+                  {
+                    "json": {
+                      "ok": true
+                    }
+                  }
+                ],
+                "status": "success"
+              }
+            }
+          ]
+        },
+        "wire": "{\"role\":\"user\",\"content\":[{\"image\":{\"format\":\"png\",\"source\":{\"bytes\":\"AA==\"}}},{\"toolResult\":{\"toolUseId\":\"c1\",\"content\":[{\"json\":{\"ok\":true}}],\"status\":\"success\"}}]}"
+      }
+    },
+    {
+      "kind": "bedrock-message",
+      "name": "bedrock-message-unknown-block",
+      "input": "{\"role\":\"user\",\"content\":[{\"future\":{}}]}",
+      "expected": {
+        "error": "unknown variant `future`, expected one of `text`, `image`, `toolResult`, `toolUse`, `reasoningContent`, `cachePoint` at line 1 column 35",
+        "category": "Data",
+        "line": 1,
+        "column": 35
+      }
+    },
+    {
+      "kind": "bedrock-error",
+      "name": "bedrock-error-normal",
+      "input": "{\"message\":\"bad\"}",
+      "expected": {
+        "debug": "ConverseErrorResponse { message: \"bad\" }"
+      }
+    },
+    {
+      "kind": "bedrock-error",
+      "name": "bedrock-error-unknown",
+      "input": "{\"message\":\"bad\",\"future_extension\":{\"nested\":[1,null,\"值\"]}}",
+      "expected": {
+        "debug": "ConverseErrorResponse { message: \"bad\" }"
+      }
+    },
+    {
+      "kind": "bedrock-error",
+      "name": "bedrock-error-empty",
+      "input": "{}",
+      "expected": {
+        "error": "missing field `message` at line 1 column 2",
+        "category": "Data",
+        "line": 1,
+        "column": 2
+      }
+    },
+    {
+      "kind": "bedrock-error",
+      "name": "bedrock-error-null",
+      "input": "null",
+      "expected": {
+        "error": "invalid type: null, expected struct ConverseErrorResponse at line 1 column 4",
+        "category": "Data",
+        "line": 1,
+        "column": 4
+      }
+    },
+    {
+      "kind": "bedrock-error",
+      "name": "bedrock-error-wrong-root",
+      "input": "[]",
+      "expected": {
+        "error": "invalid length 0, expected struct ConverseErrorResponse with 1 element at line 1 column 2",
+        "category": "Data",
+        "line": 1,
+        "column": 2
+      }
+    },
+    {
+      "kind": "bedrock-error",
+      "name": "bedrock-error-truncated",
+      "input": "{",
+      "expected": {
+        "error": "EOF while parsing an object at line 1 column 1",
+        "category": "Eof",
+        "line": 1,
+        "column": 1
+      }
+    },
+    {
+      "kind": "bedrock-error",
+      "name": "bedrock-error-alias",
+      "input": "{\"Message\":\"bad\"}",
+      "expected": {
+        "debug": "ConverseErrorResponse { message: \"bad\" }"
+      }
+    },
+    {
+      "kind": "bedrock-error",
+      "name": "bedrock-error-wrong",
+      "input": "{\"Message\":1}",
+      "expected": {
+        "error": "invalid type: integer `1`, expected a string at line 1 column 12",
+        "category": "Data",
+        "line": 1,
+        "column": 12
+      }
+    },
+    {
+      "kind": "bedrock-embedding",
+      "name": "bedrock-embedding-normal",
+      "input": "{\"inputTextTokenCount\":3}",
+      "expected": {
+        "json": {
+          "embedding": [],
+          "embeddingsByType": {},
+          "inputTextTokenCount": 3
+        },
+        "wire": "{\"embedding\":[],\"embeddingsByType\":{},\"inputTextTokenCount\":3}"
+      }
+    },
+    {
+      "kind": "bedrock-embedding",
+      "name": "bedrock-embedding-unknown",
+      "input": "{\"inputTextTokenCount\":3,\"future_extension\":{\"nested\":[1,null,\"值\"]}}",
+      "expected": {
+        "json": {
+          "embedding": [],
+          "embeddingsByType": {},
+          "inputTextTokenCount": 3
+        },
+        "wire": "{\"embedding\":[],\"embeddingsByType\":{},\"inputTextTokenCount\":3}"
+      }
+    },
+    {
+      "kind": "bedrock-embedding",
+      "name": "bedrock-embedding-empty",
+      "input": "{}",
+      "expected": {
+        "error": "missing field `inputTextTokenCount` at line 1 column 2",
+        "category": "Data",
+        "line": 1,
+        "column": 2
+      }
+    },
+    {
+      "kind": "bedrock-embedding",
+      "name": "bedrock-embedding-null",
+      "input": "null",
+      "expected": {
+        "error": "invalid type: null, expected struct AmazonTitanV2EmbeddingResponse at line 1 column 4",
+        "category": "Data",
+        "line": 1,
+        "column": 4
+      }
+    },
+    {
+      "kind": "bedrock-embedding",
+      "name": "bedrock-embedding-wrong-root",
+      "input": "[]",
+      "expected": {
+        "error": "invalid length 2, expected struct AmazonTitanV2EmbeddingResponse with 3 elements at line 1 column 2",
+        "category": "Data",
+        "line": 1,
+        "column": 2
+      }
+    },
+    {
+      "kind": "bedrock-embedding",
+      "name": "bedrock-embedding-truncated",
+      "input": "{",
+      "expected": {
+        "error": "EOF while parsing an object at line 1 column 1",
+        "category": "Eof",
+        "line": 1,
+        "column": 1
+      }
+    },
+    {
+      "kind": "bedrock-embedding",
+      "name": "bedrock-embedding-values",
+      "input": "{\"embedding\":[0.5,-0.25],\"embeddingsByType\":{\"float\":[0.5]},\"inputTextTokenCount\":3}",
+      "expected": {
+        "json": {
+          "embedding": [
+            0.5,
+            -0.25
+          ],
+          "embeddingsByType": {
+            "float": [
+              0.5
+            ]
+          },
+          "inputTextTokenCount": 3
+        },
+        "wire": "{\"embedding\":[0.5,-0.25],\"embeddingsByType\":{\"float\":[0.5]},\"inputTextTokenCount\":3}"
+      }
+    },
+    {
+      "kind": "bedrock-embedding",
+      "name": "bedrock-embedding-negative-count",
+      "input": "{\"inputTextTokenCount\":-1}",
+      "expected": {
+        "error": "invalid value: integer `-1`, expected usize at line 1 column 25",
+        "category": "Data",
+        "line": 1,
+        "column": 25
+      }
+    },
+    {
+      "kind": "bedrock-converse-response",
+      "name": "bedrock-converse-response-normal",
+      "input": "{\"output\":{\"message\":{\"role\":\"assistant\",\"content\":[{\"text\":\"hi\"}]}},\"stopReason\":\"end_turn\",\"usage\":{\"inputTokens\":12,\"outputTokens\":3,\"totalTokens\":15,\"cacheReadInputTokens\":4,\"cacheWriteInputTokens\":2}}",
+      "expected": {
+        "debug": "ConverseResponse { output: Some(Message(Message { role: Assistant, content: [Text(\"hi\")] })), stop_reason: EndTurn, usage: Some(TokenUsage { input_tokens: 12, output_tokens: 3, total_tokens: 15, cache_read_input_tokens: Some(4), cache_write_input_tokens: Some(2) }), metrics: None, additional_model_response_fields: None, trace: None, performance_config: None }"
+      }
+    },
+    {
+      "kind": "bedrock-converse-response",
+      "name": "bedrock-converse-response-unknown",
+      "input": "{\"output\":{\"message\":{\"role\":\"assistant\",\"content\":[{\"text\":\"hi\"}]}},\"stopReason\":\"end_turn\",\"usage\":{\"inputTokens\":12,\"outputTokens\":3,\"totalTokens\":15,\"cacheReadInputTokens\":4,\"cacheWriteInputTokens\":2},\"future_extension\":{\"nested\":[1,null,\"值\"]}}",
+      "expected": {
+        "debug": "ConverseResponse { output: Some(Message(Message { role: Assistant, content: [Text(\"hi\")] })), stop_reason: EndTurn, usage: Some(TokenUsage { input_tokens: 12, output_tokens: 3, total_tokens: 15, cache_read_input_tokens: Some(4), cache_write_input_tokens: Some(2) }), metrics: None, additional_model_response_fields: None, trace: None, performance_config: None }"
+      }
+    },
+    {
+      "kind": "bedrock-converse-response",
+      "name": "bedrock-converse-response-empty",
+      "input": "{}",
+      "expected": {
+        "error": "missing field `stopReason` at line 1 column 2",
+        "category": "Data",
+        "line": 1,
+        "column": 2
+      }
+    },
+    {
+      "kind": "bedrock-converse-response",
+      "name": "bedrock-converse-response-null",
+      "input": "null",
+      "expected": {
+        "error": "invalid type: null, expected struct ConverseResponse at line 1 column 4",
+        "category": "Data",
+        "line": 1,
+        "column": 4
+      }
+    },
+    {
+      "kind": "bedrock-converse-response",
+      "name": "bedrock-converse-response-wrong-root",
+      "input": "[]",
+      "expected": {
+        "error": "invalid length 0, expected struct ConverseResponse with 7 elements at line 1 column 2",
+        "category": "Data",
+        "line": 1,
+        "column": 2
+      }
+    },
+    {
+      "kind": "bedrock-converse-response",
+      "name": "bedrock-converse-response-truncated",
+      "input": "{",
+      "expected": {
+        "error": "EOF while parsing an object at line 1 column 1",
+        "category": "Eof",
+        "line": 1,
+        "column": 1
+      }
+    },
+    {
+      "kind": "bedrock-converse-response",
+      "name": "bedrock-converse-response-unknown-output",
+      "input": "{\"output\":{\"future\":{}},\"stopReason\":\"end_turn\"}",
+      "expected": {
+        "error": "invalid type: map, expected unit at line 1 column 20",
+        "category": "Data",
+        "line": 1,
+        "column": 20
+      }
+    },
+    {
+      "kind": "bedrock-converse-response",
+      "name": "bedrock-converse-response-bad-stop",
+      "input": "{\"stopReason\":\"future\"}",
+      "expected": {
+        "error": "unknown variant `future`, expected one of `content_filtered`, `end_turn`, `guardrail_intervened`, `max_tokens`, `model_context_window_exceeded`, `stop_sequence`, `tool_use` at line 1 column 22",
+        "category": "Data",
+        "line": 1,
+        "column": 22
+      }
+    },
+    {
+      "kind": "vertex-predict-response",
+      "name": "vertex-predict-response-normal",
+      "input": "{\"predictions\":[{\"embeddings\":{\"values\":[0.5,-0.25],\"statistics\":{\"token_count\":2}}}]}",
+      "expected": {
+        "debug": "PredictResponse { predictions: [Prediction { embeddings: EmbeddingsResult { values: [0.5, -0.25], statistics: Some(Statistics { token_count: 2 }) } }] }"
+      }
+    },
+    {
+      "kind": "vertex-predict-response",
+      "name": "vertex-predict-response-unknown",
+      "input": "{\"predictions\":[{\"embeddings\":{\"values\":[0.5,-0.25],\"statistics\":{\"token_count\":2}}}],\"future_extension\":{\"nested\":[1,null,\"值\"]}}",
+      "expected": {
+        "debug": "PredictResponse { predictions: [Prediction { embeddings: EmbeddingsResult { values: [0.5, -0.25], statistics: Some(Statistics { token_count: 2 }) } }] }"
+      }
+    },
+    {
+      "kind": "vertex-predict-response",
+      "name": "vertex-predict-response-empty",
+      "input": "{}",
+      "expected": {
+        "error": "missing field `predictions` at line 1 column 2",
+        "category": "Data",
+        "line": 1,
+        "column": 2
+      }
+    },
+    {
+      "kind": "vertex-predict-response",
+      "name": "vertex-predict-response-null",
+      "input": "null",
+      "expected": {
+        "error": "invalid type: null, expected struct PredictResponse at line 1 column 4",
+        "category": "Data",
+        "line": 1,
+        "column": 4
+      }
+    },
+    {
+      "kind": "vertex-predict-response",
+      "name": "vertex-predict-response-wrong-root",
+      "input": "[]",
+      "expected": {
+        "error": "invalid length 0, expected struct PredictResponse with 1 element at line 1 column 2",
+        "category": "Data",
+        "line": 1,
+        "column": 2
+      }
+    },
+    {
+      "kind": "vertex-predict-response",
+      "name": "vertex-predict-response-truncated",
+      "input": "{",
+      "expected": {
+        "error": "EOF while parsing an object at line 1 column 1",
+        "category": "Eof",
+        "line": 1,
+        "column": 1
+      }
+    },
+    {
+      "kind": "vertex-predict-response",
+      "name": "vertex-predict-response-no-stats",
+      "input": "{\"predictions\":[{\"embeddings\":{\"values\":[]}}]}",
+      "expected": {
+        "debug": "PredictResponse { predictions: [Prediction { embeddings: EmbeddingsResult { values: [], statistics: None } }] }"
+      }
+    },
+    {
+      "kind": "vertex-predict-response",
+      "name": "vertex-predict-response-invalid-values",
+      "input": "{\"predictions\":[{\"embeddings\":{\"values\":[\"x\"]}}]}",
+      "expected": {
+        "error": "invalid type: string \"x\", expected f32 at line 1 column 44",
+        "category": "Data",
+        "line": 1,
+        "column": 44
+      }
+    },
+    {
+      "kind": "vertex-rank-response",
+      "name": "vertex-rank-response-normal",
+      "input": "{\"records\":[{\"id\":\"1\",\"score\":0.75}]}",
+      "expected": {
+        "debug": "RankResponse { records: [RankResponseRecord { id: \"1\", score: Some(0.75) }] }"
+      }
+    },
+    {
+      "kind": "vertex-rank-response",
+      "name": "vertex-rank-response-unknown",
+      "input": "{\"records\":[{\"id\":\"1\",\"score\":0.75}],\"future_extension\":{\"nested\":[1,null,\"值\"]}}",
+      "expected": {
+        "debug": "RankResponse { records: [RankResponseRecord { id: \"1\", score: Some(0.75) }] }"
+      }
+    },
+    {
+      "kind": "vertex-rank-response",
+      "name": "vertex-rank-response-empty",
+      "input": "{}",
+      "expected": {
+        "debug": "RankResponse { records: [] }"
+      }
+    },
+    {
+      "kind": "vertex-rank-response",
+      "name": "vertex-rank-response-null",
+      "input": "null",
+      "expected": {
+        "error": "invalid type: null, expected struct RankResponse at line 1 column 4",
+        "category": "Data",
+        "line": 1,
+        "column": 4
+      }
+    },
+    {
+      "kind": "vertex-rank-response",
+      "name": "vertex-rank-response-wrong-root",
+      "input": "[]",
+      "expected": {
+        "debug": "RankResponse { records: [] }"
+      }
+    },
+    {
+      "kind": "vertex-rank-response",
+      "name": "vertex-rank-response-truncated",
+      "input": "{",
+      "expected": {
+        "error": "EOF while parsing an object at line 1 column 1",
+        "category": "Eof",
+        "line": 1,
+        "column": 1
+      }
+    },
+    {
+      "kind": "vertex-rank-response",
+      "name": "vertex-rank-response-missing-score",
+      "input": "{\"records\":[{\"id\":\"1\"}]}",
+      "expected": {
+        "debug": "RankResponse { records: [RankResponseRecord { id: \"1\", score: None }] }"
+      }
+    },
+    {
+      "kind": "vertex-rank-response",
+      "name": "vertex-rank-response-wrong-score",
+      "input": "{\"records\":[{\"id\":\"1\",\"score\":\"bad\"}]}",
+      "expected": {
+        "error": "invalid type: string \"bad\", expected f64 at line 1 column 35",
+        "category": "Data",
+        "line": 1,
+        "column": 35
+      }
+    },
+    {
+      "kind": "chat-bridge",
+      "name": "chat-bridge0",
+      "input": "{\"messages\":[],\"model\":\"x\"}",
+      "expected": {
+        "json": {
+          "messages": [],
+          "model": "x"
+        },
+        "wire": "{\"messages\":[],\"model\":\"x\"}"
+      }
+    },
+    {
+      "kind": "chat-bridge",
+      "name": "chat-bridge1",
+      "input": "{\"messages\":[{\"role\":\"alien\"}],\"model\":\"x\"}",
+      "expected": {
+        "error": "failed to marshal request: unknown variant `alien`, expected one of `developer`, `system`, `user`, `assistant`, `tool`, `function`",
+        "boundary": "request-marshal"
+      }
+    },
+    {
+      "kind": "chat-bridge",
+      "name": "chat-bridge2",
+      "input": "{\"messages\":[]}",
+      "expected": {
+        "json": {
+          "messages": []
+        },
+        "wire": "{\"messages\":[]}"
+      }
+    },
+    {
+      "kind": "embeddings-bridge",
+      "name": "embeddings-bridge0",
+      "input": "{\"input\":[\"a\"],\"model\":\"x\"}",
+      "expected": {
+        "json": {
+          "model": "x",
+          "input": [
+            "a"
+          ]
+        },
+        "wire": "{\"model\":\"x\",\"input\":[\"a\"]}"
+      }
+    },
+    {
+      "kind": "embeddings-bridge",
+      "name": "embeddings-bridge1",
+      "input": "{\"input\":[1,2],\"model\":\"x\"}",
+      "expected": {
+        "error": "failed to marshal request: data did not match any variant of untagged enum EmbeddingInput",
+        "boundary": "request-marshal"
+      }
+    },
+    {
+      "kind": "embeddings-bridge",
+      "name": "embeddings-bridge2",
+      "input": "{\"input\":\"x\"}",
+      "expected": {
+        "error": "failed to marshal request: invalid type: null, expected a string",
+        "boundary": "request-marshal"
+      }
+    },
+    {
+      "kind": "vertex-predict-request",
+      "name": "vertex-predict-request",
+      "input": "null",
+      "expected": {
+        "json": {
+          "instances": [
+            {
+              "content": "hello",
+              "task_type": "RETRIEVAL_QUERY"
+            }
+          ],
+          "parameters": {
+            "autoTruncate": false,
+            "outputDimensionality": 4
+          }
+        },
+        "wire": "{\"instances\":[{\"content\":\"hello\",\"task_type\":\"RETRIEVAL_QUERY\"}],\"parameters\":{\"autoTruncate\":false,\"outputDimensionality\":4}}"
+      }
+    },
+    {
+      "kind": "vertex-rank-request",
+      "name": "vertex-rank-request",
+      "input": "null",
+      "expected": {
+        "json": {
+          "model": "ranker",
+          "query": "q",
+          "records": [
+            {
+              "id": "1",
+              "content": "a"
+            }
+          ],
+          "topN": 1,
+          "ignoreRecordDetailsInResponse": true
+        },
+        "wire": "{\"model\":\"ranker\",\"query\":\"q\",\"records\":[{\"id\":\"1\",\"content\":\"a\"}],\"topN\":1,\"ignoreRecordDetailsInResponse\":true}"
+      }
+    },
+    {
+      "kind": "normalized-response",
+      "name": "normalized-response",
+      "input": "null",
+      "expected": {
+        "json": {
+          "input_tokens": 12,
+          "input_audio_tokens": 2,
+          "output_tokens": 3,
+          "total_tokens": 15,
+          "reasoning_tokens": 1,
+          "cache_creation_input_tokens": 4,
+          "cached_input_tokens": 5,
+          "service_tier": "standard",
+          "provider_model": "model",
+          "completion": [
+            "ok"
+          ]
+        },
+        "wire": "{\"input_tokens\":12,\"input_audio_tokens\":2,\"output_tokens\":3,\"total_tokens\":15,\"reasoning_tokens\":1,\"cache_creation_input_tokens\":4,\"cached_input_tokens\":5,\"service_tier\":\"standard\",\"provider_model\":\"model\",\"completion\":[\"ok\"]}"
+      }
+    },
+    {
+      "kind": "cache-convention",
+      "name": "cache-convention",
+      "input": "null",
+      "expected": {
+        "default": "InputIncludesCache",
+        "pending": "InputIncludesCache",
+        "variants": [
+          "InputIncludesCache",
+          "InputExcludesCache"
+        ]
+      }
+    },
+    {
+      "kind": "bedrock-inference",
+      "name": "bedrock-inference",
+      "input": "null",
+      "expected": {
+        "json": {
+          "maxTokens": 128,
+          "temperature": 0.5
+        },
+        "wire": "{\"maxTokens\":128,\"temperature\":0.5}"
+      }
+    },
+    {
+      "kind": "bedrock-titan-request",
+      "name": "bedrock-titan-request",
+      "input": "null",
+      "expected": {
+        "json": {
+          "inputText": "hello",
+          "dimensions": 4,
+          "normalize": true
+        },
+        "wire": "{\"inputText\":\"hello\",\"dimensions\":4,\"normalize\":true}"
+      }
+    }
+  ]
+}

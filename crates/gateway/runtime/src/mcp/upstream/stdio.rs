@@ -1,14 +1,14 @@
-use std::collections::HashMap;
 use std::fmt;
 use std::fmt::{Debug, Formatter};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use futures_util::TryFutureExt;
+use gateway_mcp::transport::{Inbound, PendingResponses};
 use platform_core::prelude::*;
 use rmcp::model::{
 	ClientJsonRpcMessage, ClientNotification, ClientRequest, JsonRpcMessage, JsonRpcRequest,
-	RequestId, ServerJsonRpcMessage,
+	ServerJsonRpcMessage,
 };
 use rmcp::transport::{TokioChildProcess, Transport};
 use tokio::sync::mpsc::Sender;
@@ -18,11 +18,22 @@ use tracing::{error, warn};
 use crate::mcp::mergestream::Messages;
 use crate::mcp::upstream::{IncomingRequestContext, UpstreamError};
 
+#[cfg(test)]
+#[path = "stdio_tests.rs"]
+mod tests;
+
+const RESPONSE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(120);
+
+struct PendingCall {
+	sender: oneshot::Sender<ServerJsonRpcMessage>,
+	deadline: tokio::time::Instant,
+}
+
 pub struct Process {
 	sender: mpsc::Sender<(ClientJsonRpcMessage, IncomingRequestContext)>,
 	shutdown_tx: platform_core::responsechannel::Sender<(), Option<UpstreamError>>,
 	event_stream: AtomicOption<mpsc::Sender<ServerJsonRpcMessage>>,
-	pending_requests: Arc<Mutex<HashMap<RequestId, oneshot::Sender<ServerJsonRpcMessage>>>>,
+	pending_requests: Arc<Mutex<PendingResponses<PendingCall>>>,
 	alive: Arc<AtomicBool>,
 }
 
@@ -57,11 +68,24 @@ impl Process {
 		let req_id = req.id.clone();
 		let (sender, receiver) = oneshot::channel();
 
-		self
-			.pending_requests
-			.lock()
-			.unwrap()
-			.insert(req_id.clone(), sender);
+		{
+			let mut pending = self.pending_requests.lock().unwrap();
+			// Close and admission share this lock: no waiter can appear after final clear.
+			if !self.is_alive() {
+				return Err(UpstreamError::Recv);
+			}
+			if !pending.register(
+				req_id.clone(),
+				PendingCall {
+					sender,
+					deadline: tokio::time::Instant::now() + RESPONSE_TIMEOUT,
+				},
+			) {
+				return Err(UpstreamError::InvalidRequest(
+					"request ID already pending or connection response capacity exhausted".into(),
+				));
+			}
+		}
 
 		if self
 			.sender
@@ -69,7 +93,7 @@ impl Process {
 			.await
 			.is_err()
 		{
-			self.pending_requests.lock().unwrap().remove(&req_id);
+			self.pending_requests.lock().unwrap().discard(&req_id);
 			return Err(UpstreamError::Send);
 		}
 
@@ -77,6 +101,7 @@ impl Process {
 		Ok(response)
 	}
 	pub async fn get_event_stream(&self) -> Result<Messages, UpstreamError> {
+		let _admission = self.pending_requests.lock().unwrap();
 		if !self.is_alive() {
 			return Err(UpstreamError::Recv);
 		}
@@ -86,7 +111,7 @@ impl Process {
 		// where one session owns one active GET/SSE stream, but it is not a general
 		// multi-subscriber broadcast mechanism.
 		self.event_stream.store(Some(Arc::new(tx)));
-		Ok(Messages::from(rx))
+		Ok(crate::mcp::mergestream::from_receiver(rx))
 	}
 	pub async fn send_notification(
 		&self,
@@ -111,10 +136,7 @@ impl Process {
 			mpsc::channel::<(ClientJsonRpcMessage, IncomingRequestContext)>(10);
 		let (shutdown_tx, mut shutdown_rx) =
 			platform_core::responsechannel::new::<(), Option<UpstreamError>>(10);
-		let pending_requests = Arc::new(Mutex::new(HashMap::<
-			RequestId,
-			oneshot::Sender<ServerJsonRpcMessage>,
-		>::new()));
+		let pending_requests = Arc::new(Mutex::new(PendingResponses::<PendingCall>::default()));
 		let pending_requests_clone = pending_requests.clone();
 		let event_stream: AtomicOption<Sender<ServerJsonRpcMessage>> = Default::default();
 		let event_stream_send: AtomicOption<Sender<ServerJsonRpcMessage>> = event_stream.clone();
@@ -124,6 +146,23 @@ impl Process {
 		tokio::spawn(async move {
 			let mut terminal_err = None;
 			let mut shutdown_resp = None;
+			// Expiry closes the connection rather than reusing an ambiguous request ID.
+			// This branch remains live while send/event backpressure suspends the I/O loop.
+			let expiry = async {
+				loop {
+					tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+					if pending_requests_clone
+						.lock()
+						.unwrap()
+						.any(|call| call.deadline <= tokio::time::Instant::now())
+					{
+						break;
+					}
+				}
+			};
+			tokio::select! {
+								_ = expiry => { terminal_err = Some(UpstreamError::Recv); },
+								_ = async {
 			loop {
 				tokio::select! {
 					req = sender_rx.recv() => match req {
@@ -138,15 +177,14 @@ impl Process {
 					},
 					msg = proc.receive() => {
 						match msg {
-							Some(JsonRpcMessage::Response(res)) => {
-								let req_id = res.id.clone();
-								if let Some(sender) = pending_requests_clone.lock().unwrap().remove(&req_id) {
-									let _ = sender.send(ServerJsonRpcMessage::Response(res));
-								}
-							},
-							Some(other) => {
-								if let Some(sender) = event_stream_send.load().as_ref() {
-									let _ = sender.send(other).await;
+							Some(message) => {
+								let routed = pending_requests_clone.lock().unwrap().route(message);
+								match routed {
+									Inbound::Reply(pending, message) => { let _ = pending.sender.send(message); },
+									Inbound::Event(message) => {
+										if let Some(sender) = event_stream_send.load().as_ref() { let _ = sender.send(message).await; }
+									},
+									Inbound::UnmatchedReply => warn!("unmatched MCP transport response"),
 								}
 							},
 							None => {
@@ -164,12 +202,21 @@ impl Process {
 					},
 				}
 			}
+								} => {},
+						}
 
-			alive_task.store(false, Ordering::Release);
-			event_stream_send.store(None);
-			pending_requests_clone.lock().unwrap().clear();
+			{
+				let mut pending = pending_requests_clone.lock().unwrap();
+				alive_task.store(false, Ordering::Release);
+				event_stream_send.store(None);
+				pending.clear();
+			}
 
-			let close_err = proc.close().await.err();
+			let close_err =
+				match tokio::time::timeout(std::time::Duration::from_secs(5), proc.close()).await {
+					Ok(result) => result.err(),
+					Err(_) => Some(UpstreamError::Recv),
+				};
 			if let Some(e) = close_err.as_ref() {
 				warn!("Error shutting down stdio process: {:?}", e);
 			}

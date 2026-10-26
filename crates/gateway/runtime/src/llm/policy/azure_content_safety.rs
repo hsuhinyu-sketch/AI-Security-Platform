@@ -237,7 +237,7 @@ async fn send_content_safety_request<Req: Serialize, Resp: serde::de::Deserializ
 
 	let req = rb.body(crate::http::Body::from(serde_json::to_vec(body)?))?;
 
-	let mock_be = Backend::Dynamic(
+	let backend = Backend::Dynamic(
 		ResourceName::new(
 			strng::literal!("_azure-content-safety"),
 			strng::literal!(""),
@@ -247,7 +247,7 @@ async fn send_content_safety_request<Req: Serialize, Resp: serde::de::Deserializ
 
 	let resp = client
 		.with_outbound(OutboundCallKind::Policy, OutboundCallSubtype::Guardrail)
-		.call_with_explicit_policies_list(with_default_timeout(req), mock_be, pols)
+		.call_with_explicit_policies_list(with_default_timeout(req), backend, pols)
 		.await?;
 
 	let status = resp.status();

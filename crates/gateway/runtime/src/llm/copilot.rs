@@ -19,11 +19,8 @@ pub const DEFAULT_HOST_STR: &str = "api.githubcopilot.com";
 pub const DEFAULT_HOST: Strng = strng::literal!(DEFAULT_HOST_STR);
 
 pub fn path_suffix(route: RouteType) -> &'static str {
-	match route {
-		RouteType::Responses => "/responses",
-		RouteType::Embeddings => "/embeddings",
-		RouteType::Rerank => "/rerank",
-		RouteType::Models => "/models",
-		_ => "/chat/completions",
+	if route == RouteType::Models {
+		return gateway_llm::provider::copilot::MODELS_PATH;
 	}
+	gateway_llm::provider::copilot::path_suffix(route.provider_format())
 }

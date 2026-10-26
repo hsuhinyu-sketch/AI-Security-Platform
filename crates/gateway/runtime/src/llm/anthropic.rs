@@ -22,8 +22,5 @@ pub const OAUTH_TOKEN_PREFIX: &str = "sk-ant-oat";
 pub const DEFAULT_BASE_PATH: &str = "/v1";
 
 pub fn path_suffix(route: RouteType) -> &'static str {
-	match route {
-		RouteType::AnthropicTokenCount => "/messages/count_tokens",
-		_ => "/messages",
-	}
+	gateway_llm::provider::anthropic::path_suffix(route.provider_format())
 }

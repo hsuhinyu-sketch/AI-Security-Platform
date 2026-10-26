@@ -37,7 +37,7 @@ use crate::types::agent::{
 use crate::types::discovery::Service;
 use crate::types::discovery::gatewayaddress::Destination;
 use crate::types::frontend;
-use crate::{ProxyInputs, Stores, client};
+use crate::{RuntimeContext, Stores, client};
 
 #[derive(Debug, Clone, PartialEq)]
 
@@ -125,18 +125,42 @@ impl TryFrom<&http::Uri> for HboneAddress {
 }
 
 pub struct Gateway {
-	pi: Arc<ProxyInputs>,
+	pi: Arc<RuntimeContext>,
+	services: crate::runtime::services::ProtocolServices,
 	drain: drain::DrainWatcher,
 }
 
 impl Gateway {
-	pub fn new(pi: Arc<ProxyInputs>, drain: DrainWatcher) -> Gateway {
-		Gateway { drain, pi }
+	/// Compatibility entry point. New Hosts inject shared facilities and service owners separately.
+	pub fn new(pi: Arc<crate::ProxyInputs>, drain: DrainWatcher) -> Gateway {
+		let services = crate::runtime::services::ProtocolServices::new(
+			#[cfg(feature = "gateway-mcp")]
+			crate::mcp::Service::from_app(pi.mcp_state.clone()),
+			#[cfg(feature = "gateway-llm")]
+			crate::llm::cost::CatalogService::from_catalog(pi.model_catalog.clone()),
+		);
+		Self::with_services(
+			crate::IntoRuntimeContext::into_runtime_context(pi),
+			services,
+			drain,
+		)
+	}
+	pub fn with_services(
+		pi: Arc<RuntimeContext>,
+		services: crate::runtime::services::ProtocolServices,
+		drain: DrainWatcher,
+	) -> Gateway {
+		Gateway {
+			drain,
+			pi,
+			services,
+		}
 	}
 
 	pub async fn run(self) {
 		let drain = self.drain.clone();
 		let subdrain = self.drain.clone();
+		let services = self.services.handles();
 		let mut js = JoinSet::new();
 		let mut binds = {
 			let mut binds = self.pi.stores.binds.write();
@@ -161,8 +185,14 @@ impl Gateway {
 			match listeners {
 				BindListeners::Single(listener) => {
 					let task = js.spawn(
-						Self::run_bind(self.pi.clone(), subdrain.clone(), Arc::new(bind), listener)
-							.in_current_span(),
+						Self::run_bind(
+							self.pi.clone(),
+							services.clone(),
+							subdrain.clone(),
+							Arc::new(bind),
+							listener,
+						)
+						.in_current_span(),
 					);
 					active.insert(bind_key, task);
 				},
@@ -170,6 +200,7 @@ impl Gateway {
 					for (core_id, listener) in listeners {
 						let subdrain = subdrain.clone();
 						let pi = self.pi.clone();
+						let services = services.clone();
 						let bind = bind.clone();
 						std::thread::spawn(move || {
 							let res = core_affinity::set_for_current(core_id);
@@ -181,7 +212,7 @@ impl Gateway {
 								.build()
 								.unwrap()
 								.block_on(async {
-									let _ = Self::run_bind(pi, subdrain, Arc::new(bind), listener)
+									let _ = Self::run_bind(pi, services, subdrain, Arc::new(bind), listener)
 										.in_current_span()
 										.await;
 								})
@@ -213,7 +244,8 @@ impl Gateway {
 	}
 
 	pub(super) async fn run_bind(
-		pi: Arc<ProxyInputs>,
+		pi: Arc<RuntimeContext>,
+		services: crate::runtime::services::ServiceHandles,
 		drain: DrainWatcher,
 		bind: Arc<crate::types::agent::Bind>,
 		listener: std::net::TcpListener,
@@ -268,6 +300,7 @@ impl Gateway {
 					return;
 				};
 				stream.with_logging(LoggingMode::Downstream);
+				stream.ext_mut().insert(services.clone());
 				let pi = pi.clone();
 				// We got the connection; make a strong drain blocker.
 				let drain = upgrader.upgrade(weak.clone());
@@ -387,7 +420,7 @@ impl Gateway {
 		bind_name: BindKey,
 		bind_protocol: BindProtocol,
 		raw_stream: Socket,
-		inputs: Arc<ProxyInputs>,
+		inputs: Arc<RuntimeContext>,
 		drain: DrainWatcher,
 	) {
 		let policies = Self::frontend_policies_for_bind(&bind_name, &inputs);
@@ -549,7 +582,10 @@ impl Gateway {
 		}
 	}
 
-	fn frontend_policies_for_bind(bind_name: &BindKey, inputs: &Arc<ProxyInputs>) -> FrontendPolices {
+	fn frontend_policies_for_bind(
+		bind_name: &BindKey,
+		inputs: &Arc<RuntimeContext>,
+	) -> FrontendPolices {
 		{
 			let binds = inputs.stores.read_binds();
 			let gateway = binds
@@ -565,7 +601,7 @@ impl Gateway {
 		bind_protocol: BindProtocol,
 		tunnel_protocol: TunnelProtocol,
 		mut raw_stream: Socket,
-		inputs: Arc<ProxyInputs>,
+		inputs: Arc<RuntimeContext>,
 		drain: DrainWatcher,
 	) {
 		let policies = Self::frontend_policies_for_bind(&bind_name, &inputs);
@@ -676,7 +712,7 @@ impl Gateway {
 	}
 
 	async fn terminate_connect_tunnel(
-		inputs: Arc<ProxyInputs>,
+		inputs: Arc<RuntimeContext>,
 		raw_stream: Socket,
 		policies: FrontendPolices,
 		drain: DrainWatcher,
@@ -786,7 +822,7 @@ impl Gateway {
 
 	async fn proxy(
 		bind_name: BindKey,
-		inputs: Arc<ProxyInputs>,
+		inputs: Arc<RuntimeContext>,
 		selected_listener: Option<Arc<Listener>>,
 		listener_change: Option<watch::Receiver<u64>>,
 		mut stream: Socket,
@@ -966,7 +1002,7 @@ impl Gateway {
 
 	async fn proxy_tcp(
 		bind_name: BindKey,
-		inputs: Arc<ProxyInputs>,
+		inputs: Arc<RuntimeContext>,
 		selected_listener: Option<Arc<Listener>>,
 		stream: Socket,
 		_drain: DrainWatcher,
@@ -1031,7 +1067,7 @@ impl Gateway {
 	// a listener (based on SNI).
 	// Based on the listener, it will passthrough the TLS or terminate it with the appropriate configuration.
 	async fn maybe_terminate_tls(
-		inp: Arc<ProxyInputs>,
+		inp: Arc<RuntimeContext>,
 		raw_stream: Socket,
 		policies: &FrontendPolices,
 		bind_key: BindKey,
@@ -1060,9 +1096,6 @@ impl Gateway {
 						&& tls_looks_like_http(data)
 					{
 						anyhow::bail!("client sent an HTTP request to an HTTPS listener: {e}");
-						// TODO(https://github.com/rustls/tokio-rustls/pull/147): write
-						// let _ = io.write_all(b"HTTP/1.0 400 Bad Request\r\n\r\nclient sent an HTTP request to an HTTPS listener\n").await;
-						// let _ = io.shutdown().await;
 					}
 					anyhow::bail!(e);
 				},
@@ -1165,7 +1198,7 @@ impl Gateway {
 	async fn terminate_proxy_protocol(
 		bind_name: BindKey,
 		bind_protocol: BindProtocol,
-		inp: Arc<ProxyInputs>,
+		inp: Arc<RuntimeContext>,
 		raw_stream: Socket,
 		policy: frontend::Proxy,
 		drain: DrainWatcher,
@@ -1206,7 +1239,7 @@ impl Gateway {
 
 	async fn terminate_waypoint_hbone(
 		bind_name: BindKey,
-		inp: Arc<ProxyInputs>,
+		inp: Arc<RuntimeContext>,
 		raw_stream: Socket,
 		policies: FrontendPolices,
 		drain: DrainWatcher,
@@ -1243,7 +1276,7 @@ impl Gateway {
 	}
 
 	async fn terminate_gateway_hbone(
-		inp: Arc<ProxyInputs>,
+		inp: Arc<RuntimeContext>,
 		raw_stream: Socket,
 		policies: FrontendPolices,
 		drain: DrainWatcher,
@@ -1282,7 +1315,7 @@ impl Gateway {
 	#[allow(clippy::too_many_arguments)]
 	async fn serve_waypoint_connect(
 		bind_name: BindKey,
-		pi: Arc<ProxyInputs>,
+		pi: Arc<RuntimeContext>,
 		req: platform_hbone::server::H2Request,
 		ext: Arc<Extension>,
 		drain: DrainWatcher,
@@ -1320,7 +1353,7 @@ impl Gateway {
 	/// Resolve the HBONE listener and dispatch to the HTTP or TCP proxy.
 	pub(crate) async fn handle_waypoint(
 		bind_name: BindKey,
-		pi: Arc<ProxyInputs>,
+		pi: Arc<RuntimeContext>,
 		svc: Arc<crate::types::discovery::Service>,
 		mut socket: Socket,
 		is_http: bool,
@@ -1386,7 +1419,7 @@ impl Gateway {
 	}
 
 	async fn setup_hbone_info(
-		pi: &Arc<ProxyInputs>,
+		pi: &Arc<RuntimeContext>,
 		req: &H2Request,
 	) -> anyhow::Result<(SocketAddr, Arc<Service>)> {
 		let uri = req.uri();
@@ -1470,7 +1503,7 @@ impl Gateway {
 	/// serve_gateway_connect handles a single connection from a client.
 	#[allow(clippy::too_many_arguments)]
 	async fn serve_gateway_connect(
-		pi: Arc<ProxyInputs>,
+		pi: Arc<RuntimeContext>,
 		req: platform_hbone::server::H2Request,
 		ext: Arc<Extension>,
 		drain: DrainWatcher,

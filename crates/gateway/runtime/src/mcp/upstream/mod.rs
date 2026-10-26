@@ -16,6 +16,7 @@ use security_capability_broker::{CAPABILITY_CONTEXT_HEADER, CAPABILITY_HEADER};
 use thiserror::Error;
 use tokio::process::Command;
 
+use crate::mcp::ClientError;
 use crate::mcp::mergestream::Messages;
 use crate::mcp::router::{McpBackendGroup, McpTarget};
 use crate::mcp::streamablehttp::StreamableHttpPostResponse;
@@ -45,16 +46,25 @@ pub struct IncomingRequestContext {
 
 impl IncomingRequestContext {
 	pub fn new(parts: &::http::request::Parts) -> Self {
+		let mut ext = parts.extensions.clone();
+		crate::security::request_id(&mut ext);
 		Self {
 			method: parts.method.clone(),
 			uri: parts.uri.clone(),
 			headers: parts.headers.clone(),
-			ext: parts.extensions.clone(),
+			ext,
 			authority: parts.uri.authority().cloned(),
 		}
 	}
 	pub fn headers_mut(&mut self) -> &mut http::HeaderMap {
 		&mut self.headers
+	}
+	pub(crate) fn security_request_id(&self) -> &str {
+		self
+			.ext
+			.get::<security_types::RequestContext>()
+			.expect("initialized at MCP ingress")
+			.request_id()
 	}
 	pub fn extensions_mut(&mut self) -> &mut ::http::Extensions {
 		&mut self.ext
@@ -122,8 +132,16 @@ impl IncomingRequestContext {
 	}
 }
 
+impl From<gateway_mcp::merge::MergeError> for UpstreamError {
+	fn from(error: gateway_mcp::merge::MergeError) -> Self {
+		Self::Http(ClientError::from(error))
+	}
+}
+
 #[derive(Debug, Error)]
 pub enum UpstreamError {
+	#[error("security check failed: {}", .0.kind().as_str())]
+	Security(security_pipeline::GatewayError),
 	#[error("unknown {resource_type}: {resource_name}")]
 	Authorization {
 		resource_type: String,
@@ -207,11 +225,9 @@ impl Upstream {
 		match &self {
 			Upstream::McpStdio(c) => Ok(c.get_event_stream().await?),
 			Upstream::McpSSE(c) => c.connect_to_event_stream(ctx).await,
-			Upstream::McpStreamable(c) => c
-				.get_event_stream(ctx)
-				.await?
-				.try_into()
-				.map_err(Into::into),
+			Upstream::McpStreamable(c) => {
+				mergestream::from_post_response(c.get_event_stream(ctx).await?).map_err(Into::into)
+			},
 			Upstream::OpenAPI(_m) => Ok(Messages::pending()),
 		}
 	}
@@ -249,7 +265,7 @@ impl Upstream {
 					};
 					c.set_session_id(sid.map(|s| s.as_str()), None);
 				}
-				res.try_into().map_err(Into::into)
+				mergestream::from_post_response(res).map_err(Into::into)
 			},
 			Upstream::OpenAPI(c) => {
 				Ok(Box::pin(c.send_message(request, ctx).assert_size::<{ 6 * 1024 }>()).await?)

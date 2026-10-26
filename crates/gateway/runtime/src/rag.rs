@@ -12,7 +12,6 @@ use axum::{
 	middleware::{self, Next},
 	response::{IntoResponse, Response},
 };
-use platform_core::drain;
 use security_audit::AuditSink;
 use security_integration_runtime::SecurityConfigAuthorizer;
 use security_pipeline::{GatewayIdentity, SecurityPipeline};
@@ -23,10 +22,13 @@ use security_rag::{
 };
 use security_types::{DecisionEffect, SecurityEvent};
 use serde_json::json;
-use tracing::{info, warn};
+use tracing::info;
 
 use crate::security_events::{SecurityEventKind, UiSecurityAuditSink};
-use crate::{Config, http::jwt::Claims, resource_manager::ResourceFetcher, serdes};
+use crate::{Config, http::jwt::Claims, resource_manager::ResourceFetcher};
+
+mod service;
+pub(crate) use service::Runtime;
 
 /// The RAG adapter requires an outer `SecurityPipeline`, while `SecurityConfigAuthorizer` already
 /// executes and audits the configured policy pipeline. Suppressing the adapter's wrapper event
@@ -196,166 +198,137 @@ impl ContextAuditSink for TracingContextAudit {
 	}
 }
 
-/// Starts every `aiSystems[].rag` listener declared in the local configuration. A listener is
-/// independently authenticated and drained; one system cannot route requests into another system's
-/// corpus namespace.
-pub(crate) async fn start_configured_gateways(
+/// Prepare a complete listener generation before any live configuration is replaced.
+async fn build_router(
 	config: &Config,
 	resources: &ResourceFetcher,
-	drain: drain::DrainWatcher,
-) -> anyhow::Result<usize> {
-	let Some(source) = &config.local_config else {
-		return Ok(0);
-	};
-	let contents = source.read_to_string().await?;
-	let contents = contents.replace("# yaml-language-server: $schema", "#");
-	let local: crate::types::local::LocalConfig = serdes::yamlviajson::from_str(&contents)?;
-	let systems = local.into_rag_systems()?;
-	let count = systems.len();
-
-	for mut system in systems {
-		if system.security.required_audit.is_some() && config.security_audit.is_none() {
-			anyhow::bail!("RAG requiredAudit requires config.securityAudit");
-		}
-		use security_integration_runtime::dependency_egress::DependencyKind as D;
-		if let Some(parent) = &config.dependency_egress {
-			system.security.dependency_egress = Some(
-				system
-					.security
-					.dependency_egress
-					.as_ref()
-					.map_or_else(|| parent.clone(), |local| parent.intersect(local)),
-			);
-		}
-		system
-			.security
-			.validate_composition()
-			.map_err(anyhow::Error::msg)?;
-		if let Some(policy) = &system.security.dependency_egress {
-			policy
-				.check_url(D::Qdrant, &system.gateway.qdrant.endpoint)
-				.map_err(anyhow::Error::msg)?;
-			policy
-				.check_url(D::Embedding, &system.gateway.embedding.endpoint)
-				.map_err(anyhow::Error::msg)?;
-			for source in &system.gateway.trusted_sources {
-				policy
-					.check_url(D::TrustedSource, &source.base_url)
-					.map_err(anyhow::Error::msg)?;
-			}
-		}
-		system
-			.security
-			.prepare_runtime_stores()
-			.map_err(anyhow::Error::msg)?;
-		let jwt = Arc::new(
-			system
-				.authentication
-				.try_into(resources)
-				.await
-				.map_err(|error| anyhow::anyhow!("RAG JWT configuration for '{}': {error}", system.name))?,
-		);
-		let listener =
-			tokio::net::TcpListener::bind((system.gateway.bind_address.as_str(), system.gateway.port))
-				.await
-				.map_err(|error| anyhow::anyhow!("RAG listener for '{}': {error}", system.name))?;
-		let address = listener.local_addr()?;
-		let backend = Arc::new(
-			system
-				.gateway
-				.build_qdrant_backend(
-					reqwest::Client::builder()
-						.redirect(reqwest::redirect::Policy::none())
-						.no_proxy()
-						.timeout(std::time::Duration::from_secs(30))
-						.build()?,
-				)
-				.map_err(|error| anyhow::anyhow!("RAG backend for '{}': {error}", system.name))?,
-		);
-		let lifecycle = system
-			.gateway
-			.lifecycle
-			.clone()
-			.map(security_rag::lifecycle::DocumentLifecycleStore::open)
-			.transpose()
-			.map_err(anyhow::Error::msg)?;
-		if let (Some(store), Some(flow)) = (&lifecycle, &system.security.cross_component) {
-			flow
-				.context_store()
-				.map_err(|_| anyhow::anyhow!("context store unavailable"))?
-				.register_document_validator(&flow.namespace, store.clone())
-				.map_err(|_| anyhow::anyhow!("document validator registration failed"))?;
-		}
-		let purger: Arc<dyn security_rag::lifecycle::DocumentPurger> = backend.clone();
-		let backend = Arc::new(security_rag::lifecycle::LifecycleBackend {
-			backend,
-			store: lifecycle.clone(),
-			default_access: system.gateway.qdrant.default_chunk_access.clone(),
-		});
-		let trusted_sources = system
-			.gateway
-			.build_trusted_sources()
-			.map_err(|error| anyhow::anyhow!("RAG trusted sources for '{}': {error}", system.name))?
-			.map(Arc::new);
-		let security = Arc::new(system.security);
-		let ingestor = SecureIngestor::new(
-			backend.clone(),
-			SecurityPipeline::new(
-				SecurityConfigAuthorizer::with_audit(security.clone(), UiSecurityAuditSink),
-				DiscardAudit,
-			),
-			system.gateway.ingestion.clone(),
-			TracingIngestionAudit,
-		)
-		.map_err(|error| anyhow::anyhow!("RAG ingestion guard for '{}': {error:?}", system.name))?;
-		let retriever = SecureRetriever::new(
-			backend,
-			SecurityPipeline::new(
-				SecurityConfigAuthorizer::with_audit(security.clone(), UiSecurityAuditSink),
-				DiscardAudit,
-			),
-			system.gateway.retrieval.clone(),
-			TracingRetrievalAudit,
-		)
-		.map_err(|error| anyhow::anyhow!("RAG retrieval guard for '{}': {error:?}", system.name))?;
-		let context_guard = ContextGuard::new(system.gateway.context_guard.clone())
-			.map_err(|error| anyhow::anyhow!("RAG context guard for '{}': {error:?}", system.name))?;
-		let mut service =
-			gateway_rag::RagGatewayAdapter::new(ingestor, retriever, context_guard, TracingContextAudit);
-		if let Some(store) = lifecycle {
-			service = service.with_lifecycle(store, purger);
-		}
-		let service: Arc<dyn gateway_rag::RagHttpService> = Arc::new(service);
-		let router = gateway_rag::router_with_sources(service, trusted_sources).layer(
-			middleware::from_fn_with_state(Arc::new(RagAuthState { jwt, security }), verify_rag_jwt),
-		);
-		let system_name = system.name;
-		let task_system_name = system_name.clone();
-		let drain = drain.clone();
-		tokio::spawn(async move {
-			let result = axum::serve(listener, router.into_make_service())
-				.with_graceful_shutdown(async move {
-					let _drain_blocker = drain.wait_for_drain().await;
-				})
-				.await;
-			if let Err(error) = result {
-				warn!(system = %task_system_name, %error, "RAG listener stopped unexpectedly");
-			}
-		});
-		info!(system = %system_name, %address, "secure RAG gateway listener started");
+	mut system: crate::types::local::RagSystemConfig,
+	lease: gateway_contracts::ConfigLease,
+) -> anyhow::Result<axum::Router> {
+	if system.security.required_audit.is_some() && config.security_audit.is_none() {
+		anyhow::bail!("RAG requiredAudit requires config.securityAudit");
 	}
-	Ok(count)
+	use security_integration_runtime::dependency_egress::DependencyKind as D;
+	system
+		.security
+		.validate_composition()
+		.map_err(anyhow::Error::msg)?;
+	if let Some(policy) = &system.security.dependency_egress {
+		policy
+			.check_url(D::Qdrant, &system.gateway.qdrant.endpoint)
+			.map_err(anyhow::Error::msg)?;
+		policy
+			.check_url(D::Embedding, &system.gateway.embedding.endpoint)
+			.map_err(anyhow::Error::msg)?;
+		for source in &system.gateway.trusted_sources {
+			policy
+				.check_url(D::TrustedSource, &source.base_url)
+				.map_err(anyhow::Error::msg)?;
+		}
+	}
+	system
+		.security
+		.prepare_runtime_stores()
+		.map_err(anyhow::Error::msg)?;
+	let jwt = Arc::new(
+		system
+			.authentication
+			.try_into(resources)
+			.await
+			.map_err(|error| anyhow::anyhow!("RAG JWT configuration for '{}': {error}", system.name))?,
+	);
+	let backend = Arc::new(
+		system
+			.gateway
+			.build_qdrant_backend(
+				reqwest::Client::builder()
+					.redirect(reqwest::redirect::Policy::none())
+					.no_proxy()
+					.timeout(std::time::Duration::from_secs(30))
+					.build()?,
+			)
+			.map_err(|error| anyhow::anyhow!("RAG backend for '{}': {error}", system.name))?,
+	);
+	let lifecycle = system
+		.gateway
+		.lifecycle
+		.clone()
+		.map(security_rag::lifecycle::DocumentLifecycleStore::open)
+		.transpose()
+		.map_err(anyhow::Error::msg)?;
+	if let (Some(store), Some(flow)) = (&lifecycle, &system.security.cross_component) {
+		flow
+			.context_store()
+			.map_err(|_| anyhow::anyhow!("context store unavailable"))?
+			.register_document_validator(&flow.namespace, store.clone())
+			.map_err(|_| anyhow::anyhow!("document validator registration failed"))?;
+	}
+	let purger: Arc<dyn security_rag::lifecycle::DocumentPurger> = backend.clone();
+	let backend = Arc::new(security_rag::lifecycle::LifecycleBackend {
+		backend,
+		store: lifecycle.clone(),
+		default_access: system.gateway.qdrant.default_chunk_access.clone(),
+	});
+	let trusted_sources = system
+		.gateway
+		.build_trusted_sources()
+		.map_err(|error| anyhow::anyhow!("RAG trusted sources for '{}': {error}", system.name))?
+		.map(Arc::new);
+	let security = Arc::new(system.security);
+	let ingestor = SecureIngestor::new(
+		backend.clone(),
+		SecurityPipeline::new(
+			SecurityConfigAuthorizer::with_audit(security.clone(), UiSecurityAuditSink),
+			DiscardAudit,
+		),
+		system.gateway.ingestion.clone(),
+		TracingIngestionAudit,
+	)
+	.map_err(|error| anyhow::anyhow!("RAG ingestion guard for '{}': {error:?}", system.name))?;
+	let retriever = SecureRetriever::new(
+		backend,
+		SecurityPipeline::new(
+			SecurityConfigAuthorizer::with_audit(security.clone(), UiSecurityAuditSink),
+			DiscardAudit,
+		),
+		system.gateway.retrieval.clone(),
+		TracingRetrievalAudit,
+	)
+	.map_err(|error| anyhow::anyhow!("RAG retrieval guard for '{}': {error:?}", system.name))?;
+	let context_guard = ContextGuard::new(system.gateway.context_guard.clone())
+		.map_err(|error| anyhow::anyhow!("RAG context guard for '{}': {error:?}", system.name))?;
+	let mut service =
+		gateway_rag::RagGatewayAdapter::new(ingestor, retriever, context_guard, TracingContextAudit);
+	if let Some(store) = lifecycle {
+		service = service.with_lifecycle(store, purger);
+	}
+	let service: Arc<dyn gateway_rag::RagHttpService> = Arc::new(service);
+	let router = gateway_rag::router_with_sources(service, trusted_sources).layer(
+		middleware::from_fn_with_state(
+			Arc::new(RagAuthState {
+				jwt,
+				security,
+				lease,
+			}),
+			verify_rag_jwt,
+		),
+	);
+	Ok(router)
 }
 
 struct RagAuthState {
 	jwt: Arc<crate::http::jwt::Jwt>,
 	security: Arc<security_integration_runtime::SecurityConfig>,
+	lease: gateway_contracts::ConfigLease,
 }
 async fn verify_rag_jwt(
 	State(state): State<Arc<RagAuthState>>,
 	mut request: Request,
 	next: Next,
 ) -> Response {
+	if !state.lease.is_current() {
+		return StatusCode::FORBIDDEN.into_response();
+	}
 	let Some(token) = bearer_token(request.headers()) else {
 		return StatusCode::UNAUTHORIZED.into_response();
 	};
@@ -364,7 +337,9 @@ async fn verify_rag_jwt(
 		Err(_) => return StatusCode::UNAUTHORIZED.into_response(),
 	};
 	if state.security.cross_component.is_some() {
-		let issuer = match crate::security_flow::rag_issuer(state.security.clone(), &claims) {
+		let request_id = crate::security::request_id(request.extensions_mut());
+		let issuer = match crate::security_flow::rag_issuer(state.security.clone(), &claims, request_id)
+		{
 			Ok(issuer) => issuer,
 			Err(_) => return StatusCode::FORBIDDEN.into_response(),
 		};
@@ -377,7 +352,20 @@ async fn verify_rag_jwt(
 		.insert(gateway_rag::VerifiedGatewayIdentity(identity_from_claims(
 			&claims,
 		)));
-	next.run(request).await
+	let mut lease = state.lease.clone();
+	let response = tokio::select! {
+		biased;
+		_ = lease.changed() => return StatusCode::FORBIDDEN.into_response(),
+		response = next.run(request) => response,
+	};
+	if !state.lease.is_current() {
+		return StatusCode::FORBIDDEN.into_response();
+	}
+	let (parts, body) = response.into_parts();
+	Response::from_parts(
+		parts,
+		axum::body::Body::new(service::RevocableBody::new(body, state.lease.clone())),
+	)
 }
 
 fn bearer_token(headers: &axum::http::HeaderMap) -> Option<&str> {
@@ -389,22 +377,5 @@ fn bearer_token(headers: &axum::http::HeaderMap) -> Option<&str> {
 }
 
 fn identity_from_claims(claims: &Claims) -> GatewayIdentity {
-	GatewayIdentity {
-		user_id: string_claim(claims, &["sub", "user_id", "userId"]),
-		agent_id: string_claim(claims, &["agent_id", "agentId"]),
-		tenant_id: string_claim(claims, &["tenant_id", "tenantId"]),
-		delegation_id: string_claim(claims, &["delegation_id", "delegationId"]),
-		session_id: string_claim(claims, &["sid", "session_id", "sessionId"]),
-		client_id: string_claim(claims, &["azp", "client_id", "clientId"]),
-	}
-}
-
-fn string_claim(claims: &Claims, names: &[&str]) -> Option<String> {
-	names.iter().find_map(|name| {
-		claims
-			.inner
-			.get(*name)
-			.and_then(serde_json::Value::as_str)
-			.map(ToOwned::to_owned)
-	})
+	crate::security::identity_from_claims(&claims.inner)
 }

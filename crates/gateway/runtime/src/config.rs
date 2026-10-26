@@ -200,6 +200,14 @@ pub fn parse_config(
 		parse_duration("CONNECTION_TERMINATION_DEADLINE")?.or(raw.connection_termination_deadline);
 	let tracing_env = resolve_tracing_env_overrides().ctx("invalid tracing environment overrides")?;
 
+	if raw.tracing.is_some()
+		|| tracing_env.endpoint.is_some()
+		|| tracing_env.headers.is_some()
+		|| tracing_env.protocol.is_some()
+	{
+		trc::validate_compiled()?;
+	}
+
 	let mut otlp_headers = raw
 		.tracing
 		.as_ref()
@@ -276,11 +284,17 @@ pub fn parse_config(
 		})
 		.or(raw.model_catalog)
 		.unwrap_or_default();
+	if !cfg!(feature = "gateway-llm") && !model_catalog_sources.is_empty() {
+		anyhow::bail!("modelCatalog requires LLM support; enable gateway-llm");
+	}
 	let database = raw
 		.database
 		.clone()
 		.or_else(|| raw.logging.as_ref().and_then(|l| l.database.clone()));
 
+	if let Some(database) = &database {
+		database.validate_compiled()?;
+	}
 	if let Some(policy) = &raw.dependency_egress {
 		policy.validate().map_err(anyhow::Error::msg)?;
 	}

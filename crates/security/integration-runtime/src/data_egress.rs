@@ -53,16 +53,17 @@ impl DataEgressConfig {
 
 	/// Side-effect-free candidate eligibility; this is not an execution authorization.
 	pub fn permits(&self, action: &ActionRequest, destination: &str) -> bool {
-		if action.action.action_type == ActionType::McpOperation
-			&& matches!(
-				action.action.name.as_str(),
-				"initialize"
-					| "ping"
-					| "tools/list"
-					| "transport/get"
-					| "transport/delete"
-					| "notifications/initialized"
-			) {
+		if action.action.action_type == ActionType::ToolList
+			|| (action.action.action_type == ActionType::McpOperation
+				&& matches!(
+					action.action.name.as_str(),
+					"initialize"
+						| "ping"
+						| "tools/list"
+						| "transport/get"
+						| "transport/delete"
+						| "notifications/initialized"
+				)) {
 			return self.permits_mcp_transport(destination);
 		}
 		let list = match action.action.action_type {

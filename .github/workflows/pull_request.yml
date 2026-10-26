@@ -18,8 +18,196 @@ jobs:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@efa25f7f19611383d5b0ccf2d1c8914531636bf9
         with:
-          toolchain: stable
+          toolchain: '1.96'
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32
       - run: cargo fmt --all -- --check
+      - name: Documentation and release packaging contracts
+        run: |
+          python3 tests/docs/check_docs.py --public
+          python3 -m unittest discover -s tests/release -p 'test_*.py' -v
       - run: cargo check --workspace
+      - name: Protocol crate dependency boundaries
+        run: python3 tests/protocol/check_boundaries.py
+      - name: Independent protocol cores and schema
+        run: cargo check -p gateway-contracts -p gateway-a2a -p gateway-mcp -p gateway-llm -p gateway-protocol-core --all-features
+      - name: LLM component conversion and streaming contracts
+        run: cargo test -p gateway-llm --all-features
+      - name: Shared LLM values without protocol implementation
+        run: cargo test -p gateway-llm --no-default-features --features schema
+      - name: Public configuration compile boundary
+        run: python3 tests/protocol/check_public_config.py --report /tmp/aisp-public-config-consumer.json
+      - name: RAG HTTP security contracts
+        run: cargo test -p gateway-rag -p security-rag
+      - name: A2A protected object and lifecycle contracts
+        run: cargo test -p gateway-a2a -p security-types
+      - name: Runtime without RAG
+        run: |
+          cargo check -p ai-security-platform-runtime --no-default-features --features runtime-base,gateway-mcp,security-s1,tls-aws-lc
+          cargo test -p ai-security-platform-runtime --no-default-features --features runtime-base,gateway-mcp,security-s1,tls-aws-lc --lib disabled_rag_tests
+      - name: Protocol execution regression tests
+        run: cargo test -p security-integration-runtime -p gateway-contracts -p gateway-rag -p gateway-a2a -p gateway-mcp -p gateway-llm -p gateway-protocol-core -p ai-security-platform-runtime --lib
+      - name: Process and storage fault acceptance
+        run: cargo test -p security-integration-runtime --features a2a-sqlite --test fault_recovery
+      - name: Build production gateway for protocol acceptance
+        run: cargo build -p ai-security-platform-app --bin ai-security-platform
+      - name: TCP acceptance harness regression tests
+        run: AISP_TEST_NETNS_LAUNCHER=sudo python3 -m unittest discover -s tests/protocol -p 'test_*.py' -v
+      - name: TCP protocol and lifecycle fault acceptance on isolated Linux loopback
+        run: python3 tests/protocol/run_full_tcp.py --launcher sudo --rounds 3 --binary target/debug/ai-security-platform --report /tmp/aisp-protocol-acceptance.json
+      - name: Model routing and execution boundary acceptance
+        run: python3 tests/protocol/run_full_tcp.py --launcher sudo --profile routing --rounds 3 --binary target/debug/ai-security-platform --report /tmp/aisp-routing-acceptance.json
+      - name: Legacy MCP Sampling execution boundary acceptance
+        run: python3 tests/protocol/run_full_tcp.py --launcher sudo --profile sampling --rounds 3 --binary target/debug/ai-security-platform --report /tmp/aisp-sampling-acceptance.json
+      - name: MCP wire and version compatibility acceptance
+        run: python3 tests/protocol/run_full_tcp.py --launcher sudo --profile mcp-wire --rounds 3 --binary target/debug/ai-security-platform --report /tmp/aisp-mcp-wire-acceptance.json
+      - name: RAG authentication, tenant isolation and live configuration acceptance
+        run: python3 tests/protocol/run_full_tcp.py --launcher sudo --profile rag --rounds 3 --binary target/debug/ai-security-platform --report /tmp/aisp-rag-acceptance.json
+      - name: Strict security configuration and content delivery regressions
+        run: python3 tests/protocol/run_full_tcp.py --launcher sudo --profile security-content --rounds 3 --binary target/debug/ai-security-platform --report /tmp/aisp-security-content-acceptance.json
+      - name: RAG to model business and lifecycle acceptance
+        run: python3 tests/protocol/run_full_tcp.py --launcher sudo --profile rag-llm --rounds 3 --binary target/debug/ai-security-platform --report /tmp/aisp-rag-llm-acceptance.json
+      - name: Tool, model and Agent business workflow acceptance
+        run: python3 tests/protocol/run_full_tcp.py --launcher sudo --profile workflow --rounds 3 --binary target/debug/ai-security-platform --report /tmp/aisp-workflow-acceptance.json
+      - name: Durable workflow Context lineage and restart acceptance
+        run: python3 tests/protocol/run_full_tcp.py --launcher sudo --profile workflow-durable --rounds 3 --binary target/debug/ai-security-platform --report /tmp/aisp-workflow-durable-acceptance.json
+      - name: A2A Task and Artifact acceptance
+        run: python3 tests/protocol/run_full_tcp.py --launcher sudo --profile a2a --rounds 3 --binary target/debug/ai-security-platform --report /tmp/aisp-a2a-acceptance.json
+      - name: A2A durable inbox and recovery acceptance
+        run: python3 tests/protocol/run_full_tcp.py --launcher sudo --profile a2a-durable --rounds 3 --binary target/debug/ai-security-platform --report /tmp/aisp-a2a-durable-acceptance.json
+      - name: Protocol acceptance evidence
+        if: always()
+        run: |
+          python3 - <<'PYTHON'
+          import json
+          from pathlib import Path
+          for location in ['/tmp/aisp-protocol-acceptance.json', '/tmp/aisp-routing-acceptance.json', '/tmp/aisp-sampling-acceptance.json', '/tmp/aisp-mcp-wire-acceptance.json', '/tmp/aisp-a2a-acceptance.json', '/tmp/aisp-a2a-durable-acceptance.json', '/tmp/aisp-rag-acceptance.json', '/tmp/aisp-rag-llm-acceptance.json', '/tmp/aisp-security-content-acceptance.json', '/tmp/aisp-workflow-acceptance.json', '/tmp/aisp-workflow-durable-acceptance.json']:
+              path = Path(location)
+              if path.exists():
+                  data = json.loads(path.read_text())
+                  print(json.dumps({"profile": data.get("profile"), "successful": data.get("successful"), "networkMode": data.get("networkMode"),
+                                    "setupFault": data.get("error", {}).get("type"),
+                                    "rounds": [{"round": r["round"], "exitCode": r["exitCode"],
+                                                "successful": r["successful"],
+                                                "faultTypes": [e["type"] for e in r["errors"]]}
+                                               for r in data.get("rounds", [])]}))
+          PYTHON
+
+  edge-profiles:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - features: llm-edge,tls-aws-lc
+            binary: ai-security-platform-llm
+            profile: llm
+          - features: mcp-edge,tls-aws-lc
+            binary: ai-security-platform-mcp
+            profile: mcp
+          - features: gateway-a2a,security-s1,security-a2a-sqlite,tls-aws-lc
+            binary: ai-security-platform
+            profile: a2a
+          - features: gateway-rag,security-s1,tls-aws-lc
+            binary: ai-security-platform
+            profile: rag
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@efa25f7f19611383d5b0ccf2d1c8914531636bf9
+        with:
+          toolchain: '1.96'
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32
+        with:
+          key: ${{ matrix.profile }}
+      - name: Edge Runtime security and lifecycle regressions
+        run: cargo test -p ai-security-platform-runtime --no-default-features --features '${{ matrix.features }}' --lib
+      - name: MCP Tool approval and capability binding
+        if: matrix.profile == 'mcp'
+        run: cargo test -p ai-security-platform-runtime --no-default-features --features '${{ matrix.features }}' --test mcp_edge_security
+      - name: Build edge gateway
+        run: cargo build -p ai-security-platform-app --no-default-features --features '${{ matrix.features }}' --bin '${{ matrix.binary }}'
+      - name: Edge TCP acceptance on isolated Linux loopback
+        run: python3 tests/protocol/run_full_tcp.py --launcher sudo --profile '${{ matrix.profile }}' --rounds 3 --binary 'target/debug/${{ matrix.binary }}' --report '/tmp/aisp-${{ matrix.profile }}-acceptance.json'
+      - name: Edge model routing and execution boundary acceptance
+        if: matrix.profile == 'llm'
+        run: python3 tests/protocol/run_full_tcp.py --launcher sudo --profile routing --rounds 3 --binary 'target/debug/${{ matrix.binary }}' --report '/tmp/aisp-${{ matrix.profile }}-routing.json'
+      - name: LLM edge security content contract regressions
+        if: matrix.profile == 'llm'
+        run: python3 tests/protocol/run_full_tcp.py --launcher sudo --profile security-content --rounds 3 --binary 'target/debug/${{ matrix.binary }}' --report /tmp/aisp-llm-security-content.json
+      - name: MCP edge wire and version compatibility acceptance
+        if: matrix.profile == 'mcp'
+        run: python3 tests/protocol/run_full_tcp.py --launcher sudo --profile mcp-wire --rounds 3 --binary 'target/debug/${{ matrix.binary }}' --report /tmp/aisp-mcp-wire-acceptance.json
+      - name: A2A edge durable inbox and recovery acceptance
+        if: matrix.profile == 'a2a'
+        run: python3 tests/protocol/run_full_tcp.py --launcher sudo --profile a2a-durable --rounds 3 --binary 'target/debug/${{ matrix.binary }}' --report /tmp/aisp-a2a-durable-acceptance.json
+      - name: Edge acceptance summary
+        if: always()
+        env:
+          TCP_REPORT: /tmp/aisp-${{ matrix.profile }}-acceptance.json
+          ROUTING_REPORT: /tmp/aisp-${{ matrix.profile }}-routing.json
+          WIRE_REPORT: /tmp/aisp-mcp-wire-acceptance.json
+          A2A_DURABLE_REPORT: /tmp/aisp-a2a-durable-acceptance.json
+          SECURITY_CONTENT_REPORT: /tmp/aisp-llm-security-content.json
+        run: |
+          python3 - <<'PYTHON'
+          import json, os
+          from pathlib import Path
+          for location in [os.environ['TCP_REPORT'], os.environ['ROUTING_REPORT'], os.environ['WIRE_REPORT'], os.environ['A2A_DURABLE_REPORT'], os.environ['SECURITY_CONTENT_REPORT']]:
+              path = Path(location)
+              if path.exists():
+                  data = json.loads(path.read_text())
+                  print(json.dumps({"profile": data.get("profile"), "successful": data.get("successful"),
+                                    "setupFault": data.get("error", {}).get("type"),
+                                    "rounds": [{"round": r["round"], "successful": r["successful"],
+                                                "faultTypes": [e["type"] for e in r["errors"]]}
+                                               for r in data.get("rounds", [])]}))
+          PYTHON
+
+  composition-boundaries:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        features:
+          - gateway-mcp,gateway-llm,security-s1,tls-aws-lc,schema,ui
+          - gateway-mcp,gateway-llm,security-s1,tls-aws-lc,database
+          - gateway-mcp,gateway-llm,security-s1,tls-aws-lc,telemetry-otlp
+          - gateway-mcp,gateway-llm,security-s1,tls-aws-lc,database,telemetry-otlp
+          - gateway-a2a,security-s1,tls-aws-lc
+          - gateway-rag,security-s1,tls-aws-lc,schema
+          - gateway-rag,gateway-llm,security-s1,tls-aws-lc,schema
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@efa25f7f19611383d5b0ccf2d1c8914531636bf9
+        with:
+          toolchain: '1.96'
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32
+        with:
+          key: composition-${{ matrix.features }}
+      - name: Check the scenario application with only selected infrastructure
+        run: cargo check -p ai-security-platform-app --no-default-features --features '${{ matrix.features }}' --bin ai-security-platform
+      - name: Scenario Runtime, configuration admission and persistence regressions
+        run: cargo test -p ai-security-platform-runtime --no-default-features --features '${{ matrix.features }}' --lib
+      - name: Minimal mixed gateway Tool approval and capability regression
+        if: matrix.features == 'gateway-mcp,gateway-llm,security-s1,tls-aws-lc,schema,ui'
+        run: cargo test -p ai-security-platform-runtime --no-default-features --features '${{ matrix.features }}' --test mcp_edge_security
+      - name: Build mixed gateway without database or OTLP
+        if: matrix.features == 'gateway-mcp,gateway-llm,security-s1,tls-aws-lc,schema,ui'
+        run: cargo build -p ai-security-platform-app --no-default-features --features '${{ matrix.features }}' --bin ai-security-platform
+      - name: Minimal mixed protocol and security TCP acceptance
+        if: matrix.features == 'gateway-mcp,gateway-llm,security-s1,tls-aws-lc,schema,ui'
+        run: |
+          python3 tests/protocol/run_full_tcp.py --launcher sudo --profile full --rounds 3 --binary target/debug/ai-security-platform --report /tmp/aisp-minimal-full.json
+          python3 tests/protocol/run_full_tcp.py --launcher sudo --profile sampling --rounds 3 --binary target/debug/ai-security-platform --report /tmp/aisp-minimal-sampling.json
+          python3 tests/protocol/run_full_tcp.py --launcher sudo --profile mcp-wire --rounds 3 --binary target/debug/ai-security-platform --report /tmp/aisp-minimal-wire.json
+          python3 tests/protocol/run_full_tcp.py --launcher sudo --profile infrastructure --rounds 3 --binary target/debug/ai-security-platform --report /tmp/aisp-minimal-infrastructure.json
+
+      - name: RAG and model business path in the selected combination
+        if: contains(matrix.features, 'gateway-rag') && contains(matrix.features, 'gateway-llm')
+        run: |
+          cargo build -p ai-security-platform-app --no-default-features --features '${{ matrix.features }}' --bin ai-security-platform
+          python3 tests/protocol/run_full_tcp.py --launcher sudo --profile rag-llm --rounds 3 --binary target/debug/ai-security-platform --report /tmp/aisp-rag-llm-composition.json

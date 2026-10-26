@@ -1,12 +1,10 @@
 use ::http::Uri;
-use ::http::header::{ACCEPT, CONTENT_TYPE};
-use anyhow::anyhow;
+use ::http::header::ACCEPT;
 use futures::StreamExt;
+use gateway_mcp::streamable_http::{self as codec, ResponseError, ResponseKind};
 use headers::HeaderMapExt;
 use rmcp::model::{ClientJsonRpcMessage, ClientNotification, ClientRequest, JsonRpcRequest};
-use rmcp::transport::common::http_header::{
-	EVENT_STREAM_MIME_TYPE, HEADER_SESSION_ID, JSON_MIME_TYPE,
-};
+use rmcp::transport::common::http_header::{EVENT_STREAM_MIME_TYPE, HEADER_SESSION_ID};
 use sse_stream::SseStream;
 
 use crate::client::ResolvedDestination;
@@ -78,15 +76,9 @@ impl Client {
 
 		ctx: &IncomingRequestContext,
 	) -> Result<StreamableHttpPostResponse, ClientError> {
-		let body = serde_json::to_vec(&message).map_err(ClientError::new)?;
-
-		let mut req = ::http::Request::builder()
-			.uri(&self.uri)
-			.method(http::Method::POST)
-			.header(CONTENT_TYPE, "application/json")
-			.header(ACCEPT, [EVENT_STREAM_MIME_TYPE, JSON_MIME_TYPE].join(", "))
-			.body(body.into())
-			.map_err(ClientError::new)?;
+		let mut req = codec::encode_post(self.uri.clone(), &message)
+			.map_err(ClientError::new)?
+			.map(crate::http::Body::from);
 
 		self.maybe_insert_session_id(&mut req)?;
 
@@ -96,33 +88,18 @@ impl Client {
 		let mut resp = self.http_client.call(req).await?;
 		crate::mcp::session_security::bound_upstream(&mut resp, ctx)?;
 
-		// MCP spec has 202 only but some servers in the wild return 204. This is close enough for us to massage it.
-		if resp.status() == http::StatusCode::ACCEPTED || resp.status() == http::StatusCode::NO_CONTENT
-		{
+		let kind = match codec::classify_post_response(resp.status(), resp.headers()) {
+			Ok(kind) => kind,
+			Err(ResponseError::Status(_)) => return Err(ClientError::Status(Box::new(resp))),
+			Err(error) => return Err(ClientError::new(error)),
+		};
+		if kind == ResponseKind::Accepted {
 			return Ok(StreamableHttpPostResponse::Accepted);
 		}
-
-		if !resp.status().is_success() {
-			return Err(ClientError::Status(Box::new(resp)));
-		}
-
-		let content_type = resp.headers().get(CONTENT_TYPE);
-		let session_id = resp
-			.headers()
-			.get(HEADER_SESSION_ID)
-			.and_then(|v| v.to_str().ok())
-			.map(|s| s.to_string());
-
-		match content_type {
-			Some(ct) if ct.as_bytes().starts_with(EVENT_STREAM_MIME_TYPE.as_bytes()) => {
-				let content_encoding = resp.headers().typed_get::<headers::ContentEncoding>();
-				let (body, _encoding) =
-					crate::http::compression::decompress_body(resp.into_body(), content_encoding.as_ref())
-						.map_err(ClientError::new)?;
-				let event_stream = SseStream::from_byte_stream(body.into_data_stream()).boxed();
-				Ok(StreamableHttpPostResponse::Sse(event_stream, session_id))
-			},
-			Some(ct) if ct.as_bytes().starts_with(JSON_MIME_TYPE.as_bytes()) => {
+		let session_id = codec::session_id(resp.headers());
+		match kind {
+			ResponseKind::Sse => sse_response(resp, session_id),
+			ResponseKind::Json => {
 				let lim = ctx
 					.as_request()
 					.extensions()
@@ -144,23 +121,15 @@ impl Client {
 				.await
 				.map_err(ClientError::new)?
 				.1;
-				let message: Option<serde_json::Value> =
-					serde_json::from_slice(&body_bytes).map_err(ClientError::new)?;
-				let message = message
-					.map(crate::mcp::wire::decode_server)
-					.transpose()
-					.map_err(ClientError::new)?;
-				match message {
+				match codec::decode_json(&body_bytes).map_err(ClientError::new)? {
 					Some(msg) => Ok(StreamableHttpPostResponse::Json(msg, session_id)),
 					None => Ok(StreamableHttpPostResponse::Accepted),
 				}
 			},
-			_ => Err(ClientError::new(anyhow!(
-				"unexpected content type: {:?}",
-				content_type
-			))),
+			ResponseKind::Accepted => Ok(StreamableHttpPostResponse::Accepted),
 		}
 	}
+
 	pub async fn send_delete(
 		&self,
 
@@ -202,30 +171,13 @@ impl Client {
 		let mut resp = self.http_client.call(req).await?;
 		crate::mcp::session_security::bound_upstream(&mut resp, ctx)?;
 
-		if !resp.status().is_success() {
-			return Err(ClientError::Status(Box::new(resp)));
+		match codec::validate_get_response(resp.status(), resp.headers()) {
+			Ok(()) => {},
+			Err(ResponseError::Status(_)) => return Err(ClientError::Status(Box::new(resp))),
+			Err(error) => return Err(ClientError::new(error)),
 		}
-
-		let content_type = resp.headers().get(CONTENT_TYPE);
-		let session_id = resp
-			.headers()
-			.get(HEADER_SESSION_ID)
-			.and_then(|v| v.to_str().ok())
-			.map(|s| s.to_string());
-		match content_type {
-			Some(ct) if ct.as_bytes().starts_with(EVENT_STREAM_MIME_TYPE.as_bytes()) => {
-				let content_encoding = resp.headers().typed_get::<headers::ContentEncoding>();
-				let (body, _encoding) =
-					crate::http::compression::decompress_body(resp.into_body(), content_encoding.as_ref())
-						.map_err(ClientError::new)?;
-				let event_stream = SseStream::from_byte_stream(body.into_data_stream()).boxed();
-				Ok(StreamableHttpPostResponse::Sse(event_stream, session_id))
-			},
-			_ => Err(ClientError::new(anyhow!(
-				"unexpected content type for GET streams: {:?}",
-				content_type
-			))),
-		}
+		let session_id = codec::session_id(resp.headers());
+		sse_response(resp, session_id)
 	}
 
 	fn maybe_insert_session_id(&self, req: &mut Request) -> Result<(), ClientError> {
@@ -237,4 +189,16 @@ impl Client {
 		}
 		Ok(())
 	}
+}
+
+fn sse_response(
+	resp: crate::http::Response,
+	session_id: Option<String>,
+) -> Result<StreamableHttpPostResponse, ClientError> {
+	let content_encoding = resp.headers().typed_get::<headers::ContentEncoding>();
+	let (body, _encoding) =
+		crate::http::compression::decompress_body(resp.into_body(), content_encoding.as_ref())
+			.map_err(ClientError::new)?;
+	let event_stream = SseStream::from_bytes_stream(body.into_data_stream()).boxed();
+	Ok(StreamableHttpPostResponse::Sse(event_stream, session_id))
 }

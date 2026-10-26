@@ -1,0 +1,5764 @@
+[
+  {
+    "family": "openai",
+    "route": "completions",
+    "expected": "/chat/completions"
+  },
+  {
+    "family": "openai",
+    "route": "messages",
+    "expected": "/chat/completions"
+  },
+  {
+    "family": "openai",
+    "route": "models",
+    "expected": "/chat/completions"
+  },
+  {
+    "family": "openai",
+    "route": "passthrough",
+    "expected": "/chat/completions"
+  },
+  {
+    "family": "openai",
+    "route": "detect",
+    "expected": "/chat/completions"
+  },
+  {
+    "family": "openai",
+    "route": "responses",
+    "expected": "/responses"
+  },
+  {
+    "family": "openai",
+    "route": "embeddings",
+    "expected": "/embeddings"
+  },
+  {
+    "family": "openai",
+    "route": "realtime",
+    "expected": "/realtime"
+  },
+  {
+    "family": "openai",
+    "route": "anthropicTokenCount",
+    "expected": "/chat/completions"
+  },
+  {
+    "family": "openai",
+    "route": "rerank",
+    "expected": "/rerank"
+  },
+  {
+    "family": "anthropic",
+    "route": "completions",
+    "expected": "/messages"
+  },
+  {
+    "family": "anthropic",
+    "route": "messages",
+    "expected": "/messages"
+  },
+  {
+    "family": "anthropic",
+    "route": "models",
+    "expected": "/messages"
+  },
+  {
+    "family": "anthropic",
+    "route": "passthrough",
+    "expected": "/messages"
+  },
+  {
+    "family": "anthropic",
+    "route": "detect",
+    "expected": "/messages"
+  },
+  {
+    "family": "anthropic",
+    "route": "responses",
+    "expected": "/messages"
+  },
+  {
+    "family": "anthropic",
+    "route": "embeddings",
+    "expected": "/messages"
+  },
+  {
+    "family": "anthropic",
+    "route": "realtime",
+    "expected": "/messages"
+  },
+  {
+    "family": "anthropic",
+    "route": "anthropicTokenCount",
+    "expected": "/messages/count_tokens"
+  },
+  {
+    "family": "anthropic",
+    "route": "rerank",
+    "expected": "/messages"
+  },
+  {
+    "family": "copilot",
+    "route": "completions",
+    "expected": "/chat/completions"
+  },
+  {
+    "family": "copilot",
+    "route": "messages",
+    "expected": "/chat/completions"
+  },
+  {
+    "family": "copilot",
+    "route": "models",
+    "expected": "/models"
+  },
+  {
+    "family": "copilot",
+    "route": "passthrough",
+    "expected": "/chat/completions"
+  },
+  {
+    "family": "copilot",
+    "route": "detect",
+    "expected": "/chat/completions"
+  },
+  {
+    "family": "copilot",
+    "route": "responses",
+    "expected": "/responses"
+  },
+  {
+    "family": "copilot",
+    "route": "embeddings",
+    "expected": "/embeddings"
+  },
+  {
+    "family": "copilot",
+    "route": "realtime",
+    "expected": "/chat/completions"
+  },
+  {
+    "family": "copilot",
+    "route": "anthropicTokenCount",
+    "expected": "/chat/completions"
+  },
+  {
+    "family": "copilot",
+    "route": "rerank",
+    "expected": "/rerank"
+  },
+  {
+    "family": "gemini",
+    "route": "completions",
+    "expected": "/v1beta/openai/chat/completions"
+  },
+  {
+    "family": "gemini",
+    "route": "messages",
+    "expected": "/v1beta/openai/chat/completions"
+  },
+  {
+    "family": "gemini",
+    "route": "models",
+    "expected": "/v1beta/openai/chat/completions"
+  },
+  {
+    "family": "gemini",
+    "route": "passthrough",
+    "expected": "/v1beta/openai/chat/completions"
+  },
+  {
+    "family": "gemini",
+    "route": "detect",
+    "expected": "/v1beta/openai/chat/completions"
+  },
+  {
+    "family": "gemini",
+    "route": "responses",
+    "expected": "/v1beta/openai/chat/completions"
+  },
+  {
+    "family": "gemini",
+    "route": "embeddings",
+    "expected": "/v1beta/openai/embeddings"
+  },
+  {
+    "family": "gemini",
+    "route": "realtime",
+    "expected": "/v1beta/openai/chat/completions"
+  },
+  {
+    "family": "gemini",
+    "route": "anthropicTokenCount",
+    "expected": "/v1beta/openai/chat/completions"
+  },
+  {
+    "family": "gemini",
+    "route": "rerank",
+    "expected": "/rerank"
+  },
+  {
+    "family": "azure",
+    "route": "completions",
+    "config": {
+      "resourceName": "r /%资源",
+      "resourceType": "openAI",
+      "apiVersion": null,
+      "projectName": null,
+      "model": null
+    },
+    "model": "claude-3-7",
+    "expected": {
+      "path": "/openai/v1/chat/completions",
+      "host": "r /%资源.openai.azure.com",
+      "anthropic": true,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "messages",
+    "config": {
+      "resourceName": "r /%资源",
+      "resourceType": "openAI",
+      "apiVersion": null,
+      "projectName": null,
+      "model": null
+    },
+    "model": "claude-3-7",
+    "expected": {
+      "path": "/openai/v1/chat/completions",
+      "host": "r /%资源.openai.azure.com",
+      "anthropic": true,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "models",
+    "config": {
+      "resourceName": "r /%资源",
+      "resourceType": "openAI",
+      "apiVersion": null,
+      "projectName": null,
+      "model": null
+    },
+    "model": "claude-3-7",
+    "expected": {
+      "path": "/openai/v1/chat/completions",
+      "host": "r /%资源.openai.azure.com",
+      "anthropic": true,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "passthrough",
+    "config": {
+      "resourceName": "r /%资源",
+      "resourceType": "openAI",
+      "apiVersion": null,
+      "projectName": null,
+      "model": null
+    },
+    "model": "claude-3-7",
+    "expected": {
+      "path": "/openai/v1/chat/completions",
+      "host": "r /%资源.openai.azure.com",
+      "anthropic": true,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "detect",
+    "config": {
+      "resourceName": "r /%资源",
+      "resourceType": "openAI",
+      "apiVersion": null,
+      "projectName": null,
+      "model": null
+    },
+    "model": "claude-3-7",
+    "expected": {
+      "path": "/openai/v1/chat/completions",
+      "host": "r /%资源.openai.azure.com",
+      "anthropic": true,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "responses",
+    "config": {
+      "resourceName": "r /%资源",
+      "resourceType": "openAI",
+      "apiVersion": null,
+      "projectName": null,
+      "model": null
+    },
+    "model": "claude-3-7",
+    "expected": {
+      "path": "/openai/v1/responses",
+      "host": "r /%资源.openai.azure.com",
+      "anthropic": true,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "embeddings",
+    "config": {
+      "resourceName": "r /%资源",
+      "resourceType": "openAI",
+      "apiVersion": null,
+      "projectName": null,
+      "model": null
+    },
+    "model": "claude-3-7",
+    "expected": {
+      "path": "/openai/v1/embeddings",
+      "host": "r /%资源.openai.azure.com",
+      "anthropic": true,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "realtime",
+    "config": {
+      "resourceName": "r /%资源",
+      "resourceType": "openAI",
+      "apiVersion": null,
+      "projectName": null,
+      "model": null
+    },
+    "model": "claude-3-7",
+    "expected": {
+      "path": "/openai/v1/chat/completions",
+      "host": "r /%资源.openai.azure.com",
+      "anthropic": true,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "anthropicTokenCount",
+    "config": {
+      "resourceName": "r /%资源",
+      "resourceType": "openAI",
+      "apiVersion": null,
+      "projectName": null,
+      "model": null
+    },
+    "model": "claude-3-7",
+    "expected": {
+      "path": "/openai/v1/chat/completions",
+      "host": "r /%资源.openai.azure.com",
+      "anthropic": true,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "rerank",
+    "config": {
+      "resourceName": "r /%资源",
+      "resourceType": "openAI",
+      "apiVersion": null,
+      "projectName": null,
+      "model": null
+    },
+    "model": "claude-3-7",
+    "expected": {
+      "path": "/openai/v1/chat/completions",
+      "host": "r /%资源.openai.azure.com",
+      "anthropic": true,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "completions",
+    "config": {
+      "resourceName": "r /%资源",
+      "resourceType": "openAI",
+      "apiVersion": "v1",
+      "projectName": "proj /%",
+      "model": "deployment /%"
+    },
+    "model": "claude-3-7",
+    "expected": {
+      "path": "/openai/v1/chat/completions",
+      "host": "r /%资源.openai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "messages",
+    "config": {
+      "resourceName": "r /%资源",
+      "resourceType": "openAI",
+      "apiVersion": "v1",
+      "projectName": "proj /%",
+      "model": "deployment /%"
+    },
+    "model": "claude-3-7",
+    "expected": {
+      "path": "/openai/v1/chat/completions",
+      "host": "r /%资源.openai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "models",
+    "config": {
+      "resourceName": "r /%资源",
+      "resourceType": "openAI",
+      "apiVersion": "v1",
+      "projectName": "proj /%",
+      "model": "deployment /%"
+    },
+    "model": "claude-3-7",
+    "expected": {
+      "path": "/openai/v1/chat/completions",
+      "host": "r /%资源.openai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "passthrough",
+    "config": {
+      "resourceName": "r /%资源",
+      "resourceType": "openAI",
+      "apiVersion": "v1",
+      "projectName": "proj /%",
+      "model": "deployment /%"
+    },
+    "model": "claude-3-7",
+    "expected": {
+      "path": "/openai/v1/chat/completions",
+      "host": "r /%资源.openai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "detect",
+    "config": {
+      "resourceName": "r /%资源",
+      "resourceType": "openAI",
+      "apiVersion": "v1",
+      "projectName": "proj /%",
+      "model": "deployment /%"
+    },
+    "model": "claude-3-7",
+    "expected": {
+      "path": "/openai/v1/chat/completions",
+      "host": "r /%资源.openai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "responses",
+    "config": {
+      "resourceName": "r /%资源",
+      "resourceType": "openAI",
+      "apiVersion": "v1",
+      "projectName": "proj /%",
+      "model": "deployment /%"
+    },
+    "model": "claude-3-7",
+    "expected": {
+      "path": "/openai/v1/responses",
+      "host": "r /%资源.openai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "embeddings",
+    "config": {
+      "resourceName": "r /%资源",
+      "resourceType": "openAI",
+      "apiVersion": "v1",
+      "projectName": "proj /%",
+      "model": "deployment /%"
+    },
+    "model": "claude-3-7",
+    "expected": {
+      "path": "/openai/v1/embeddings",
+      "host": "r /%资源.openai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "realtime",
+    "config": {
+      "resourceName": "r /%资源",
+      "resourceType": "openAI",
+      "apiVersion": "v1",
+      "projectName": "proj /%",
+      "model": "deployment /%"
+    },
+    "model": "claude-3-7",
+    "expected": {
+      "path": "/openai/v1/chat/completions",
+      "host": "r /%资源.openai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "anthropicTokenCount",
+    "config": {
+      "resourceName": "r /%资源",
+      "resourceType": "openAI",
+      "apiVersion": "v1",
+      "projectName": "proj /%",
+      "model": "deployment /%"
+    },
+    "model": "claude-3-7",
+    "expected": {
+      "path": "/openai/v1/chat/completions",
+      "host": "r /%资源.openai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "rerank",
+    "config": {
+      "resourceName": "r /%资源",
+      "resourceType": "openAI",
+      "apiVersion": "v1",
+      "projectName": "proj /%",
+      "model": "deployment /%"
+    },
+    "model": "claude-3-7",
+    "expected": {
+      "path": "/openai/v1/chat/completions",
+      "host": "r /%资源.openai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "completions",
+    "config": {
+      "resourceName": "r /%资源",
+      "resourceType": "openAI",
+      "apiVersion": "preview",
+      "projectName": "proj /%",
+      "model": "deployment /%"
+    },
+    "model": "claude-3-7",
+    "expected": {
+      "path": "/openai/v1/chat/completions?api-version=preview",
+      "host": "r /%资源.openai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "messages",
+    "config": {
+      "resourceName": "r /%资源",
+      "resourceType": "openAI",
+      "apiVersion": "preview",
+      "projectName": "proj /%",
+      "model": "deployment /%"
+    },
+    "model": "claude-3-7",
+    "expected": {
+      "path": "/openai/v1/chat/completions?api-version=preview",
+      "host": "r /%资源.openai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "models",
+    "config": {
+      "resourceName": "r /%资源",
+      "resourceType": "openAI",
+      "apiVersion": "preview",
+      "projectName": "proj /%",
+      "model": "deployment /%"
+    },
+    "model": "claude-3-7",
+    "expected": {
+      "path": "/openai/v1/chat/completions?api-version=preview",
+      "host": "r /%资源.openai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "passthrough",
+    "config": {
+      "resourceName": "r /%资源",
+      "resourceType": "openAI",
+      "apiVersion": "preview",
+      "projectName": "proj /%",
+      "model": "deployment /%"
+    },
+    "model": "claude-3-7",
+    "expected": {
+      "path": "/openai/v1/chat/completions?api-version=preview",
+      "host": "r /%资源.openai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "detect",
+    "config": {
+      "resourceName": "r /%资源",
+      "resourceType": "openAI",
+      "apiVersion": "preview",
+      "projectName": "proj /%",
+      "model": "deployment /%"
+    },
+    "model": "claude-3-7",
+    "expected": {
+      "path": "/openai/v1/chat/completions?api-version=preview",
+      "host": "r /%资源.openai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "responses",
+    "config": {
+      "resourceName": "r /%资源",
+      "resourceType": "openAI",
+      "apiVersion": "preview",
+      "projectName": "proj /%",
+      "model": "deployment /%"
+    },
+    "model": "claude-3-7",
+    "expected": {
+      "path": "/openai/v1/responses?api-version=preview",
+      "host": "r /%资源.openai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "embeddings",
+    "config": {
+      "resourceName": "r /%资源",
+      "resourceType": "openAI",
+      "apiVersion": "preview",
+      "projectName": "proj /%",
+      "model": "deployment /%"
+    },
+    "model": "claude-3-7",
+    "expected": {
+      "path": "/openai/v1/embeddings?api-version=preview",
+      "host": "r /%资源.openai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "realtime",
+    "config": {
+      "resourceName": "r /%资源",
+      "resourceType": "openAI",
+      "apiVersion": "preview",
+      "projectName": "proj /%",
+      "model": "deployment /%"
+    },
+    "model": "claude-3-7",
+    "expected": {
+      "path": "/openai/v1/chat/completions?api-version=preview",
+      "host": "r /%资源.openai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "anthropicTokenCount",
+    "config": {
+      "resourceName": "r /%资源",
+      "resourceType": "openAI",
+      "apiVersion": "preview",
+      "projectName": "proj /%",
+      "model": "deployment /%"
+    },
+    "model": "claude-3-7",
+    "expected": {
+      "path": "/openai/v1/chat/completions?api-version=preview",
+      "host": "r /%资源.openai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "rerank",
+    "config": {
+      "resourceName": "r /%资源",
+      "resourceType": "openAI",
+      "apiVersion": "preview",
+      "projectName": "proj /%",
+      "model": "deployment /%"
+    },
+    "model": "claude-3-7",
+    "expected": {
+      "path": "/openai/v1/chat/completions?api-version=preview",
+      "host": "r /%资源.openai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "completions",
+    "config": {
+      "resourceName": "r /%资源",
+      "resourceType": "openAI",
+      "apiVersion": "2024-10-21",
+      "projectName": "proj /%",
+      "model": "deployment /%"
+    },
+    "model": "claude-3-7",
+    "expected": {
+      "path": "/openai/deployments/deployment /%/chat/completions?api-version=2024-10-21",
+      "host": "r /%资源.openai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "messages",
+    "config": {
+      "resourceName": "r /%资源",
+      "resourceType": "openAI",
+      "apiVersion": "2024-10-21",
+      "projectName": "proj /%",
+      "model": "deployment /%"
+    },
+    "model": "claude-3-7",
+    "expected": {
+      "path": "/openai/deployments/deployment /%/chat/completions?api-version=2024-10-21",
+      "host": "r /%资源.openai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "models",
+    "config": {
+      "resourceName": "r /%资源",
+      "resourceType": "openAI",
+      "apiVersion": "2024-10-21",
+      "projectName": "proj /%",
+      "model": "deployment /%"
+    },
+    "model": "claude-3-7",
+    "expected": {
+      "path": "/openai/deployments/deployment /%/chat/completions?api-version=2024-10-21",
+      "host": "r /%资源.openai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "passthrough",
+    "config": {
+      "resourceName": "r /%资源",
+      "resourceType": "openAI",
+      "apiVersion": "2024-10-21",
+      "projectName": "proj /%",
+      "model": "deployment /%"
+    },
+    "model": "claude-3-7",
+    "expected": {
+      "path": "/openai/deployments/deployment /%/chat/completions?api-version=2024-10-21",
+      "host": "r /%资源.openai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "detect",
+    "config": {
+      "resourceName": "r /%资源",
+      "resourceType": "openAI",
+      "apiVersion": "2024-10-21",
+      "projectName": "proj /%",
+      "model": "deployment /%"
+    },
+    "model": "claude-3-7",
+    "expected": {
+      "path": "/openai/deployments/deployment /%/chat/completions?api-version=2024-10-21",
+      "host": "r /%资源.openai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "responses",
+    "config": {
+      "resourceName": "r /%资源",
+      "resourceType": "openAI",
+      "apiVersion": "2024-10-21",
+      "projectName": "proj /%",
+      "model": "deployment /%"
+    },
+    "model": "claude-3-7",
+    "expected": {
+      "path": "/openai/deployments/deployment /%/responses?api-version=2024-10-21",
+      "host": "r /%资源.openai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "embeddings",
+    "config": {
+      "resourceName": "r /%资源",
+      "resourceType": "openAI",
+      "apiVersion": "2024-10-21",
+      "projectName": "proj /%",
+      "model": "deployment /%"
+    },
+    "model": "claude-3-7",
+    "expected": {
+      "path": "/openai/deployments/deployment /%/embeddings?api-version=2024-10-21",
+      "host": "r /%资源.openai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "realtime",
+    "config": {
+      "resourceName": "r /%资源",
+      "resourceType": "openAI",
+      "apiVersion": "2024-10-21",
+      "projectName": "proj /%",
+      "model": "deployment /%"
+    },
+    "model": "claude-3-7",
+    "expected": {
+      "path": "/openai/deployments/deployment /%/chat/completions?api-version=2024-10-21",
+      "host": "r /%资源.openai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "anthropicTokenCount",
+    "config": {
+      "resourceName": "r /%资源",
+      "resourceType": "openAI",
+      "apiVersion": "2024-10-21",
+      "projectName": "proj /%",
+      "model": "deployment /%"
+    },
+    "model": "claude-3-7",
+    "expected": {
+      "path": "/openai/deployments/deployment /%/chat/completions?api-version=2024-10-21",
+      "host": "r /%资源.openai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "rerank",
+    "config": {
+      "resourceName": "r /%资源",
+      "resourceType": "openAI",
+      "apiVersion": "2024-10-21",
+      "projectName": "proj /%",
+      "model": "deployment /%"
+    },
+    "model": "claude-3-7",
+    "expected": {
+      "path": "/openai/deployments/deployment /%/chat/completions?api-version=2024-10-21",
+      "host": "r /%资源.openai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "completions",
+    "config": {
+      "resourceName": "r /%资源",
+      "resourceType": "openAI",
+      "apiVersion": "",
+      "projectName": "proj /%",
+      "model": "deployment /%"
+    },
+    "model": "claude-3-7",
+    "expected": {
+      "path": "/openai/deployments/deployment /%/chat/completions?api-version=",
+      "host": "r /%资源.openai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "messages",
+    "config": {
+      "resourceName": "r /%资源",
+      "resourceType": "openAI",
+      "apiVersion": "",
+      "projectName": "proj /%",
+      "model": "deployment /%"
+    },
+    "model": "claude-3-7",
+    "expected": {
+      "path": "/openai/deployments/deployment /%/chat/completions?api-version=",
+      "host": "r /%资源.openai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "models",
+    "config": {
+      "resourceName": "r /%资源",
+      "resourceType": "openAI",
+      "apiVersion": "",
+      "projectName": "proj /%",
+      "model": "deployment /%"
+    },
+    "model": "claude-3-7",
+    "expected": {
+      "path": "/openai/deployments/deployment /%/chat/completions?api-version=",
+      "host": "r /%资源.openai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "passthrough",
+    "config": {
+      "resourceName": "r /%资源",
+      "resourceType": "openAI",
+      "apiVersion": "",
+      "projectName": "proj /%",
+      "model": "deployment /%"
+    },
+    "model": "claude-3-7",
+    "expected": {
+      "path": "/openai/deployments/deployment /%/chat/completions?api-version=",
+      "host": "r /%资源.openai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "detect",
+    "config": {
+      "resourceName": "r /%资源",
+      "resourceType": "openAI",
+      "apiVersion": "",
+      "projectName": "proj /%",
+      "model": "deployment /%"
+    },
+    "model": "claude-3-7",
+    "expected": {
+      "path": "/openai/deployments/deployment /%/chat/completions?api-version=",
+      "host": "r /%资源.openai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "responses",
+    "config": {
+      "resourceName": "r /%资源",
+      "resourceType": "openAI",
+      "apiVersion": "",
+      "projectName": "proj /%",
+      "model": "deployment /%"
+    },
+    "model": "claude-3-7",
+    "expected": {
+      "path": "/openai/deployments/deployment /%/responses?api-version=",
+      "host": "r /%资源.openai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "embeddings",
+    "config": {
+      "resourceName": "r /%资源",
+      "resourceType": "openAI",
+      "apiVersion": "",
+      "projectName": "proj /%",
+      "model": "deployment /%"
+    },
+    "model": "claude-3-7",
+    "expected": {
+      "path": "/openai/deployments/deployment /%/embeddings?api-version=",
+      "host": "r /%资源.openai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "realtime",
+    "config": {
+      "resourceName": "r /%资源",
+      "resourceType": "openAI",
+      "apiVersion": "",
+      "projectName": "proj /%",
+      "model": "deployment /%"
+    },
+    "model": "claude-3-7",
+    "expected": {
+      "path": "/openai/deployments/deployment /%/chat/completions?api-version=",
+      "host": "r /%资源.openai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "anthropicTokenCount",
+    "config": {
+      "resourceName": "r /%资源",
+      "resourceType": "openAI",
+      "apiVersion": "",
+      "projectName": "proj /%",
+      "model": "deployment /%"
+    },
+    "model": "claude-3-7",
+    "expected": {
+      "path": "/openai/deployments/deployment /%/chat/completions?api-version=",
+      "host": "r /%资源.openai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "rerank",
+    "config": {
+      "resourceName": "r /%资源",
+      "resourceType": "openAI",
+      "apiVersion": "",
+      "projectName": "proj /%",
+      "model": "deployment /%"
+    },
+    "model": "claude-3-7",
+    "expected": {
+      "path": "/openai/deployments/deployment /%/chat/completions?api-version=",
+      "host": "r /%资源.openai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "completions",
+    "config": {
+      "resourceName": "r /%资源",
+      "resourceType": "openAI",
+      "apiVersion": "a?&版本",
+      "projectName": "proj /%",
+      "model": "deployment /%"
+    },
+    "model": "claude-3-7",
+    "expected": {
+      "path": "/openai/deployments/deployment /%/chat/completions?api-version=a?&版本",
+      "host": "r /%资源.openai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "messages",
+    "config": {
+      "resourceName": "r /%资源",
+      "resourceType": "openAI",
+      "apiVersion": "a?&版本",
+      "projectName": "proj /%",
+      "model": "deployment /%"
+    },
+    "model": "claude-3-7",
+    "expected": {
+      "path": "/openai/deployments/deployment /%/chat/completions?api-version=a?&版本",
+      "host": "r /%资源.openai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "models",
+    "config": {
+      "resourceName": "r /%资源",
+      "resourceType": "openAI",
+      "apiVersion": "a?&版本",
+      "projectName": "proj /%",
+      "model": "deployment /%"
+    },
+    "model": "claude-3-7",
+    "expected": {
+      "path": "/openai/deployments/deployment /%/chat/completions?api-version=a?&版本",
+      "host": "r /%资源.openai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "passthrough",
+    "config": {
+      "resourceName": "r /%资源",
+      "resourceType": "openAI",
+      "apiVersion": "a?&版本",
+      "projectName": "proj /%",
+      "model": "deployment /%"
+    },
+    "model": "claude-3-7",
+    "expected": {
+      "path": "/openai/deployments/deployment /%/chat/completions?api-version=a?&版本",
+      "host": "r /%资源.openai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "detect",
+    "config": {
+      "resourceName": "r /%资源",
+      "resourceType": "openAI",
+      "apiVersion": "a?&版本",
+      "projectName": "proj /%",
+      "model": "deployment /%"
+    },
+    "model": "claude-3-7",
+    "expected": {
+      "path": "/openai/deployments/deployment /%/chat/completions?api-version=a?&版本",
+      "host": "r /%资源.openai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "responses",
+    "config": {
+      "resourceName": "r /%资源",
+      "resourceType": "openAI",
+      "apiVersion": "a?&版本",
+      "projectName": "proj /%",
+      "model": "deployment /%"
+    },
+    "model": "claude-3-7",
+    "expected": {
+      "path": "/openai/deployments/deployment /%/responses?api-version=a?&版本",
+      "host": "r /%资源.openai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "embeddings",
+    "config": {
+      "resourceName": "r /%资源",
+      "resourceType": "openAI",
+      "apiVersion": "a?&版本",
+      "projectName": "proj /%",
+      "model": "deployment /%"
+    },
+    "model": "claude-3-7",
+    "expected": {
+      "path": "/openai/deployments/deployment /%/embeddings?api-version=a?&版本",
+      "host": "r /%资源.openai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "realtime",
+    "config": {
+      "resourceName": "r /%资源",
+      "resourceType": "openAI",
+      "apiVersion": "a?&版本",
+      "projectName": "proj /%",
+      "model": "deployment /%"
+    },
+    "model": "claude-3-7",
+    "expected": {
+      "path": "/openai/deployments/deployment /%/chat/completions?api-version=a?&版本",
+      "host": "r /%资源.openai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "anthropicTokenCount",
+    "config": {
+      "resourceName": "r /%资源",
+      "resourceType": "openAI",
+      "apiVersion": "a?&版本",
+      "projectName": "proj /%",
+      "model": "deployment /%"
+    },
+    "model": "claude-3-7",
+    "expected": {
+      "path": "/openai/deployments/deployment /%/chat/completions?api-version=a?&版本",
+      "host": "r /%资源.openai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "rerank",
+    "config": {
+      "resourceName": "r /%资源",
+      "resourceType": "openAI",
+      "apiVersion": "a?&版本",
+      "projectName": "proj /%",
+      "model": "deployment /%"
+    },
+    "model": "claude-3-7",
+    "expected": {
+      "path": "/openai/deployments/deployment /%/chat/completions?api-version=a?&版本",
+      "host": "r /%资源.openai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "completions",
+    "config": {
+      "resourceName": "r /%资源",
+      "resourceType": "foundry",
+      "apiVersion": null,
+      "projectName": null,
+      "model": null
+    },
+    "model": "claude-3-7",
+    "expected": {
+      "path": "/api/projects/r /%资源/openai/v1/chat/completions",
+      "host": "r /%资源.services.ai.azure.com",
+      "anthropic": true,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "messages",
+    "config": {
+      "resourceName": "r /%资源",
+      "resourceType": "foundry",
+      "apiVersion": null,
+      "projectName": null,
+      "model": null
+    },
+    "model": "claude-3-7",
+    "expected": {
+      "path": "/anthropic/v1/messages",
+      "host": "r /%资源.services.ai.azure.com",
+      "anthropic": true,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "models",
+    "config": {
+      "resourceName": "r /%资源",
+      "resourceType": "foundry",
+      "apiVersion": null,
+      "projectName": null,
+      "model": null
+    },
+    "model": "claude-3-7",
+    "expected": {
+      "path": "/api/projects/r /%资源/openai/v1/chat/completions",
+      "host": "r /%资源.services.ai.azure.com",
+      "anthropic": true,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "passthrough",
+    "config": {
+      "resourceName": "r /%资源",
+      "resourceType": "foundry",
+      "apiVersion": null,
+      "projectName": null,
+      "model": null
+    },
+    "model": "claude-3-7",
+    "expected": {
+      "path": "/api/projects/r /%资源/openai/v1/chat/completions",
+      "host": "r /%资源.services.ai.azure.com",
+      "anthropic": true,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "detect",
+    "config": {
+      "resourceName": "r /%资源",
+      "resourceType": "foundry",
+      "apiVersion": null,
+      "projectName": null,
+      "model": null
+    },
+    "model": "claude-3-7",
+    "expected": {
+      "path": "/api/projects/r /%资源/openai/v1/chat/completions",
+      "host": "r /%资源.services.ai.azure.com",
+      "anthropic": true,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "responses",
+    "config": {
+      "resourceName": "r /%资源",
+      "resourceType": "foundry",
+      "apiVersion": null,
+      "projectName": null,
+      "model": null
+    },
+    "model": "claude-3-7",
+    "expected": {
+      "path": "/api/projects/r /%资源/openai/v1/responses",
+      "host": "r /%资源.services.ai.azure.com",
+      "anthropic": true,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "embeddings",
+    "config": {
+      "resourceName": "r /%资源",
+      "resourceType": "foundry",
+      "apiVersion": null,
+      "projectName": null,
+      "model": null
+    },
+    "model": "claude-3-7",
+    "expected": {
+      "path": "/api/projects/r /%资源/openai/v1/embeddings",
+      "host": "r /%资源.services.ai.azure.com",
+      "anthropic": true,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "realtime",
+    "config": {
+      "resourceName": "r /%资源",
+      "resourceType": "foundry",
+      "apiVersion": null,
+      "projectName": null,
+      "model": null
+    },
+    "model": "claude-3-7",
+    "expected": {
+      "path": "/api/projects/r /%资源/openai/v1/chat/completions",
+      "host": "r /%资源.services.ai.azure.com",
+      "anthropic": true,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "anthropicTokenCount",
+    "config": {
+      "resourceName": "r /%资源",
+      "resourceType": "foundry",
+      "apiVersion": null,
+      "projectName": null,
+      "model": null
+    },
+    "model": "claude-3-7",
+    "expected": {
+      "path": "/anthropic/v1/messages/count_tokens",
+      "host": "r /%资源.services.ai.azure.com",
+      "anthropic": true,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "rerank",
+    "config": {
+      "resourceName": "r /%资源",
+      "resourceType": "foundry",
+      "apiVersion": null,
+      "projectName": null,
+      "model": null
+    },
+    "model": "claude-3-7",
+    "expected": {
+      "path": "/api/projects/r /%资源/openai/v1/chat/completions",
+      "host": "r /%资源.services.ai.azure.com",
+      "anthropic": true,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "completions",
+    "config": {
+      "resourceName": "r /%资源",
+      "resourceType": "foundry",
+      "apiVersion": "v1",
+      "projectName": "proj /%",
+      "model": "deployment /%"
+    },
+    "model": "claude-3-7",
+    "expected": {
+      "path": "/api/projects/proj /%/openai/v1/chat/completions",
+      "host": "r /%资源.services.ai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "messages",
+    "config": {
+      "resourceName": "r /%资源",
+      "resourceType": "foundry",
+      "apiVersion": "v1",
+      "projectName": "proj /%",
+      "model": "deployment /%"
+    },
+    "model": "claude-3-7",
+    "expected": {
+      "path": "/api/projects/proj /%/openai/v1/chat/completions",
+      "host": "r /%资源.services.ai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "models",
+    "config": {
+      "resourceName": "r /%资源",
+      "resourceType": "foundry",
+      "apiVersion": "v1",
+      "projectName": "proj /%",
+      "model": "deployment /%"
+    },
+    "model": "claude-3-7",
+    "expected": {
+      "path": "/api/projects/proj /%/openai/v1/chat/completions",
+      "host": "r /%资源.services.ai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "passthrough",
+    "config": {
+      "resourceName": "r /%资源",
+      "resourceType": "foundry",
+      "apiVersion": "v1",
+      "projectName": "proj /%",
+      "model": "deployment /%"
+    },
+    "model": "claude-3-7",
+    "expected": {
+      "path": "/api/projects/proj /%/openai/v1/chat/completions",
+      "host": "r /%资源.services.ai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "detect",
+    "config": {
+      "resourceName": "r /%资源",
+      "resourceType": "foundry",
+      "apiVersion": "v1",
+      "projectName": "proj /%",
+      "model": "deployment /%"
+    },
+    "model": "claude-3-7",
+    "expected": {
+      "path": "/api/projects/proj /%/openai/v1/chat/completions",
+      "host": "r /%资源.services.ai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "responses",
+    "config": {
+      "resourceName": "r /%资源",
+      "resourceType": "foundry",
+      "apiVersion": "v1",
+      "projectName": "proj /%",
+      "model": "deployment /%"
+    },
+    "model": "claude-3-7",
+    "expected": {
+      "path": "/api/projects/proj /%/openai/v1/responses",
+      "host": "r /%资源.services.ai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "embeddings",
+    "config": {
+      "resourceName": "r /%资源",
+      "resourceType": "foundry",
+      "apiVersion": "v1",
+      "projectName": "proj /%",
+      "model": "deployment /%"
+    },
+    "model": "claude-3-7",
+    "expected": {
+      "path": "/api/projects/proj /%/openai/v1/embeddings",
+      "host": "r /%资源.services.ai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "realtime",
+    "config": {
+      "resourceName": "r /%资源",
+      "resourceType": "foundry",
+      "apiVersion": "v1",
+      "projectName": "proj /%",
+      "model": "deployment /%"
+    },
+    "model": "claude-3-7",
+    "expected": {
+      "path": "/api/projects/proj /%/openai/v1/chat/completions",
+      "host": "r /%资源.services.ai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "anthropicTokenCount",
+    "config": {
+      "resourceName": "r /%资源",
+      "resourceType": "foundry",
+      "apiVersion": "v1",
+      "projectName": "proj /%",
+      "model": "deployment /%"
+    },
+    "model": "claude-3-7",
+    "expected": {
+      "path": "/api/projects/proj /%/openai/v1/chat/completions",
+      "host": "r /%资源.services.ai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "rerank",
+    "config": {
+      "resourceName": "r /%资源",
+      "resourceType": "foundry",
+      "apiVersion": "v1",
+      "projectName": "proj /%",
+      "model": "deployment /%"
+    },
+    "model": "claude-3-7",
+    "expected": {
+      "path": "/api/projects/proj /%/openai/v1/chat/completions",
+      "host": "r /%资源.services.ai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "completions",
+    "config": {
+      "resourceName": "r /%资源",
+      "resourceType": "foundry",
+      "apiVersion": "preview",
+      "projectName": "proj /%",
+      "model": "deployment /%"
+    },
+    "model": "claude-3-7",
+    "expected": {
+      "path": "/api/projects/proj /%/openai/v1/chat/completions",
+      "host": "r /%资源.services.ai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "messages",
+    "config": {
+      "resourceName": "r /%资源",
+      "resourceType": "foundry",
+      "apiVersion": "preview",
+      "projectName": "proj /%",
+      "model": "deployment /%"
+    },
+    "model": "claude-3-7",
+    "expected": {
+      "path": "/api/projects/proj /%/openai/v1/chat/completions",
+      "host": "r /%资源.services.ai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "models",
+    "config": {
+      "resourceName": "r /%资源",
+      "resourceType": "foundry",
+      "apiVersion": "preview",
+      "projectName": "proj /%",
+      "model": "deployment /%"
+    },
+    "model": "claude-3-7",
+    "expected": {
+      "path": "/api/projects/proj /%/openai/v1/chat/completions",
+      "host": "r /%资源.services.ai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "passthrough",
+    "config": {
+      "resourceName": "r /%资源",
+      "resourceType": "foundry",
+      "apiVersion": "preview",
+      "projectName": "proj /%",
+      "model": "deployment /%"
+    },
+    "model": "claude-3-7",
+    "expected": {
+      "path": "/api/projects/proj /%/openai/v1/chat/completions",
+      "host": "r /%资源.services.ai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "detect",
+    "config": {
+      "resourceName": "r /%资源",
+      "resourceType": "foundry",
+      "apiVersion": "preview",
+      "projectName": "proj /%",
+      "model": "deployment /%"
+    },
+    "model": "claude-3-7",
+    "expected": {
+      "path": "/api/projects/proj /%/openai/v1/chat/completions",
+      "host": "r /%资源.services.ai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "responses",
+    "config": {
+      "resourceName": "r /%资源",
+      "resourceType": "foundry",
+      "apiVersion": "preview",
+      "projectName": "proj /%",
+      "model": "deployment /%"
+    },
+    "model": "claude-3-7",
+    "expected": {
+      "path": "/api/projects/proj /%/openai/v1/responses",
+      "host": "r /%资源.services.ai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "embeddings",
+    "config": {
+      "resourceName": "r /%资源",
+      "resourceType": "foundry",
+      "apiVersion": "preview",
+      "projectName": "proj /%",
+      "model": "deployment /%"
+    },
+    "model": "claude-3-7",
+    "expected": {
+      "path": "/api/projects/proj /%/openai/v1/embeddings",
+      "host": "r /%资源.services.ai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "realtime",
+    "config": {
+      "resourceName": "r /%资源",
+      "resourceType": "foundry",
+      "apiVersion": "preview",
+      "projectName": "proj /%",
+      "model": "deployment /%"
+    },
+    "model": "claude-3-7",
+    "expected": {
+      "path": "/api/projects/proj /%/openai/v1/chat/completions",
+      "host": "r /%资源.services.ai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "anthropicTokenCount",
+    "config": {
+      "resourceName": "r /%资源",
+      "resourceType": "foundry",
+      "apiVersion": "preview",
+      "projectName": "proj /%",
+      "model": "deployment /%"
+    },
+    "model": "claude-3-7",
+    "expected": {
+      "path": "/api/projects/proj /%/openai/v1/chat/completions",
+      "host": "r /%资源.services.ai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "rerank",
+    "config": {
+      "resourceName": "r /%资源",
+      "resourceType": "foundry",
+      "apiVersion": "preview",
+      "projectName": "proj /%",
+      "model": "deployment /%"
+    },
+    "model": "claude-3-7",
+    "expected": {
+      "path": "/api/projects/proj /%/openai/v1/chat/completions",
+      "host": "r /%资源.services.ai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "completions",
+    "config": {
+      "resourceName": "r /%资源",
+      "resourceType": "foundry",
+      "apiVersion": "2024-10-21",
+      "projectName": "proj /%",
+      "model": "deployment /%"
+    },
+    "model": "claude-3-7",
+    "expected": {
+      "path": "/api/projects/proj /%/openai/v1/chat/completions",
+      "host": "r /%资源.services.ai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "messages",
+    "config": {
+      "resourceName": "r /%资源",
+      "resourceType": "foundry",
+      "apiVersion": "2024-10-21",
+      "projectName": "proj /%",
+      "model": "deployment /%"
+    },
+    "model": "claude-3-7",
+    "expected": {
+      "path": "/api/projects/proj /%/openai/v1/chat/completions",
+      "host": "r /%资源.services.ai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "models",
+    "config": {
+      "resourceName": "r /%资源",
+      "resourceType": "foundry",
+      "apiVersion": "2024-10-21",
+      "projectName": "proj /%",
+      "model": "deployment /%"
+    },
+    "model": "claude-3-7",
+    "expected": {
+      "path": "/api/projects/proj /%/openai/v1/chat/completions",
+      "host": "r /%资源.services.ai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "passthrough",
+    "config": {
+      "resourceName": "r /%资源",
+      "resourceType": "foundry",
+      "apiVersion": "2024-10-21",
+      "projectName": "proj /%",
+      "model": "deployment /%"
+    },
+    "model": "claude-3-7",
+    "expected": {
+      "path": "/api/projects/proj /%/openai/v1/chat/completions",
+      "host": "r /%资源.services.ai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "detect",
+    "config": {
+      "resourceName": "r /%资源",
+      "resourceType": "foundry",
+      "apiVersion": "2024-10-21",
+      "projectName": "proj /%",
+      "model": "deployment /%"
+    },
+    "model": "claude-3-7",
+    "expected": {
+      "path": "/api/projects/proj /%/openai/v1/chat/completions",
+      "host": "r /%资源.services.ai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "responses",
+    "config": {
+      "resourceName": "r /%资源",
+      "resourceType": "foundry",
+      "apiVersion": "2024-10-21",
+      "projectName": "proj /%",
+      "model": "deployment /%"
+    },
+    "model": "claude-3-7",
+    "expected": {
+      "path": "/api/projects/proj /%/openai/v1/responses",
+      "host": "r /%资源.services.ai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "embeddings",
+    "config": {
+      "resourceName": "r /%资源",
+      "resourceType": "foundry",
+      "apiVersion": "2024-10-21",
+      "projectName": "proj /%",
+      "model": "deployment /%"
+    },
+    "model": "claude-3-7",
+    "expected": {
+      "path": "/api/projects/proj /%/openai/v1/embeddings",
+      "host": "r /%资源.services.ai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "realtime",
+    "config": {
+      "resourceName": "r /%资源",
+      "resourceType": "foundry",
+      "apiVersion": "2024-10-21",
+      "projectName": "proj /%",
+      "model": "deployment /%"
+    },
+    "model": "claude-3-7",
+    "expected": {
+      "path": "/api/projects/proj /%/openai/v1/chat/completions",
+      "host": "r /%资源.services.ai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "anthropicTokenCount",
+    "config": {
+      "resourceName": "r /%资源",
+      "resourceType": "foundry",
+      "apiVersion": "2024-10-21",
+      "projectName": "proj /%",
+      "model": "deployment /%"
+    },
+    "model": "claude-3-7",
+    "expected": {
+      "path": "/api/projects/proj /%/openai/v1/chat/completions",
+      "host": "r /%资源.services.ai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "rerank",
+    "config": {
+      "resourceName": "r /%资源",
+      "resourceType": "foundry",
+      "apiVersion": "2024-10-21",
+      "projectName": "proj /%",
+      "model": "deployment /%"
+    },
+    "model": "claude-3-7",
+    "expected": {
+      "path": "/api/projects/proj /%/openai/v1/chat/completions",
+      "host": "r /%资源.services.ai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "completions",
+    "config": {
+      "resourceName": "r /%资源",
+      "resourceType": "foundry",
+      "apiVersion": "",
+      "projectName": "proj /%",
+      "model": "deployment /%"
+    },
+    "model": "claude-3-7",
+    "expected": {
+      "path": "/api/projects/proj /%/openai/v1/chat/completions",
+      "host": "r /%资源.services.ai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "messages",
+    "config": {
+      "resourceName": "r /%资源",
+      "resourceType": "foundry",
+      "apiVersion": "",
+      "projectName": "proj /%",
+      "model": "deployment /%"
+    },
+    "model": "claude-3-7",
+    "expected": {
+      "path": "/api/projects/proj /%/openai/v1/chat/completions",
+      "host": "r /%资源.services.ai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "models",
+    "config": {
+      "resourceName": "r /%资源",
+      "resourceType": "foundry",
+      "apiVersion": "",
+      "projectName": "proj /%",
+      "model": "deployment /%"
+    },
+    "model": "claude-3-7",
+    "expected": {
+      "path": "/api/projects/proj /%/openai/v1/chat/completions",
+      "host": "r /%资源.services.ai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "passthrough",
+    "config": {
+      "resourceName": "r /%资源",
+      "resourceType": "foundry",
+      "apiVersion": "",
+      "projectName": "proj /%",
+      "model": "deployment /%"
+    },
+    "model": "claude-3-7",
+    "expected": {
+      "path": "/api/projects/proj /%/openai/v1/chat/completions",
+      "host": "r /%资源.services.ai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "detect",
+    "config": {
+      "resourceName": "r /%资源",
+      "resourceType": "foundry",
+      "apiVersion": "",
+      "projectName": "proj /%",
+      "model": "deployment /%"
+    },
+    "model": "claude-3-7",
+    "expected": {
+      "path": "/api/projects/proj /%/openai/v1/chat/completions",
+      "host": "r /%资源.services.ai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "responses",
+    "config": {
+      "resourceName": "r /%资源",
+      "resourceType": "foundry",
+      "apiVersion": "",
+      "projectName": "proj /%",
+      "model": "deployment /%"
+    },
+    "model": "claude-3-7",
+    "expected": {
+      "path": "/api/projects/proj /%/openai/v1/responses",
+      "host": "r /%资源.services.ai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "embeddings",
+    "config": {
+      "resourceName": "r /%资源",
+      "resourceType": "foundry",
+      "apiVersion": "",
+      "projectName": "proj /%",
+      "model": "deployment /%"
+    },
+    "model": "claude-3-7",
+    "expected": {
+      "path": "/api/projects/proj /%/openai/v1/embeddings",
+      "host": "r /%资源.services.ai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "realtime",
+    "config": {
+      "resourceName": "r /%资源",
+      "resourceType": "foundry",
+      "apiVersion": "",
+      "projectName": "proj /%",
+      "model": "deployment /%"
+    },
+    "model": "claude-3-7",
+    "expected": {
+      "path": "/api/projects/proj /%/openai/v1/chat/completions",
+      "host": "r /%资源.services.ai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "anthropicTokenCount",
+    "config": {
+      "resourceName": "r /%资源",
+      "resourceType": "foundry",
+      "apiVersion": "",
+      "projectName": "proj /%",
+      "model": "deployment /%"
+    },
+    "model": "claude-3-7",
+    "expected": {
+      "path": "/api/projects/proj /%/openai/v1/chat/completions",
+      "host": "r /%资源.services.ai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "rerank",
+    "config": {
+      "resourceName": "r /%资源",
+      "resourceType": "foundry",
+      "apiVersion": "",
+      "projectName": "proj /%",
+      "model": "deployment /%"
+    },
+    "model": "claude-3-7",
+    "expected": {
+      "path": "/api/projects/proj /%/openai/v1/chat/completions",
+      "host": "r /%资源.services.ai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "completions",
+    "config": {
+      "resourceName": "r /%资源",
+      "resourceType": "foundry",
+      "apiVersion": "a?&版本",
+      "projectName": "proj /%",
+      "model": "deployment /%"
+    },
+    "model": "claude-3-7",
+    "expected": {
+      "path": "/api/projects/proj /%/openai/v1/chat/completions",
+      "host": "r /%资源.services.ai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "messages",
+    "config": {
+      "resourceName": "r /%资源",
+      "resourceType": "foundry",
+      "apiVersion": "a?&版本",
+      "projectName": "proj /%",
+      "model": "deployment /%"
+    },
+    "model": "claude-3-7",
+    "expected": {
+      "path": "/api/projects/proj /%/openai/v1/chat/completions",
+      "host": "r /%资源.services.ai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "models",
+    "config": {
+      "resourceName": "r /%资源",
+      "resourceType": "foundry",
+      "apiVersion": "a?&版本",
+      "projectName": "proj /%",
+      "model": "deployment /%"
+    },
+    "model": "claude-3-7",
+    "expected": {
+      "path": "/api/projects/proj /%/openai/v1/chat/completions",
+      "host": "r /%资源.services.ai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "passthrough",
+    "config": {
+      "resourceName": "r /%资源",
+      "resourceType": "foundry",
+      "apiVersion": "a?&版本",
+      "projectName": "proj /%",
+      "model": "deployment /%"
+    },
+    "model": "claude-3-7",
+    "expected": {
+      "path": "/api/projects/proj /%/openai/v1/chat/completions",
+      "host": "r /%资源.services.ai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "detect",
+    "config": {
+      "resourceName": "r /%资源",
+      "resourceType": "foundry",
+      "apiVersion": "a?&版本",
+      "projectName": "proj /%",
+      "model": "deployment /%"
+    },
+    "model": "claude-3-7",
+    "expected": {
+      "path": "/api/projects/proj /%/openai/v1/chat/completions",
+      "host": "r /%资源.services.ai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "responses",
+    "config": {
+      "resourceName": "r /%资源",
+      "resourceType": "foundry",
+      "apiVersion": "a?&版本",
+      "projectName": "proj /%",
+      "model": "deployment /%"
+    },
+    "model": "claude-3-7",
+    "expected": {
+      "path": "/api/projects/proj /%/openai/v1/responses",
+      "host": "r /%资源.services.ai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "embeddings",
+    "config": {
+      "resourceName": "r /%资源",
+      "resourceType": "foundry",
+      "apiVersion": "a?&版本",
+      "projectName": "proj /%",
+      "model": "deployment /%"
+    },
+    "model": "claude-3-7",
+    "expected": {
+      "path": "/api/projects/proj /%/openai/v1/embeddings",
+      "host": "r /%资源.services.ai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "realtime",
+    "config": {
+      "resourceName": "r /%资源",
+      "resourceType": "foundry",
+      "apiVersion": "a?&版本",
+      "projectName": "proj /%",
+      "model": "deployment /%"
+    },
+    "model": "claude-3-7",
+    "expected": {
+      "path": "/api/projects/proj /%/openai/v1/chat/completions",
+      "host": "r /%资源.services.ai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "anthropicTokenCount",
+    "config": {
+      "resourceName": "r /%资源",
+      "resourceType": "foundry",
+      "apiVersion": "a?&版本",
+      "projectName": "proj /%",
+      "model": "deployment /%"
+    },
+    "model": "claude-3-7",
+    "expected": {
+      "path": "/api/projects/proj /%/openai/v1/chat/completions",
+      "host": "r /%资源.services.ai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "rerank",
+    "config": {
+      "resourceName": "r /%资源",
+      "resourceType": "foundry",
+      "apiVersion": "a?&版本",
+      "projectName": "proj /%",
+      "model": "deployment /%"
+    },
+    "model": "claude-3-7",
+    "expected": {
+      "path": "/api/projects/proj /%/openai/v1/chat/completions",
+      "host": "r /%资源.services.ai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "messages",
+    "config": {
+      "resourceName": "r",
+      "resourceType": "foundry",
+      "model": null
+    },
+    "model": "",
+    "expected": {
+      "path": "/api/projects/r/openai/v1/chat/completions",
+      "host": "r.services.ai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "anthropicTokenCount",
+    "config": {
+      "resourceName": "r",
+      "resourceType": "foundry",
+      "model": null
+    },
+    "model": "",
+    "expected": {
+      "path": "/api/projects/r/openai/v1/chat/completions",
+      "host": "r.services.ai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "responses",
+    "config": {
+      "resourceName": "r",
+      "resourceType": "foundry",
+      "model": null
+    },
+    "model": "",
+    "expected": {
+      "path": "/api/projects/r/openai/v1/responses",
+      "host": "r.services.ai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "messages",
+    "config": {
+      "resourceName": "r",
+      "resourceType": "foundry",
+      "model": null
+    },
+    "model": "claude-test",
+    "expected": {
+      "path": "/anthropic/v1/messages",
+      "host": "r.services.ai.azure.com",
+      "anthropic": true,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "anthropicTokenCount",
+    "config": {
+      "resourceName": "r",
+      "resourceType": "foundry",
+      "model": null
+    },
+    "model": "claude-test",
+    "expected": {
+      "path": "/anthropic/v1/messages/count_tokens",
+      "host": "r.services.ai.azure.com",
+      "anthropic": true,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "responses",
+    "config": {
+      "resourceName": "r",
+      "resourceType": "foundry",
+      "model": null
+    },
+    "model": "claude-test",
+    "expected": {
+      "path": "/api/projects/r/openai/v1/responses",
+      "host": "r.services.ai.azure.com",
+      "anthropic": true,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "messages",
+    "config": {
+      "resourceName": "r",
+      "resourceType": "foundry",
+      "model": null
+    },
+    "model": "gpt-4",
+    "expected": {
+      "path": "/api/projects/r/openai/v1/chat/completions",
+      "host": "r.services.ai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "anthropicTokenCount",
+    "config": {
+      "resourceName": "r",
+      "resourceType": "foundry",
+      "model": null
+    },
+    "model": "gpt-4",
+    "expected": {
+      "path": "/api/projects/r/openai/v1/chat/completions",
+      "host": "r.services.ai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "responses",
+    "config": {
+      "resourceName": "r",
+      "resourceType": "foundry",
+      "model": null
+    },
+    "model": "gpt-4",
+    "expected": {
+      "path": "/api/projects/r/openai/v1/responses",
+      "host": "r.services.ai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "messages",
+    "config": {
+      "resourceName": "r",
+      "resourceType": "foundry",
+      "model": null
+    },
+    "model": "anthropic/claude",
+    "expected": {
+      "path": "/api/projects/r/openai/v1/chat/completions",
+      "host": "r.services.ai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "anthropicTokenCount",
+    "config": {
+      "resourceName": "r",
+      "resourceType": "foundry",
+      "model": null
+    },
+    "model": "anthropic/claude",
+    "expected": {
+      "path": "/api/projects/r/openai/v1/chat/completions",
+      "host": "r.services.ai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "responses",
+    "config": {
+      "resourceName": "r",
+      "resourceType": "foundry",
+      "model": null
+    },
+    "model": "anthropic/claude",
+    "expected": {
+      "path": "/api/projects/r/openai/v1/responses",
+      "host": "r.services.ai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "messages",
+    "config": {
+      "resourceName": "r",
+      "resourceType": "foundry",
+      "model": null
+    },
+    "model": "模型/% ?",
+    "expected": {
+      "path": "/api/projects/r/openai/v1/chat/completions",
+      "host": "r.services.ai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "anthropicTokenCount",
+    "config": {
+      "resourceName": "r",
+      "resourceType": "foundry",
+      "model": null
+    },
+    "model": "模型/% ?",
+    "expected": {
+      "path": "/api/projects/r/openai/v1/chat/completions",
+      "host": "r.services.ai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "responses",
+    "config": {
+      "resourceName": "r",
+      "resourceType": "foundry",
+      "model": null
+    },
+    "model": "模型/% ?",
+    "expected": {
+      "path": "/api/projects/r/openai/v1/responses",
+      "host": "r.services.ai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "messages",
+    "config": {
+      "resourceName": "r",
+      "resourceType": "foundry",
+      "model": ""
+    },
+    "model": "",
+    "expected": {
+      "path": "/api/projects/r/openai/v1/chat/completions",
+      "host": "r.services.ai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "anthropicTokenCount",
+    "config": {
+      "resourceName": "r",
+      "resourceType": "foundry",
+      "model": ""
+    },
+    "model": "",
+    "expected": {
+      "path": "/api/projects/r/openai/v1/chat/completions",
+      "host": "r.services.ai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "responses",
+    "config": {
+      "resourceName": "r",
+      "resourceType": "foundry",
+      "model": ""
+    },
+    "model": "",
+    "expected": {
+      "path": "/api/projects/r/openai/v1/responses",
+      "host": "r.services.ai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "messages",
+    "config": {
+      "resourceName": "r",
+      "resourceType": "foundry",
+      "model": ""
+    },
+    "model": "claude-test",
+    "expected": {
+      "path": "/api/projects/r/openai/v1/chat/completions",
+      "host": "r.services.ai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "anthropicTokenCount",
+    "config": {
+      "resourceName": "r",
+      "resourceType": "foundry",
+      "model": ""
+    },
+    "model": "claude-test",
+    "expected": {
+      "path": "/api/projects/r/openai/v1/chat/completions",
+      "host": "r.services.ai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "responses",
+    "config": {
+      "resourceName": "r",
+      "resourceType": "foundry",
+      "model": ""
+    },
+    "model": "claude-test",
+    "expected": {
+      "path": "/api/projects/r/openai/v1/responses",
+      "host": "r.services.ai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "messages",
+    "config": {
+      "resourceName": "r",
+      "resourceType": "foundry",
+      "model": ""
+    },
+    "model": "gpt-4",
+    "expected": {
+      "path": "/api/projects/r/openai/v1/chat/completions",
+      "host": "r.services.ai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "anthropicTokenCount",
+    "config": {
+      "resourceName": "r",
+      "resourceType": "foundry",
+      "model": ""
+    },
+    "model": "gpt-4",
+    "expected": {
+      "path": "/api/projects/r/openai/v1/chat/completions",
+      "host": "r.services.ai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "responses",
+    "config": {
+      "resourceName": "r",
+      "resourceType": "foundry",
+      "model": ""
+    },
+    "model": "gpt-4",
+    "expected": {
+      "path": "/api/projects/r/openai/v1/responses",
+      "host": "r.services.ai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "messages",
+    "config": {
+      "resourceName": "r",
+      "resourceType": "foundry",
+      "model": ""
+    },
+    "model": "anthropic/claude",
+    "expected": {
+      "path": "/api/projects/r/openai/v1/chat/completions",
+      "host": "r.services.ai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "anthropicTokenCount",
+    "config": {
+      "resourceName": "r",
+      "resourceType": "foundry",
+      "model": ""
+    },
+    "model": "anthropic/claude",
+    "expected": {
+      "path": "/api/projects/r/openai/v1/chat/completions",
+      "host": "r.services.ai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "responses",
+    "config": {
+      "resourceName": "r",
+      "resourceType": "foundry",
+      "model": ""
+    },
+    "model": "anthropic/claude",
+    "expected": {
+      "path": "/api/projects/r/openai/v1/responses",
+      "host": "r.services.ai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "messages",
+    "config": {
+      "resourceName": "r",
+      "resourceType": "foundry",
+      "model": ""
+    },
+    "model": "模型/% ?",
+    "expected": {
+      "path": "/api/projects/r/openai/v1/chat/completions",
+      "host": "r.services.ai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "anthropicTokenCount",
+    "config": {
+      "resourceName": "r",
+      "resourceType": "foundry",
+      "model": ""
+    },
+    "model": "模型/% ?",
+    "expected": {
+      "path": "/api/projects/r/openai/v1/chat/completions",
+      "host": "r.services.ai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "responses",
+    "config": {
+      "resourceName": "r",
+      "resourceType": "foundry",
+      "model": ""
+    },
+    "model": "模型/% ?",
+    "expected": {
+      "path": "/api/projects/r/openai/v1/responses",
+      "host": "r.services.ai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "messages",
+    "config": {
+      "resourceName": "r",
+      "resourceType": "foundry",
+      "model": "CLAUDE-override"
+    },
+    "model": "",
+    "expected": {
+      "path": "/anthropic/v1/messages",
+      "host": "r.services.ai.azure.com",
+      "anthropic": true,
+      "noRequest": true
+    }
+  },
+  {
+    "family": "azure",
+    "route": "anthropicTokenCount",
+    "config": {
+      "resourceName": "r",
+      "resourceType": "foundry",
+      "model": "CLAUDE-override"
+    },
+    "model": "",
+    "expected": {
+      "path": "/anthropic/v1/messages/count_tokens",
+      "host": "r.services.ai.azure.com",
+      "anthropic": true,
+      "noRequest": true
+    }
+  },
+  {
+    "family": "azure",
+    "route": "responses",
+    "config": {
+      "resourceName": "r",
+      "resourceType": "foundry",
+      "model": "CLAUDE-override"
+    },
+    "model": "",
+    "expected": {
+      "path": "/api/projects/r/openai/v1/responses",
+      "host": "r.services.ai.azure.com",
+      "anthropic": true,
+      "noRequest": true
+    }
+  },
+  {
+    "family": "azure",
+    "route": "messages",
+    "config": {
+      "resourceName": "r",
+      "resourceType": "foundry",
+      "model": "CLAUDE-override"
+    },
+    "model": "claude-test",
+    "expected": {
+      "path": "/anthropic/v1/messages",
+      "host": "r.services.ai.azure.com",
+      "anthropic": true,
+      "noRequest": true
+    }
+  },
+  {
+    "family": "azure",
+    "route": "anthropicTokenCount",
+    "config": {
+      "resourceName": "r",
+      "resourceType": "foundry",
+      "model": "CLAUDE-override"
+    },
+    "model": "claude-test",
+    "expected": {
+      "path": "/anthropic/v1/messages/count_tokens",
+      "host": "r.services.ai.azure.com",
+      "anthropic": true,
+      "noRequest": true
+    }
+  },
+  {
+    "family": "azure",
+    "route": "responses",
+    "config": {
+      "resourceName": "r",
+      "resourceType": "foundry",
+      "model": "CLAUDE-override"
+    },
+    "model": "claude-test",
+    "expected": {
+      "path": "/api/projects/r/openai/v1/responses",
+      "host": "r.services.ai.azure.com",
+      "anthropic": true,
+      "noRequest": true
+    }
+  },
+  {
+    "family": "azure",
+    "route": "messages",
+    "config": {
+      "resourceName": "r",
+      "resourceType": "foundry",
+      "model": "CLAUDE-override"
+    },
+    "model": "gpt-4",
+    "expected": {
+      "path": "/anthropic/v1/messages",
+      "host": "r.services.ai.azure.com",
+      "anthropic": true,
+      "noRequest": true
+    }
+  },
+  {
+    "family": "azure",
+    "route": "anthropicTokenCount",
+    "config": {
+      "resourceName": "r",
+      "resourceType": "foundry",
+      "model": "CLAUDE-override"
+    },
+    "model": "gpt-4",
+    "expected": {
+      "path": "/anthropic/v1/messages/count_tokens",
+      "host": "r.services.ai.azure.com",
+      "anthropic": true,
+      "noRequest": true
+    }
+  },
+  {
+    "family": "azure",
+    "route": "responses",
+    "config": {
+      "resourceName": "r",
+      "resourceType": "foundry",
+      "model": "CLAUDE-override"
+    },
+    "model": "gpt-4",
+    "expected": {
+      "path": "/api/projects/r/openai/v1/responses",
+      "host": "r.services.ai.azure.com",
+      "anthropic": true,
+      "noRequest": true
+    }
+  },
+  {
+    "family": "azure",
+    "route": "messages",
+    "config": {
+      "resourceName": "r",
+      "resourceType": "foundry",
+      "model": "CLAUDE-override"
+    },
+    "model": "anthropic/claude",
+    "expected": {
+      "path": "/anthropic/v1/messages",
+      "host": "r.services.ai.azure.com",
+      "anthropic": true,
+      "noRequest": true
+    }
+  },
+  {
+    "family": "azure",
+    "route": "anthropicTokenCount",
+    "config": {
+      "resourceName": "r",
+      "resourceType": "foundry",
+      "model": "CLAUDE-override"
+    },
+    "model": "anthropic/claude",
+    "expected": {
+      "path": "/anthropic/v1/messages/count_tokens",
+      "host": "r.services.ai.azure.com",
+      "anthropic": true,
+      "noRequest": true
+    }
+  },
+  {
+    "family": "azure",
+    "route": "responses",
+    "config": {
+      "resourceName": "r",
+      "resourceType": "foundry",
+      "model": "CLAUDE-override"
+    },
+    "model": "anthropic/claude",
+    "expected": {
+      "path": "/api/projects/r/openai/v1/responses",
+      "host": "r.services.ai.azure.com",
+      "anthropic": true,
+      "noRequest": true
+    }
+  },
+  {
+    "family": "azure",
+    "route": "messages",
+    "config": {
+      "resourceName": "r",
+      "resourceType": "foundry",
+      "model": "CLAUDE-override"
+    },
+    "model": "模型/% ?",
+    "expected": {
+      "path": "/anthropic/v1/messages",
+      "host": "r.services.ai.azure.com",
+      "anthropic": true,
+      "noRequest": true
+    }
+  },
+  {
+    "family": "azure",
+    "route": "anthropicTokenCount",
+    "config": {
+      "resourceName": "r",
+      "resourceType": "foundry",
+      "model": "CLAUDE-override"
+    },
+    "model": "模型/% ?",
+    "expected": {
+      "path": "/anthropic/v1/messages/count_tokens",
+      "host": "r.services.ai.azure.com",
+      "anthropic": true,
+      "noRequest": true
+    }
+  },
+  {
+    "family": "azure",
+    "route": "responses",
+    "config": {
+      "resourceName": "r",
+      "resourceType": "foundry",
+      "model": "CLAUDE-override"
+    },
+    "model": "模型/% ?",
+    "expected": {
+      "path": "/api/projects/r/openai/v1/responses",
+      "host": "r.services.ai.azure.com",
+      "anthropic": true,
+      "noRequest": true
+    }
+  },
+  {
+    "family": "azure",
+    "route": "messages",
+    "config": {
+      "resourceName": "r",
+      "resourceType": "foundry",
+      "model": "gpt-override"
+    },
+    "model": "",
+    "expected": {
+      "path": "/api/projects/r/openai/v1/chat/completions",
+      "host": "r.services.ai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "anthropicTokenCount",
+    "config": {
+      "resourceName": "r",
+      "resourceType": "foundry",
+      "model": "gpt-override"
+    },
+    "model": "",
+    "expected": {
+      "path": "/api/projects/r/openai/v1/chat/completions",
+      "host": "r.services.ai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "responses",
+    "config": {
+      "resourceName": "r",
+      "resourceType": "foundry",
+      "model": "gpt-override"
+    },
+    "model": "",
+    "expected": {
+      "path": "/api/projects/r/openai/v1/responses",
+      "host": "r.services.ai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "messages",
+    "config": {
+      "resourceName": "r",
+      "resourceType": "foundry",
+      "model": "gpt-override"
+    },
+    "model": "claude-test",
+    "expected": {
+      "path": "/api/projects/r/openai/v1/chat/completions",
+      "host": "r.services.ai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "anthropicTokenCount",
+    "config": {
+      "resourceName": "r",
+      "resourceType": "foundry",
+      "model": "gpt-override"
+    },
+    "model": "claude-test",
+    "expected": {
+      "path": "/api/projects/r/openai/v1/chat/completions",
+      "host": "r.services.ai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "responses",
+    "config": {
+      "resourceName": "r",
+      "resourceType": "foundry",
+      "model": "gpt-override"
+    },
+    "model": "claude-test",
+    "expected": {
+      "path": "/api/projects/r/openai/v1/responses",
+      "host": "r.services.ai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "messages",
+    "config": {
+      "resourceName": "r",
+      "resourceType": "foundry",
+      "model": "gpt-override"
+    },
+    "model": "gpt-4",
+    "expected": {
+      "path": "/api/projects/r/openai/v1/chat/completions",
+      "host": "r.services.ai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "anthropicTokenCount",
+    "config": {
+      "resourceName": "r",
+      "resourceType": "foundry",
+      "model": "gpt-override"
+    },
+    "model": "gpt-4",
+    "expected": {
+      "path": "/api/projects/r/openai/v1/chat/completions",
+      "host": "r.services.ai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "responses",
+    "config": {
+      "resourceName": "r",
+      "resourceType": "foundry",
+      "model": "gpt-override"
+    },
+    "model": "gpt-4",
+    "expected": {
+      "path": "/api/projects/r/openai/v1/responses",
+      "host": "r.services.ai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "messages",
+    "config": {
+      "resourceName": "r",
+      "resourceType": "foundry",
+      "model": "gpt-override"
+    },
+    "model": "anthropic/claude",
+    "expected": {
+      "path": "/api/projects/r/openai/v1/chat/completions",
+      "host": "r.services.ai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "anthropicTokenCount",
+    "config": {
+      "resourceName": "r",
+      "resourceType": "foundry",
+      "model": "gpt-override"
+    },
+    "model": "anthropic/claude",
+    "expected": {
+      "path": "/api/projects/r/openai/v1/chat/completions",
+      "host": "r.services.ai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "responses",
+    "config": {
+      "resourceName": "r",
+      "resourceType": "foundry",
+      "model": "gpt-override"
+    },
+    "model": "anthropic/claude",
+    "expected": {
+      "path": "/api/projects/r/openai/v1/responses",
+      "host": "r.services.ai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "messages",
+    "config": {
+      "resourceName": "r",
+      "resourceType": "foundry",
+      "model": "gpt-override"
+    },
+    "model": "模型/% ?",
+    "expected": {
+      "path": "/api/projects/r/openai/v1/chat/completions",
+      "host": "r.services.ai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "anthropicTokenCount",
+    "config": {
+      "resourceName": "r",
+      "resourceType": "foundry",
+      "model": "gpt-override"
+    },
+    "model": "模型/% ?",
+    "expected": {
+      "path": "/api/projects/r/openai/v1/chat/completions",
+      "host": "r.services.ai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "azure",
+    "route": "responses",
+    "config": {
+      "resourceName": "r",
+      "resourceType": "foundry",
+      "model": "gpt-override"
+    },
+    "model": "模型/% ?",
+    "expected": {
+      "path": "/api/projects/r/openai/v1/responses",
+      "host": "r.services.ai.azure.com",
+      "anthropic": false,
+      "noRequest": false
+    }
+  },
+  {
+    "family": "custom",
+    "config": {
+      "formats": []
+    },
+    "input": "Completions",
+    "expected": {
+      "native": null,
+      "formats": [
+        {
+          "supports": false,
+          "path": null,
+          "input": "Completions",
+          "route": "completions"
+        },
+        {
+          "supports": false,
+          "path": null,
+          "input": "Messages",
+          "route": "messages"
+        },
+        {
+          "supports": false,
+          "path": null,
+          "input": "Responses",
+          "route": "responses"
+        },
+        {
+          "supports": false,
+          "path": null,
+          "input": "Embeddings",
+          "route": "embeddings"
+        },
+        {
+          "supports": false,
+          "path": null,
+          "input": "CountTokens",
+          "route": "anthropicTokenCount"
+        },
+        {
+          "supports": false,
+          "path": null,
+          "input": "Realtime",
+          "route": "realtime"
+        },
+        {
+          "supports": false,
+          "path": null,
+          "input": "Rerank",
+          "route": "rerank"
+        }
+      ]
+    }
+  },
+  {
+    "family": "custom",
+    "config": {
+      "formats": []
+    },
+    "input": "Messages",
+    "expected": {
+      "native": null,
+      "formats": [
+        {
+          "supports": false,
+          "path": null,
+          "input": "Completions",
+          "route": "completions"
+        },
+        {
+          "supports": false,
+          "path": null,
+          "input": "Messages",
+          "route": "messages"
+        },
+        {
+          "supports": false,
+          "path": null,
+          "input": "Responses",
+          "route": "responses"
+        },
+        {
+          "supports": false,
+          "path": null,
+          "input": "Embeddings",
+          "route": "embeddings"
+        },
+        {
+          "supports": false,
+          "path": null,
+          "input": "CountTokens",
+          "route": "anthropicTokenCount"
+        },
+        {
+          "supports": false,
+          "path": null,
+          "input": "Realtime",
+          "route": "realtime"
+        },
+        {
+          "supports": false,
+          "path": null,
+          "input": "Rerank",
+          "route": "rerank"
+        }
+      ]
+    }
+  },
+  {
+    "family": "custom",
+    "config": {
+      "formats": []
+    },
+    "input": "Responses",
+    "expected": {
+      "native": null,
+      "formats": [
+        {
+          "supports": false,
+          "path": null,
+          "input": "Completions",
+          "route": "completions"
+        },
+        {
+          "supports": false,
+          "path": null,
+          "input": "Messages",
+          "route": "messages"
+        },
+        {
+          "supports": false,
+          "path": null,
+          "input": "Responses",
+          "route": "responses"
+        },
+        {
+          "supports": false,
+          "path": null,
+          "input": "Embeddings",
+          "route": "embeddings"
+        },
+        {
+          "supports": false,
+          "path": null,
+          "input": "CountTokens",
+          "route": "anthropicTokenCount"
+        },
+        {
+          "supports": false,
+          "path": null,
+          "input": "Realtime",
+          "route": "realtime"
+        },
+        {
+          "supports": false,
+          "path": null,
+          "input": "Rerank",
+          "route": "rerank"
+        }
+      ]
+    }
+  },
+  {
+    "family": "custom",
+    "config": {
+      "formats": []
+    },
+    "input": "Embeddings",
+    "expected": {
+      "native": null,
+      "formats": [
+        {
+          "supports": false,
+          "path": null,
+          "input": "Completions",
+          "route": "completions"
+        },
+        {
+          "supports": false,
+          "path": null,
+          "input": "Messages",
+          "route": "messages"
+        },
+        {
+          "supports": false,
+          "path": null,
+          "input": "Responses",
+          "route": "responses"
+        },
+        {
+          "supports": false,
+          "path": null,
+          "input": "Embeddings",
+          "route": "embeddings"
+        },
+        {
+          "supports": false,
+          "path": null,
+          "input": "CountTokens",
+          "route": "anthropicTokenCount"
+        },
+        {
+          "supports": false,
+          "path": null,
+          "input": "Realtime",
+          "route": "realtime"
+        },
+        {
+          "supports": false,
+          "path": null,
+          "input": "Rerank",
+          "route": "rerank"
+        }
+      ]
+    }
+  },
+  {
+    "family": "custom",
+    "config": {
+      "formats": []
+    },
+    "input": "Realtime",
+    "expected": {
+      "native": null,
+      "formats": [
+        {
+          "supports": false,
+          "path": null,
+          "input": "Completions",
+          "route": "completions"
+        },
+        {
+          "supports": false,
+          "path": null,
+          "input": "Messages",
+          "route": "messages"
+        },
+        {
+          "supports": false,
+          "path": null,
+          "input": "Responses",
+          "route": "responses"
+        },
+        {
+          "supports": false,
+          "path": null,
+          "input": "Embeddings",
+          "route": "embeddings"
+        },
+        {
+          "supports": false,
+          "path": null,
+          "input": "CountTokens",
+          "route": "anthropicTokenCount"
+        },
+        {
+          "supports": false,
+          "path": null,
+          "input": "Realtime",
+          "route": "realtime"
+        },
+        {
+          "supports": false,
+          "path": null,
+          "input": "Rerank",
+          "route": "rerank"
+        }
+      ]
+    }
+  },
+  {
+    "family": "custom",
+    "config": {
+      "formats": []
+    },
+    "input": "CountTokens",
+    "expected": {
+      "native": null,
+      "formats": [
+        {
+          "supports": false,
+          "path": null,
+          "input": "Completions",
+          "route": "completions"
+        },
+        {
+          "supports": false,
+          "path": null,
+          "input": "Messages",
+          "route": "messages"
+        },
+        {
+          "supports": false,
+          "path": null,
+          "input": "Responses",
+          "route": "responses"
+        },
+        {
+          "supports": false,
+          "path": null,
+          "input": "Embeddings",
+          "route": "embeddings"
+        },
+        {
+          "supports": false,
+          "path": null,
+          "input": "CountTokens",
+          "route": "anthropicTokenCount"
+        },
+        {
+          "supports": false,
+          "path": null,
+          "input": "Realtime",
+          "route": "realtime"
+        },
+        {
+          "supports": false,
+          "path": null,
+          "input": "Rerank",
+          "route": "rerank"
+        }
+      ]
+    }
+  },
+  {
+    "family": "custom",
+    "config": {
+      "formats": []
+    },
+    "input": "Detect",
+    "expected": {
+      "native": null,
+      "formats": [
+        {
+          "supports": false,
+          "path": null,
+          "input": "Completions",
+          "route": "completions"
+        },
+        {
+          "supports": false,
+          "path": null,
+          "input": "Messages",
+          "route": "messages"
+        },
+        {
+          "supports": false,
+          "path": null,
+          "input": "Responses",
+          "route": "responses"
+        },
+        {
+          "supports": false,
+          "path": null,
+          "input": "Embeddings",
+          "route": "embeddings"
+        },
+        {
+          "supports": false,
+          "path": null,
+          "input": "CountTokens",
+          "route": "anthropicTokenCount"
+        },
+        {
+          "supports": false,
+          "path": null,
+          "input": "Realtime",
+          "route": "realtime"
+        },
+        {
+          "supports": false,
+          "path": null,
+          "input": "Rerank",
+          "route": "rerank"
+        }
+      ]
+    }
+  },
+  {
+    "family": "custom",
+    "config": {
+      "formats": []
+    },
+    "input": "Rerank",
+    "expected": {
+      "native": null,
+      "formats": [
+        {
+          "supports": false,
+          "path": null,
+          "input": "Completions",
+          "route": "completions"
+        },
+        {
+          "supports": false,
+          "path": null,
+          "input": "Messages",
+          "route": "messages"
+        },
+        {
+          "supports": false,
+          "path": null,
+          "input": "Responses",
+          "route": "responses"
+        },
+        {
+          "supports": false,
+          "path": null,
+          "input": "Embeddings",
+          "route": "embeddings"
+        },
+        {
+          "supports": false,
+          "path": null,
+          "input": "CountTokens",
+          "route": "anthropicTokenCount"
+        },
+        {
+          "supports": false,
+          "path": null,
+          "input": "Realtime",
+          "route": "realtime"
+        },
+        {
+          "supports": false,
+          "path": null,
+          "input": "Rerank",
+          "route": "rerank"
+        }
+      ]
+    }
+  },
+  {
+    "family": "custom",
+    "config": {
+      "formats": [
+        {
+          "type": "completions",
+          "path": null
+        },
+        {
+          "type": "messages",
+          "path": null
+        },
+        {
+          "type": "responses",
+          "path": null
+        },
+        {
+          "type": "embeddings",
+          "path": null
+        },
+        {
+          "type": "anthropicTokenCount",
+          "path": null
+        },
+        {
+          "type": "realtime",
+          "path": null
+        },
+        {
+          "type": "rerank",
+          "path": null
+        }
+      ]
+    },
+    "input": "Completions",
+    "expected": {
+      "native": "completions",
+      "formats": [
+        {
+          "supports": true,
+          "path": null,
+          "input": "Completions",
+          "route": "completions"
+        },
+        {
+          "supports": true,
+          "path": null,
+          "input": "Messages",
+          "route": "messages"
+        },
+        {
+          "supports": true,
+          "path": null,
+          "input": "Responses",
+          "route": "responses"
+        },
+        {
+          "supports": true,
+          "path": null,
+          "input": "Embeddings",
+          "route": "embeddings"
+        },
+        {
+          "supports": true,
+          "path": null,
+          "input": "CountTokens",
+          "route": "anthropicTokenCount"
+        },
+        {
+          "supports": true,
+          "path": null,
+          "input": "Realtime",
+          "route": "realtime"
+        },
+        {
+          "supports": true,
+          "path": null,
+          "input": "Rerank",
+          "route": "rerank"
+        }
+      ]
+    }
+  },
+  {
+    "family": "custom",
+    "config": {
+      "formats": [
+        {
+          "type": "completions",
+          "path": null
+        },
+        {
+          "type": "messages",
+          "path": null
+        },
+        {
+          "type": "responses",
+          "path": null
+        },
+        {
+          "type": "embeddings",
+          "path": null
+        },
+        {
+          "type": "anthropicTokenCount",
+          "path": null
+        },
+        {
+          "type": "realtime",
+          "path": null
+        },
+        {
+          "type": "rerank",
+          "path": null
+        }
+      ]
+    },
+    "input": "Messages",
+    "expected": {
+      "native": "messages",
+      "formats": [
+        {
+          "supports": true,
+          "path": null,
+          "input": "Completions",
+          "route": "completions"
+        },
+        {
+          "supports": true,
+          "path": null,
+          "input": "Messages",
+          "route": "messages"
+        },
+        {
+          "supports": true,
+          "path": null,
+          "input": "Responses",
+          "route": "responses"
+        },
+        {
+          "supports": true,
+          "path": null,
+          "input": "Embeddings",
+          "route": "embeddings"
+        },
+        {
+          "supports": true,
+          "path": null,
+          "input": "CountTokens",
+          "route": "anthropicTokenCount"
+        },
+        {
+          "supports": true,
+          "path": null,
+          "input": "Realtime",
+          "route": "realtime"
+        },
+        {
+          "supports": true,
+          "path": null,
+          "input": "Rerank",
+          "route": "rerank"
+        }
+      ]
+    }
+  },
+  {
+    "family": "custom",
+    "config": {
+      "formats": [
+        {
+          "type": "completions",
+          "path": null
+        },
+        {
+          "type": "messages",
+          "path": null
+        },
+        {
+          "type": "responses",
+          "path": null
+        },
+        {
+          "type": "embeddings",
+          "path": null
+        },
+        {
+          "type": "anthropicTokenCount",
+          "path": null
+        },
+        {
+          "type": "realtime",
+          "path": null
+        },
+        {
+          "type": "rerank",
+          "path": null
+        }
+      ]
+    },
+    "input": "Responses",
+    "expected": {
+      "native": "responses",
+      "formats": [
+        {
+          "supports": true,
+          "path": null,
+          "input": "Completions",
+          "route": "completions"
+        },
+        {
+          "supports": true,
+          "path": null,
+          "input": "Messages",
+          "route": "messages"
+        },
+        {
+          "supports": true,
+          "path": null,
+          "input": "Responses",
+          "route": "responses"
+        },
+        {
+          "supports": true,
+          "path": null,
+          "input": "Embeddings",
+          "route": "embeddings"
+        },
+        {
+          "supports": true,
+          "path": null,
+          "input": "CountTokens",
+          "route": "anthropicTokenCount"
+        },
+        {
+          "supports": true,
+          "path": null,
+          "input": "Realtime",
+          "route": "realtime"
+        },
+        {
+          "supports": true,
+          "path": null,
+          "input": "Rerank",
+          "route": "rerank"
+        }
+      ]
+    }
+  },
+  {
+    "family": "custom",
+    "config": {
+      "formats": [
+        {
+          "type": "completions",
+          "path": null
+        },
+        {
+          "type": "messages",
+          "path": null
+        },
+        {
+          "type": "responses",
+          "path": null
+        },
+        {
+          "type": "embeddings",
+          "path": null
+        },
+        {
+          "type": "anthropicTokenCount",
+          "path": null
+        },
+        {
+          "type": "realtime",
+          "path": null
+        },
+        {
+          "type": "rerank",
+          "path": null
+        }
+      ]
+    },
+    "input": "Embeddings",
+    "expected": {
+      "native": "embeddings",
+      "formats": [
+        {
+          "supports": true,
+          "path": null,
+          "input": "Completions",
+          "route": "completions"
+        },
+        {
+          "supports": true,
+          "path": null,
+          "input": "Messages",
+          "route": "messages"
+        },
+        {
+          "supports": true,
+          "path": null,
+          "input": "Responses",
+          "route": "responses"
+        },
+        {
+          "supports": true,
+          "path": null,
+          "input": "Embeddings",
+          "route": "embeddings"
+        },
+        {
+          "supports": true,
+          "path": null,
+          "input": "CountTokens",
+          "route": "anthropicTokenCount"
+        },
+        {
+          "supports": true,
+          "path": null,
+          "input": "Realtime",
+          "route": "realtime"
+        },
+        {
+          "supports": true,
+          "path": null,
+          "input": "Rerank",
+          "route": "rerank"
+        }
+      ]
+    }
+  },
+  {
+    "family": "custom",
+    "config": {
+      "formats": [
+        {
+          "type": "completions",
+          "path": null
+        },
+        {
+          "type": "messages",
+          "path": null
+        },
+        {
+          "type": "responses",
+          "path": null
+        },
+        {
+          "type": "embeddings",
+          "path": null
+        },
+        {
+          "type": "anthropicTokenCount",
+          "path": null
+        },
+        {
+          "type": "realtime",
+          "path": null
+        },
+        {
+          "type": "rerank",
+          "path": null
+        }
+      ]
+    },
+    "input": "Realtime",
+    "expected": {
+      "native": "realtime",
+      "formats": [
+        {
+          "supports": true,
+          "path": null,
+          "input": "Completions",
+          "route": "completions"
+        },
+        {
+          "supports": true,
+          "path": null,
+          "input": "Messages",
+          "route": "messages"
+        },
+        {
+          "supports": true,
+          "path": null,
+          "input": "Responses",
+          "route": "responses"
+        },
+        {
+          "supports": true,
+          "path": null,
+          "input": "Embeddings",
+          "route": "embeddings"
+        },
+        {
+          "supports": true,
+          "path": null,
+          "input": "CountTokens",
+          "route": "anthropicTokenCount"
+        },
+        {
+          "supports": true,
+          "path": null,
+          "input": "Realtime",
+          "route": "realtime"
+        },
+        {
+          "supports": true,
+          "path": null,
+          "input": "Rerank",
+          "route": "rerank"
+        }
+      ]
+    }
+  },
+  {
+    "family": "custom",
+    "config": {
+      "formats": [
+        {
+          "type": "completions",
+          "path": null
+        },
+        {
+          "type": "messages",
+          "path": null
+        },
+        {
+          "type": "responses",
+          "path": null
+        },
+        {
+          "type": "embeddings",
+          "path": null
+        },
+        {
+          "type": "anthropicTokenCount",
+          "path": null
+        },
+        {
+          "type": "realtime",
+          "path": null
+        },
+        {
+          "type": "rerank",
+          "path": null
+        }
+      ]
+    },
+    "input": "CountTokens",
+    "expected": {
+      "native": "anthropicTokenCount",
+      "formats": [
+        {
+          "supports": true,
+          "path": null,
+          "input": "Completions",
+          "route": "completions"
+        },
+        {
+          "supports": true,
+          "path": null,
+          "input": "Messages",
+          "route": "messages"
+        },
+        {
+          "supports": true,
+          "path": null,
+          "input": "Responses",
+          "route": "responses"
+        },
+        {
+          "supports": true,
+          "path": null,
+          "input": "Embeddings",
+          "route": "embeddings"
+        },
+        {
+          "supports": true,
+          "path": null,
+          "input": "CountTokens",
+          "route": "anthropicTokenCount"
+        },
+        {
+          "supports": true,
+          "path": null,
+          "input": "Realtime",
+          "route": "realtime"
+        },
+        {
+          "supports": true,
+          "path": null,
+          "input": "Rerank",
+          "route": "rerank"
+        }
+      ]
+    }
+  },
+  {
+    "family": "custom",
+    "config": {
+      "formats": [
+        {
+          "type": "completions",
+          "path": null
+        },
+        {
+          "type": "messages",
+          "path": null
+        },
+        {
+          "type": "responses",
+          "path": null
+        },
+        {
+          "type": "embeddings",
+          "path": null
+        },
+        {
+          "type": "anthropicTokenCount",
+          "path": null
+        },
+        {
+          "type": "realtime",
+          "path": null
+        },
+        {
+          "type": "rerank",
+          "path": null
+        }
+      ]
+    },
+    "input": "Detect",
+    "expected": {
+      "native": null,
+      "formats": [
+        {
+          "supports": true,
+          "path": null,
+          "input": "Completions",
+          "route": "completions"
+        },
+        {
+          "supports": true,
+          "path": null,
+          "input": "Messages",
+          "route": "messages"
+        },
+        {
+          "supports": true,
+          "path": null,
+          "input": "Responses",
+          "route": "responses"
+        },
+        {
+          "supports": true,
+          "path": null,
+          "input": "Embeddings",
+          "route": "embeddings"
+        },
+        {
+          "supports": true,
+          "path": null,
+          "input": "CountTokens",
+          "route": "anthropicTokenCount"
+        },
+        {
+          "supports": true,
+          "path": null,
+          "input": "Realtime",
+          "route": "realtime"
+        },
+        {
+          "supports": true,
+          "path": null,
+          "input": "Rerank",
+          "route": "rerank"
+        }
+      ]
+    }
+  },
+  {
+    "family": "custom",
+    "config": {
+      "formats": [
+        {
+          "type": "completions",
+          "path": null
+        },
+        {
+          "type": "messages",
+          "path": null
+        },
+        {
+          "type": "responses",
+          "path": null
+        },
+        {
+          "type": "embeddings",
+          "path": null
+        },
+        {
+          "type": "anthropicTokenCount",
+          "path": null
+        },
+        {
+          "type": "realtime",
+          "path": null
+        },
+        {
+          "type": "rerank",
+          "path": null
+        }
+      ]
+    },
+    "input": "Rerank",
+    "expected": {
+      "native": "rerank",
+      "formats": [
+        {
+          "supports": true,
+          "path": null,
+          "input": "Completions",
+          "route": "completions"
+        },
+        {
+          "supports": true,
+          "path": null,
+          "input": "Messages",
+          "route": "messages"
+        },
+        {
+          "supports": true,
+          "path": null,
+          "input": "Responses",
+          "route": "responses"
+        },
+        {
+          "supports": true,
+          "path": null,
+          "input": "Embeddings",
+          "route": "embeddings"
+        },
+        {
+          "supports": true,
+          "path": null,
+          "input": "CountTokens",
+          "route": "anthropicTokenCount"
+        },
+        {
+          "supports": true,
+          "path": null,
+          "input": "Realtime",
+          "route": "realtime"
+        },
+        {
+          "supports": true,
+          "path": null,
+          "input": "Rerank",
+          "route": "rerank"
+        }
+      ]
+    }
+  },
+  {
+    "family": "custom",
+    "config": {
+      "formats": [
+        {
+          "type": "rerank",
+          "path": "/rerank"
+        },
+        {
+          "type": "realtime",
+          "path": "/realtime"
+        },
+        {
+          "type": "anthropicTokenCount",
+          "path": "/anthropicTokenCount"
+        },
+        {
+          "type": "embeddings",
+          "path": "/embeddings"
+        },
+        {
+          "type": "responses",
+          "path": "/responses"
+        },
+        {
+          "type": "messages",
+          "path": "/messages"
+        },
+        {
+          "type": "completions",
+          "path": "/completions"
+        }
+      ]
+    },
+    "input": "Completions",
+    "expected": {
+      "native": "completions",
+      "formats": [
+        {
+          "supports": true,
+          "path": "/completions",
+          "input": "Completions",
+          "route": "completions"
+        },
+        {
+          "supports": true,
+          "path": "/messages",
+          "input": "Messages",
+          "route": "messages"
+        },
+        {
+          "supports": true,
+          "path": "/responses",
+          "input": "Responses",
+          "route": "responses"
+        },
+        {
+          "supports": true,
+          "path": "/embeddings",
+          "input": "Embeddings",
+          "route": "embeddings"
+        },
+        {
+          "supports": true,
+          "path": "/anthropicTokenCount",
+          "input": "CountTokens",
+          "route": "anthropicTokenCount"
+        },
+        {
+          "supports": true,
+          "path": "/realtime",
+          "input": "Realtime",
+          "route": "realtime"
+        },
+        {
+          "supports": true,
+          "path": "/rerank",
+          "input": "Rerank",
+          "route": "rerank"
+        }
+      ]
+    }
+  },
+  {
+    "family": "custom",
+    "config": {
+      "formats": [
+        {
+          "type": "rerank",
+          "path": "/rerank"
+        },
+        {
+          "type": "realtime",
+          "path": "/realtime"
+        },
+        {
+          "type": "anthropicTokenCount",
+          "path": "/anthropicTokenCount"
+        },
+        {
+          "type": "embeddings",
+          "path": "/embeddings"
+        },
+        {
+          "type": "responses",
+          "path": "/responses"
+        },
+        {
+          "type": "messages",
+          "path": "/messages"
+        },
+        {
+          "type": "completions",
+          "path": "/completions"
+        }
+      ]
+    },
+    "input": "Messages",
+    "expected": {
+      "native": "messages",
+      "formats": [
+        {
+          "supports": true,
+          "path": "/completions",
+          "input": "Completions",
+          "route": "completions"
+        },
+        {
+          "supports": true,
+          "path": "/messages",
+          "input": "Messages",
+          "route": "messages"
+        },
+        {
+          "supports": true,
+          "path": "/responses",
+          "input": "Responses",
+          "route": "responses"
+        },
+        {
+          "supports": true,
+          "path": "/embeddings",
+          "input": "Embeddings",
+          "route": "embeddings"
+        },
+        {
+          "supports": true,
+          "path": "/anthropicTokenCount",
+          "input": "CountTokens",
+          "route": "anthropicTokenCount"
+        },
+        {
+          "supports": true,
+          "path": "/realtime",
+          "input": "Realtime",
+          "route": "realtime"
+        },
+        {
+          "supports": true,
+          "path": "/rerank",
+          "input": "Rerank",
+          "route": "rerank"
+        }
+      ]
+    }
+  },
+  {
+    "family": "custom",
+    "config": {
+      "formats": [
+        {
+          "type": "rerank",
+          "path": "/rerank"
+        },
+        {
+          "type": "realtime",
+          "path": "/realtime"
+        },
+        {
+          "type": "anthropicTokenCount",
+          "path": "/anthropicTokenCount"
+        },
+        {
+          "type": "embeddings",
+          "path": "/embeddings"
+        },
+        {
+          "type": "responses",
+          "path": "/responses"
+        },
+        {
+          "type": "messages",
+          "path": "/messages"
+        },
+        {
+          "type": "completions",
+          "path": "/completions"
+        }
+      ]
+    },
+    "input": "Responses",
+    "expected": {
+      "native": "responses",
+      "formats": [
+        {
+          "supports": true,
+          "path": "/completions",
+          "input": "Completions",
+          "route": "completions"
+        },
+        {
+          "supports": true,
+          "path": "/messages",
+          "input": "Messages",
+          "route": "messages"
+        },
+        {
+          "supports": true,
+          "path": "/responses",
+          "input": "Responses",
+          "route": "responses"
+        },
+        {
+          "supports": true,
+          "path": "/embeddings",
+          "input": "Embeddings",
+          "route": "embeddings"
+        },
+        {
+          "supports": true,
+          "path": "/anthropicTokenCount",
+          "input": "CountTokens",
+          "route": "anthropicTokenCount"
+        },
+        {
+          "supports": true,
+          "path": "/realtime",
+          "input": "Realtime",
+          "route": "realtime"
+        },
+        {
+          "supports": true,
+          "path": "/rerank",
+          "input": "Rerank",
+          "route": "rerank"
+        }
+      ]
+    }
+  },
+  {
+    "family": "custom",
+    "config": {
+      "formats": [
+        {
+          "type": "rerank",
+          "path": "/rerank"
+        },
+        {
+          "type": "realtime",
+          "path": "/realtime"
+        },
+        {
+          "type": "anthropicTokenCount",
+          "path": "/anthropicTokenCount"
+        },
+        {
+          "type": "embeddings",
+          "path": "/embeddings"
+        },
+        {
+          "type": "responses",
+          "path": "/responses"
+        },
+        {
+          "type": "messages",
+          "path": "/messages"
+        },
+        {
+          "type": "completions",
+          "path": "/completions"
+        }
+      ]
+    },
+    "input": "Embeddings",
+    "expected": {
+      "native": "embeddings",
+      "formats": [
+        {
+          "supports": true,
+          "path": "/completions",
+          "input": "Completions",
+          "route": "completions"
+        },
+        {
+          "supports": true,
+          "path": "/messages",
+          "input": "Messages",
+          "route": "messages"
+        },
+        {
+          "supports": true,
+          "path": "/responses",
+          "input": "Responses",
+          "route": "responses"
+        },
+        {
+          "supports": true,
+          "path": "/embeddings",
+          "input": "Embeddings",
+          "route": "embeddings"
+        },
+        {
+          "supports": true,
+          "path": "/anthropicTokenCount",
+          "input": "CountTokens",
+          "route": "anthropicTokenCount"
+        },
+        {
+          "supports": true,
+          "path": "/realtime",
+          "input": "Realtime",
+          "route": "realtime"
+        },
+        {
+          "supports": true,
+          "path": "/rerank",
+          "input": "Rerank",
+          "route": "rerank"
+        }
+      ]
+    }
+  },
+  {
+    "family": "custom",
+    "config": {
+      "formats": [
+        {
+          "type": "rerank",
+          "path": "/rerank"
+        },
+        {
+          "type": "realtime",
+          "path": "/realtime"
+        },
+        {
+          "type": "anthropicTokenCount",
+          "path": "/anthropicTokenCount"
+        },
+        {
+          "type": "embeddings",
+          "path": "/embeddings"
+        },
+        {
+          "type": "responses",
+          "path": "/responses"
+        },
+        {
+          "type": "messages",
+          "path": "/messages"
+        },
+        {
+          "type": "completions",
+          "path": "/completions"
+        }
+      ]
+    },
+    "input": "Realtime",
+    "expected": {
+      "native": "realtime",
+      "formats": [
+        {
+          "supports": true,
+          "path": "/completions",
+          "input": "Completions",
+          "route": "completions"
+        },
+        {
+          "supports": true,
+          "path": "/messages",
+          "input": "Messages",
+          "route": "messages"
+        },
+        {
+          "supports": true,
+          "path": "/responses",
+          "input": "Responses",
+          "route": "responses"
+        },
+        {
+          "supports": true,
+          "path": "/embeddings",
+          "input": "Embeddings",
+          "route": "embeddings"
+        },
+        {
+          "supports": true,
+          "path": "/anthropicTokenCount",
+          "input": "CountTokens",
+          "route": "anthropicTokenCount"
+        },
+        {
+          "supports": true,
+          "path": "/realtime",
+          "input": "Realtime",
+          "route": "realtime"
+        },
+        {
+          "supports": true,
+          "path": "/rerank",
+          "input": "Rerank",
+          "route": "rerank"
+        }
+      ]
+    }
+  },
+  {
+    "family": "custom",
+    "config": {
+      "formats": [
+        {
+          "type": "rerank",
+          "path": "/rerank"
+        },
+        {
+          "type": "realtime",
+          "path": "/realtime"
+        },
+        {
+          "type": "anthropicTokenCount",
+          "path": "/anthropicTokenCount"
+        },
+        {
+          "type": "embeddings",
+          "path": "/embeddings"
+        },
+        {
+          "type": "responses",
+          "path": "/responses"
+        },
+        {
+          "type": "messages",
+          "path": "/messages"
+        },
+        {
+          "type": "completions",
+          "path": "/completions"
+        }
+      ]
+    },
+    "input": "CountTokens",
+    "expected": {
+      "native": "anthropicTokenCount",
+      "formats": [
+        {
+          "supports": true,
+          "path": "/completions",
+          "input": "Completions",
+          "route": "completions"
+        },
+        {
+          "supports": true,
+          "path": "/messages",
+          "input": "Messages",
+          "route": "messages"
+        },
+        {
+          "supports": true,
+          "path": "/responses",
+          "input": "Responses",
+          "route": "responses"
+        },
+        {
+          "supports": true,
+          "path": "/embeddings",
+          "input": "Embeddings",
+          "route": "embeddings"
+        },
+        {
+          "supports": true,
+          "path": "/anthropicTokenCount",
+          "input": "CountTokens",
+          "route": "anthropicTokenCount"
+        },
+        {
+          "supports": true,
+          "path": "/realtime",
+          "input": "Realtime",
+          "route": "realtime"
+        },
+        {
+          "supports": true,
+          "path": "/rerank",
+          "input": "Rerank",
+          "route": "rerank"
+        }
+      ]
+    }
+  },
+  {
+    "family": "custom",
+    "config": {
+      "formats": [
+        {
+          "type": "rerank",
+          "path": "/rerank"
+        },
+        {
+          "type": "realtime",
+          "path": "/realtime"
+        },
+        {
+          "type": "anthropicTokenCount",
+          "path": "/anthropicTokenCount"
+        },
+        {
+          "type": "embeddings",
+          "path": "/embeddings"
+        },
+        {
+          "type": "responses",
+          "path": "/responses"
+        },
+        {
+          "type": "messages",
+          "path": "/messages"
+        },
+        {
+          "type": "completions",
+          "path": "/completions"
+        }
+      ]
+    },
+    "input": "Detect",
+    "expected": {
+      "native": null,
+      "formats": [
+        {
+          "supports": true,
+          "path": "/completions",
+          "input": "Completions",
+          "route": "completions"
+        },
+        {
+          "supports": true,
+          "path": "/messages",
+          "input": "Messages",
+          "route": "messages"
+        },
+        {
+          "supports": true,
+          "path": "/responses",
+          "input": "Responses",
+          "route": "responses"
+        },
+        {
+          "supports": true,
+          "path": "/embeddings",
+          "input": "Embeddings",
+          "route": "embeddings"
+        },
+        {
+          "supports": true,
+          "path": "/anthropicTokenCount",
+          "input": "CountTokens",
+          "route": "anthropicTokenCount"
+        },
+        {
+          "supports": true,
+          "path": "/realtime",
+          "input": "Realtime",
+          "route": "realtime"
+        },
+        {
+          "supports": true,
+          "path": "/rerank",
+          "input": "Rerank",
+          "route": "rerank"
+        }
+      ]
+    }
+  },
+  {
+    "family": "custom",
+    "config": {
+      "formats": [
+        {
+          "type": "rerank",
+          "path": "/rerank"
+        },
+        {
+          "type": "realtime",
+          "path": "/realtime"
+        },
+        {
+          "type": "anthropicTokenCount",
+          "path": "/anthropicTokenCount"
+        },
+        {
+          "type": "embeddings",
+          "path": "/embeddings"
+        },
+        {
+          "type": "responses",
+          "path": "/responses"
+        },
+        {
+          "type": "messages",
+          "path": "/messages"
+        },
+        {
+          "type": "completions",
+          "path": "/completions"
+        }
+      ]
+    },
+    "input": "Rerank",
+    "expected": {
+      "native": "rerank",
+      "formats": [
+        {
+          "supports": true,
+          "path": "/completions",
+          "input": "Completions",
+          "route": "completions"
+        },
+        {
+          "supports": true,
+          "path": "/messages",
+          "input": "Messages",
+          "route": "messages"
+        },
+        {
+          "supports": true,
+          "path": "/responses",
+          "input": "Responses",
+          "route": "responses"
+        },
+        {
+          "supports": true,
+          "path": "/embeddings",
+          "input": "Embeddings",
+          "route": "embeddings"
+        },
+        {
+          "supports": true,
+          "path": "/anthropicTokenCount",
+          "input": "CountTokens",
+          "route": "anthropicTokenCount"
+        },
+        {
+          "supports": true,
+          "path": "/realtime",
+          "input": "Realtime",
+          "route": "realtime"
+        },
+        {
+          "supports": true,
+          "path": "/rerank",
+          "input": "Rerank",
+          "route": "rerank"
+        }
+      ]
+    }
+  },
+  {
+    "family": "custom",
+    "config": {
+      "formats": [
+        {
+          "type": "completions",
+          "path": null
+        },
+        {
+          "type": "completions",
+          "path": "second"
+        },
+        {
+          "type": "messages",
+          "path": ""
+        }
+      ]
+    },
+    "input": "Completions",
+    "expected": {
+      "native": "completions",
+      "formats": [
+        {
+          "supports": true,
+          "path": null,
+          "input": "Completions",
+          "route": "completions"
+        },
+        {
+          "supports": true,
+          "path": "",
+          "input": "Messages",
+          "route": "messages"
+        },
+        {
+          "supports": false,
+          "path": null,
+          "input": "Responses",
+          "route": "responses"
+        },
+        {
+          "supports": false,
+          "path": null,
+          "input": "Embeddings",
+          "route": "embeddings"
+        },
+        {
+          "supports": false,
+          "path": null,
+          "input": "CountTokens",
+          "route": "anthropicTokenCount"
+        },
+        {
+          "supports": false,
+          "path": null,
+          "input": "Realtime",
+          "route": "realtime"
+        },
+        {
+          "supports": false,
+          "path": null,
+          "input": "Rerank",
+          "route": "rerank"
+        }
+      ]
+    }
+  },
+  {
+    "family": "custom",
+    "config": {
+      "formats": [
+        {
+          "type": "completions",
+          "path": null
+        },
+        {
+          "type": "completions",
+          "path": "second"
+        },
+        {
+          "type": "messages",
+          "path": ""
+        }
+      ]
+    },
+    "input": "Messages",
+    "expected": {
+      "native": "messages",
+      "formats": [
+        {
+          "supports": true,
+          "path": null,
+          "input": "Completions",
+          "route": "completions"
+        },
+        {
+          "supports": true,
+          "path": "",
+          "input": "Messages",
+          "route": "messages"
+        },
+        {
+          "supports": false,
+          "path": null,
+          "input": "Responses",
+          "route": "responses"
+        },
+        {
+          "supports": false,
+          "path": null,
+          "input": "Embeddings",
+          "route": "embeddings"
+        },
+        {
+          "supports": false,
+          "path": null,
+          "input": "CountTokens",
+          "route": "anthropicTokenCount"
+        },
+        {
+          "supports": false,
+          "path": null,
+          "input": "Realtime",
+          "route": "realtime"
+        },
+        {
+          "supports": false,
+          "path": null,
+          "input": "Rerank",
+          "route": "rerank"
+        }
+      ]
+    }
+  },
+  {
+    "family": "custom",
+    "config": {
+      "formats": [
+        {
+          "type": "completions",
+          "path": null
+        },
+        {
+          "type": "completions",
+          "path": "second"
+        },
+        {
+          "type": "messages",
+          "path": ""
+        }
+      ]
+    },
+    "input": "Responses",
+    "expected": {
+      "native": "completions",
+      "formats": [
+        {
+          "supports": true,
+          "path": null,
+          "input": "Completions",
+          "route": "completions"
+        },
+        {
+          "supports": true,
+          "path": "",
+          "input": "Messages",
+          "route": "messages"
+        },
+        {
+          "supports": false,
+          "path": null,
+          "input": "Responses",
+          "route": "responses"
+        },
+        {
+          "supports": false,
+          "path": null,
+          "input": "Embeddings",
+          "route": "embeddings"
+        },
+        {
+          "supports": false,
+          "path": null,
+          "input": "CountTokens",
+          "route": "anthropicTokenCount"
+        },
+        {
+          "supports": false,
+          "path": null,
+          "input": "Realtime",
+          "route": "realtime"
+        },
+        {
+          "supports": false,
+          "path": null,
+          "input": "Rerank",
+          "route": "rerank"
+        }
+      ]
+    }
+  },
+  {
+    "family": "custom",
+    "config": {
+      "formats": [
+        {
+          "type": "completions",
+          "path": null
+        },
+        {
+          "type": "completions",
+          "path": "second"
+        },
+        {
+          "type": "messages",
+          "path": ""
+        }
+      ]
+    },
+    "input": "Embeddings",
+    "expected": {
+      "native": null,
+      "formats": [
+        {
+          "supports": true,
+          "path": null,
+          "input": "Completions",
+          "route": "completions"
+        },
+        {
+          "supports": true,
+          "path": "",
+          "input": "Messages",
+          "route": "messages"
+        },
+        {
+          "supports": false,
+          "path": null,
+          "input": "Responses",
+          "route": "responses"
+        },
+        {
+          "supports": false,
+          "path": null,
+          "input": "Embeddings",
+          "route": "embeddings"
+        },
+        {
+          "supports": false,
+          "path": null,
+          "input": "CountTokens",
+          "route": "anthropicTokenCount"
+        },
+        {
+          "supports": false,
+          "path": null,
+          "input": "Realtime",
+          "route": "realtime"
+        },
+        {
+          "supports": false,
+          "path": null,
+          "input": "Rerank",
+          "route": "rerank"
+        }
+      ]
+    }
+  },
+  {
+    "family": "custom",
+    "config": {
+      "formats": [
+        {
+          "type": "completions",
+          "path": null
+        },
+        {
+          "type": "completions",
+          "path": "second"
+        },
+        {
+          "type": "messages",
+          "path": ""
+        }
+      ]
+    },
+    "input": "Realtime",
+    "expected": {
+      "native": null,
+      "formats": [
+        {
+          "supports": true,
+          "path": null,
+          "input": "Completions",
+          "route": "completions"
+        },
+        {
+          "supports": true,
+          "path": "",
+          "input": "Messages",
+          "route": "messages"
+        },
+        {
+          "supports": false,
+          "path": null,
+          "input": "Responses",
+          "route": "responses"
+        },
+        {
+          "supports": false,
+          "path": null,
+          "input": "Embeddings",
+          "route": "embeddings"
+        },
+        {
+          "supports": false,
+          "path": null,
+          "input": "CountTokens",
+          "route": "anthropicTokenCount"
+        },
+        {
+          "supports": false,
+          "path": null,
+          "input": "Realtime",
+          "route": "realtime"
+        },
+        {
+          "supports": false,
+          "path": null,
+          "input": "Rerank",
+          "route": "rerank"
+        }
+      ]
+    }
+  },
+  {
+    "family": "custom",
+    "config": {
+      "formats": [
+        {
+          "type": "completions",
+          "path": null
+        },
+        {
+          "type": "completions",
+          "path": "second"
+        },
+        {
+          "type": "messages",
+          "path": ""
+        }
+      ]
+    },
+    "input": "CountTokens",
+    "expected": {
+      "native": null,
+      "formats": [
+        {
+          "supports": true,
+          "path": null,
+          "input": "Completions",
+          "route": "completions"
+        },
+        {
+          "supports": true,
+          "path": "",
+          "input": "Messages",
+          "route": "messages"
+        },
+        {
+          "supports": false,
+          "path": null,
+          "input": "Responses",
+          "route": "responses"
+        },
+        {
+          "supports": false,
+          "path": null,
+          "input": "Embeddings",
+          "route": "embeddings"
+        },
+        {
+          "supports": false,
+          "path": null,
+          "input": "CountTokens",
+          "route": "anthropicTokenCount"
+        },
+        {
+          "supports": false,
+          "path": null,
+          "input": "Realtime",
+          "route": "realtime"
+        },
+        {
+          "supports": false,
+          "path": null,
+          "input": "Rerank",
+          "route": "rerank"
+        }
+      ]
+    }
+  },
+  {
+    "family": "custom",
+    "config": {
+      "formats": [
+        {
+          "type": "completions",
+          "path": null
+        },
+        {
+          "type": "completions",
+          "path": "second"
+        },
+        {
+          "type": "messages",
+          "path": ""
+        }
+      ]
+    },
+    "input": "Detect",
+    "expected": {
+      "native": null,
+      "formats": [
+        {
+          "supports": true,
+          "path": null,
+          "input": "Completions",
+          "route": "completions"
+        },
+        {
+          "supports": true,
+          "path": "",
+          "input": "Messages",
+          "route": "messages"
+        },
+        {
+          "supports": false,
+          "path": null,
+          "input": "Responses",
+          "route": "responses"
+        },
+        {
+          "supports": false,
+          "path": null,
+          "input": "Embeddings",
+          "route": "embeddings"
+        },
+        {
+          "supports": false,
+          "path": null,
+          "input": "CountTokens",
+          "route": "anthropicTokenCount"
+        },
+        {
+          "supports": false,
+          "path": null,
+          "input": "Realtime",
+          "route": "realtime"
+        },
+        {
+          "supports": false,
+          "path": null,
+          "input": "Rerank",
+          "route": "rerank"
+        }
+      ]
+    }
+  },
+  {
+    "family": "custom",
+    "config": {
+      "formats": [
+        {
+          "type": "completions",
+          "path": null
+        },
+        {
+          "type": "completions",
+          "path": "second"
+        },
+        {
+          "type": "messages",
+          "path": ""
+        }
+      ]
+    },
+    "input": "Rerank",
+    "expected": {
+      "native": null,
+      "formats": [
+        {
+          "supports": true,
+          "path": null,
+          "input": "Completions",
+          "route": "completions"
+        },
+        {
+          "supports": true,
+          "path": "",
+          "input": "Messages",
+          "route": "messages"
+        },
+        {
+          "supports": false,
+          "path": null,
+          "input": "Responses",
+          "route": "responses"
+        },
+        {
+          "supports": false,
+          "path": null,
+          "input": "Embeddings",
+          "route": "embeddings"
+        },
+        {
+          "supports": false,
+          "path": null,
+          "input": "CountTokens",
+          "route": "anthropicTokenCount"
+        },
+        {
+          "supports": false,
+          "path": null,
+          "input": "Realtime",
+          "route": "realtime"
+        },
+        {
+          "supports": false,
+          "path": null,
+          "input": "Rerank",
+          "route": "rerank"
+        }
+      ]
+    }
+  },
+  {
+    "family": "host-route",
+    "raw": "\"unknown\"",
+    "expected": "unknown variant `unknown`, expected one of `completions`, `messages`, `models`, `passthrough`, `detect`, `responses`, `embeddings`, `realtime`, `anthropicTokenCount`, `rerank` at line 1 column 9"
+  },
+  {
+    "family": "host-route",
+    "raw": "null",
+    "expected": "expected value at line 1 column 1"
+  },
+  {
+    "family": "host-route",
+    "raw": "{}",
+    "expected": "expected value at line 1 column 2"
+  },
+  {
+    "family": "host-route",
+    "raw": "\"countTokens\"",
+    "expected": "unknown variant `countTokens`, expected one of `completions`, `messages`, `models`, `passthrough`, `detect`, `responses`, `embeddings`, `realtime`, `anthropicTokenCount`, `rerank` at line 1 column 13"
+  },
+  {
+    "family": "host-headers",
+    "route": "messages",
+    "config": {
+      "resourceName": "r",
+      "resourceType": "foundry",
+      "model": null
+    },
+    "expected": {
+      "authorization": "Bearer existing",
+      "api-key": "existing-api",
+      "anthropic-version": "existing-version"
+    }
+  },
+  {
+    "family": "host-headers",
+    "route": "anthropicTokenCount",
+    "config": {
+      "resourceName": "r",
+      "resourceType": "foundry",
+      "model": null
+    },
+    "expected": {
+      "authorization": "Bearer existing",
+      "api-key": "existing-api",
+      "anthropic-version": "existing-version"
+    }
+  },
+  {
+    "family": "host-headers",
+    "route": "completions",
+    "config": {
+      "resourceName": "r",
+      "resourceType": "foundry",
+      "model": null
+    },
+    "expected": {
+      "authorization": "Bearer existing",
+      "api-key": "existing-api",
+      "anthropic-version": "existing-version"
+    }
+  },
+  {
+    "family": "host-headers",
+    "route": "messages",
+    "config": {
+      "resourceName": "r",
+      "resourceType": "foundry",
+      "model": "claude-default"
+    },
+    "expected": {
+      "authorization": "Bearer existing",
+      "api-key": "existing-api",
+      "anthropic-version": "2023-06-01"
+    }
+  },
+  {
+    "family": "host-headers",
+    "route": "anthropicTokenCount",
+    "config": {
+      "resourceName": "r",
+      "resourceType": "foundry",
+      "model": "claude-default"
+    },
+    "expected": {
+      "authorization": "Bearer existing",
+      "api-key": "existing-api",
+      "anthropic-version": "2023-06-01"
+    }
+  },
+  {
+    "family": "host-headers",
+    "route": "completions",
+    "config": {
+      "resourceName": "r",
+      "resourceType": "foundry",
+      "model": "claude-default"
+    },
+    "expected": {
+      "authorization": "Bearer existing",
+      "api-key": "existing-api",
+      "anthropic-version": "existing-version"
+    }
+  },
+  {
+    "family": "host-headers",
+    "route": "messages",
+    "config": {
+      "resourceName": "r",
+      "resourceType": "foundry",
+      "model": "gpt-default"
+    },
+    "expected": {
+      "authorization": "Bearer existing",
+      "api-key": "existing-api",
+      "anthropic-version": "existing-version"
+    }
+  },
+  {
+    "family": "host-headers",
+    "route": "anthropicTokenCount",
+    "config": {
+      "resourceName": "r",
+      "resourceType": "foundry",
+      "model": "gpt-default"
+    },
+    "expected": {
+      "authorization": "Bearer existing",
+      "api-key": "existing-api",
+      "anthropic-version": "existing-version"
+    }
+  },
+  {
+    "family": "host-headers",
+    "route": "completions",
+    "config": {
+      "resourceName": "r",
+      "resourceType": "foundry",
+      "model": "gpt-default"
+    },
+    "expected": {
+      "authorization": "Bearer existing",
+      "api-key": "existing-api",
+      "anthropic-version": "existing-version"
+    }
+  }
+]

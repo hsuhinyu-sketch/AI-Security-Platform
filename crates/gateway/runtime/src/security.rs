@@ -11,17 +11,15 @@ pub(crate) fn digest(value: &str) -> String {
 	)
 }
 
-#[derive(Clone)]
-struct SecurityRequestId(String);
-
 /// Gateway-generated identity, independent of caller headers and URL query contents.
 /// Request extensions keep retries and authorization/egress checks on the same ID.
 pub(crate) fn request_id(extensions: &mut ::http::Extensions) -> String {
-	if let Some(id) = extensions.get::<SecurityRequestId>() {
-		return id.0.clone();
+	if let Some(context) = extensions.get::<security_types::RequestContext>() {
+		return context.request_id().to_owned();
 	}
-	let id = uuid::Uuid::new_v4().to_string();
-	extensions.insert(SecurityRequestId(id.clone()));
+	let context = security_types::RequestContext::default();
+	let id = context.request_id().to_owned();
+	extensions.insert(context);
 	id
 }
 
@@ -29,13 +27,19 @@ pub(crate) fn identity_from_extensions(extensions: &::http::Extensions) -> Gatew
 	let Some(claims) = extensions.get::<crate::http::jwt::Claims>() else {
 		return GatewayIdentity::default();
 	};
+	identity_from_claims(&claims.inner)
+}
+
+pub(crate) fn identity_from_claims(
+	claims: &serde_json::Map<String, serde_json::Value>,
+) -> GatewayIdentity {
 	GatewayIdentity {
-		user_id: string_claim(&claims.inner, &["sub", "user_id", "userId"]),
-		agent_id: string_claim(&claims.inner, &["agent_id", "agentId"]),
-		tenant_id: string_claim(&claims.inner, &["tenant_id", "tenantId"]),
-		delegation_id: string_claim(&claims.inner, &["delegation_id", "delegationId"]),
-		session_id: string_claim(&claims.inner, &["sid", "session_id", "sessionId"]),
-		client_id: string_claim(&claims.inner, &["azp", "client_id", "clientId"]),
+		user_id: string_claim(claims, &["sub", "user_id", "userId"]),
+		agent_id: string_claim(claims, &["agent_id", "agentId"]),
+		tenant_id: string_claim(claims, &["tenant_id", "tenantId"]),
+		delegation_id: string_claim(claims, &["delegation_id", "delegationId"]),
+		session_id: string_claim(claims, &["sid", "session_id", "sessionId"]),
+		client_id: string_claim(claims, &["azp", "client_id", "clientId"]),
 	}
 }
 

@@ -1,24 +1,14 @@
+pub use gateway_llm::types::count_tokens::*;
+
 use bytes::Bytes;
 use platform_core::prelude::Strng;
 use platform_core::strng;
-use serde::{Deserialize, Serialize};
 
 use crate::llm::types::{RequestType, messages};
 use crate::llm::{
 	AIError, InputFormat, LLMRequest, SimpleChatCompletionMessage, conversion,
 	logged_response_parsing,
 };
-
-#[derive(Clone, Serialize, Deserialize, Debug)]
-pub struct Request {
-	pub messages: Vec<messages::RequestMessage>,
-	#[serde(skip_serializing_if = "Option::is_none")]
-	pub model: Option<String>,
-	#[serde(skip_serializing_if = "Option::is_none")]
-	pub system: Option<messages::TextBlock>,
-	#[serde(flatten)]
-	pub rest: serde_json::Map<String, serde_json::Value>,
-}
 
 impl RequestType for Request {
 	fn model(&mut self) -> &mut Option<String> {
@@ -74,14 +64,12 @@ impl RequestType for Request {
 	}
 }
 
-#[derive(Clone, Serialize, Deserialize, Debug)]
-pub struct Response {
-	#[serde(alias = "inputTokens")]
-	pub input_tokens: u64,
+pub(crate) trait ResponseExt {
+	fn translate_response(bytes: Bytes) -> Result<(Bytes, u64), AIError>;
 }
 
-impl Response {
-	pub fn translate_response(bytes: Bytes) -> Result<(Bytes, u64), AIError> {
+impl ResponseExt for Response {
+	fn translate_response(bytes: Bytes) -> Result<(Bytes, u64), AIError> {
 		let resp: Self = serde_json::from_slice(&bytes).map_err(logged_response_parsing(&bytes))?;
 		Ok((bytes, resp.input_tokens))
 	}

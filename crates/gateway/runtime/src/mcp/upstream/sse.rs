@@ -43,22 +43,16 @@ impl crate::mcp::upstream::stdio::MCPTransport for SseClient {
 	async fn receive(&mut self) -> Option<ServerJsonRpcMessage> {
 		loop {
 			let raw = self.events.next().await?.ok()?;
-			let Some(data) = raw.data else {
-				continue;
-			};
-			if data.is_empty() {
-				continue;
-			}
-			match serde_json::from_str(&data).and_then(crate::mcp::wire::decode_server) {
-				Err(e) => {
-					// Not a hard error, for now?
-					tracing::warn!("failed to deserialize server message: {e}");
+			match gateway_mcp::streamable_http::decode_sse_data(raw.data.as_deref()) {
+				Ok(Some(message)) => return Some(message),
+				Ok(None) => continue,
+				Err(error) => {
+					// Preserve legacy transport behavior; the shared decoder does not
+					// decide whether a caller skips or terminates on malformed data.
+					tracing::warn!("failed to deserialize server message: {error}");
 					continue;
 				},
-				Ok(message) => {
-					return Some(message);
-				},
-			};
+			}
 		}
 	}
 	fn send(
@@ -133,7 +127,7 @@ impl ClientCore {
 				let (body, _encoding) =
 					crate::http::compression::decompress_body(resp.into_body(), content_encoding.as_ref())
 						.map_err(ClientError::new)?;
-				let event_stream = SseStream::from_byte_stream(body.into_data_stream()).boxed();
+				let event_stream = SseStream::from_bytes_stream(body.into_data_stream()).boxed();
 				Ok(StreamableHttpPostResponse::Sse(event_stream, None))
 			},
 			_ => Err(ClientError::new(anyhow!(
@@ -216,7 +210,8 @@ impl Client {
 				continue;
 			};
 			let ep = sse.data.unwrap_or_default();
-			let parsed = message_endpoint(self.client.uri.clone(), ep).map_err(ClientError::new)?;
+			let parsed = gateway_mcp::transport::message_endpoint(self.client.uri.clone(), &ep)
+				.map_err(ClientError::new)?;
 			break parsed;
 		};
 		Ok((parsed, s))
@@ -245,34 +240,4 @@ impl Client {
 		let stream = self.get_stream(ctx).await?;
 		stream.send_notification(req, ctx).await
 	}
-}
-
-fn message_endpoint(base: Uri, endpoint: String) -> Result<Uri, http::uri::InvalidUri> {
-	// If endpoint is a full URL, parse and return it directly
-	if endpoint.starts_with("http://") || endpoint.starts_with("https://") {
-		return endpoint.parse::<Uri>();
-	}
-
-	let mut base_parts = base.into_parts();
-	let endpoint_clone = endpoint.clone();
-
-	if endpoint.starts_with("?") {
-		// Query only - keep base path and append query
-		if let Some(base_path_and_query) = &base_parts.path_and_query {
-			let base_path = base_path_and_query.path();
-			base_parts.path_and_query = Some(format!("{}{}", base_path, endpoint).parse()?);
-		} else {
-			base_parts.path_and_query = Some(format!("/{}", endpoint).parse()?);
-		}
-	} else {
-		// Path (with optional query) - replace entire path_and_query
-		let path_to_use = if endpoint.starts_with("/") {
-			endpoint // Use absolute path as-is
-		} else {
-			format!("/{}", endpoint) // Make relative path absolute
-		};
-		base_parts.path_and_query = Some(path_to_use.parse()?);
-	}
-
-	Uri::from_parts(base_parts).map_err(|_| endpoint_clone.parse::<Uri>().unwrap_err())
 }

@@ -1,6 +1,8 @@
 //! Explicit workflow association. A context handle is never an authentication credential.
 pub(crate) mod cleanup;
 pub(crate) mod mcp_task_cleanup;
+#[cfg(test)]
+mod streaming_tests;
 use crate::{
 	http::{self, Request, Response},
 	proxy::ProxyError,
@@ -448,7 +450,7 @@ async fn invocation_status(
 		.ok_or(ProxyError::AuthorizationFailed)?;
 	let revision = request
 		.extensions()
-		.get::<crate::a2a::revision::ConfigLease>()
+		.get::<gateway_contracts::ConfigLease>()
 		.cloned();
 	let bytes = tokio::time::timeout(
 		std::time::Duration::from_secs(5),
@@ -628,6 +630,7 @@ impl std::fmt::Debug for InvocationTracker {
 	}
 }
 impl BoundInvocation {
+	#[cfg(feature = "gateway-mcp")]
 	pub(crate) fn accept_task(&self, task: &str) -> Result<(), ProxyError> {
 		let tracker = self
 			.tracker
@@ -655,6 +658,7 @@ impl BoundInvocation {
 		);
 		result.map_err(ProxyError::ExecutionBudget)
 	}
+	#[cfg(feature = "gateway-mcp")]
 	pub(crate) fn finish_task(&self, result: &rmcp::model::CallToolResult) -> Result<(), ProxyError> {
 		let value = serde_json::to_value(result).map_err(|_| ProxyError::AuthorizationFailed)?;
 		self
@@ -668,6 +672,7 @@ impl BoundInvocation {
 			})
 			.map_err(ProxyError::ExecutionBudget)
 	}
+	#[cfg(feature = "gateway-mcp")]
 	pub(crate) fn abandon_task(&self) {
 		if let Some(tracker) = &self.tracker {
 			let _ = tracker.finish(InvocationReceipt::unknown());
@@ -682,6 +687,7 @@ impl Drop for InvocationTracker {
 	}
 }
 /// Record only results that have passed the protected session's RPC and business checks.
+#[cfg(feature = "gateway-mcp")]
 pub(crate) fn record_mcp_result(
 	stream: crate::mcp::Messages,
 	context: &crate::mcp::IncomingRequestContext,
@@ -728,6 +734,7 @@ pub(crate) fn record_mcp_result(
 		Ok(message)
 	}))
 }
+#[cfg(feature = "gateway-mcp")]
 pub(crate) fn bind_mcp_invocation(
 	request: &rmcp::model::JsonRpcRequest<rmcp::model::ClientRequest>,
 	context: &mut crate::mcp::IncomingRequestContext,
@@ -794,10 +801,11 @@ pub(crate) fn bind_mcp_invocation(
 	Ok(())
 }
 
+#[cfg(feature = "gateway-mcp")]
 pub(crate) async fn verify_mcp_dispatch(
 	request: &mut Request,
 	scope: &ExecutionScope,
-	mcp: &crate::mcp::security::McpEgressContext,
+	mcp: &crate::mcp::McpEgressContext,
 	proof: Option<&BoundInvocation>,
 ) -> Result<(), ProxyError> {
 	if mcp.action.action.action_type != ActionType::ToolInvoke {
@@ -865,53 +873,73 @@ pin_project_lite::pin_project! {
 		id: String,
 	}
 }
-impl http_body::Body for BudgetBody {
-	type Data = bytes::Bytes;
-	type Error = axum_core::BoxError;
-	fn poll_frame(
+impl BudgetBody {
+	/// Register stop notifications and check availability at the delivery boundary.
+	fn check_available(
 		self: Pin<&mut Self>,
 		cx: &mut Context<'_>,
-	) -> Poll<Option<Result<http_body::Frame<Self::Data>, Self::Error>>> {
+	) -> Result<(), axum_core::BoxError> {
 		use std::future::Future;
 		let mut this = self.project();
-		if this.body.is_none() {
-			return Poll::Ready(None);
-		}
 		if let Err(error) = this.handle.check_active() {
 			audit(this.action, Err(error), Some(this.id));
 			this.body.set(None);
 			this.lease.take();
-			return Poll::Ready(Some(Err(
-				std::io::Error::other("execution no longer available").into(),
-			)));
+			return Err(std::io::Error::other("execution no longer available").into());
 		}
 		if this.cancellation.as_mut().poll(cx).is_ready() {
 			audit(this.action, Err(BudgetError::Cancelled), Some(this.id));
 			this.body.set(None);
 			this.lease.take();
-			return Poll::Ready(Some(Err(
+			return Err(
 				std::io::Error::new(
 					std::io::ErrorKind::Interrupted,
 					"execution cancelled locally",
 				)
 				.into(),
-			)));
+			);
 		}
 		if this.deadline.as_mut().poll(cx).is_ready() {
 			audit(this.action, Err(BudgetError::Deadline), Some(this.id));
 			this.body.set(None);
 			this.lease.take();
-			return Poll::Ready(Some(Err(
+			return Err(
 				std::io::Error::new(std::io::ErrorKind::TimedOut, "execution deadline exhausted").into(),
-			)));
+			);
 		}
-		match this
-			.body
+		Ok(())
+	}
+}
+impl http_body::Body for BudgetBody {
+	type Data = bytes::Bytes;
+	type Error = axum_core::BoxError;
+	fn poll_frame(
+		mut self: Pin<&mut Self>,
+		cx: &mut Context<'_>,
+	) -> Poll<Option<Result<http_body::Frame<Self::Data>, Self::Error>>> {
+		if self.body.is_none() {
+			return Poll::Ready(None);
+		}
+		if let Err(error) = self.as_mut().check_available(cx) {
+			return Poll::Ready(Some(Err(error)));
+		}
+		let frame = self
 			.as_mut()
+			.project()
+			.body
 			.as_pin_mut()
 			.expect("active body")
-			.poll_frame(cx)
+			.poll_frame(cx);
+		// Upstream polling can commit cancellation synchronously. Check again before
+		// delivering data, trailers or successful EOF; preserve upstream errors.
+		// Cancellation after this final check cannot retract an already delivered frame.
+		if matches!(frame, Poll::Ready(None | Some(Ok(_))))
+			&& let Err(error) = self.as_mut().check_available(cx)
 		{
+			return Poll::Ready(Some(Err(error)));
+		}
+		let mut this = self.project();
+		match frame {
 			Poll::Ready(None) => {
 				this.body.set(None);
 				this.lease.take();

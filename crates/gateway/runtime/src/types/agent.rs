@@ -720,9 +720,6 @@ pub struct Route {
 	pub matches: Vec<RouteMatch>,
 	#[serde(default, skip_serializing_if = "Vec::is_empty")]
 	pub backends: Vec<RouteBackendReference>,
-	#[serde(default, skip_serializing_if = "Option::is_none", skip_deserializing)]
-	#[cfg_attr(feature = "schema", schemars(with = "serde_json::Value"))]
-	pub llm_router: Option<Arc<llm::model_router::ModelRouter>>,
 	#[serde(default, skip_serializing_if = "Vec::is_empty")]
 	#[cfg_attr(feature = "schema", schemars(with = "Vec<serde_json::Value>"))]
 	pub inline_policies: Vec<TrafficPolicy>,
@@ -1210,8 +1207,10 @@ pub enum Backend {
 	#[serde(rename = "mcp", serialize_with = "serialize_backend_tuple")]
 	MCP(ResourceName, McpBackend),
 	#[serde(rename = "ai", serialize_with = "serialize_backend_tuple")]
+	#[cfg(feature = "gateway-llm")]
 	AI(ResourceName, crate::llm::AIBackend),
 	#[serde(rename = "llmRouter", serialize_with = "serialize_backend_tuple")]
+	#[cfg(feature = "gateway-llm")]
 	LLMRouter(ResourceName, Arc<crate::llm::model_router::ModelRouter>),
 	#[serde(rename = "aws", serialize_with = "serialize_backend_tuple")]
 	Aws(ResourceName, crate::aws::AwsBackendConfig),
@@ -1397,6 +1396,42 @@ impl SimpleBackend {
 }
 
 impl Backend {
+	/// Reject control-plane/embedder values that bypass local YAML deserialization.
+	pub(crate) fn validate_compiled(&self) -> Result<(), crate::proxy::ProxyError> {
+		match self {
+			#[cfg(not(feature = "gateway-mcp"))]
+			Self::MCP(..) => Err(crate::proxy::ProxyError::ProcessingString(
+				"MCP support is not compiled; enable gateway-mcp".into(),
+			)),
+			#[cfg(not(feature = "providers-aws"))]
+			Self::Aws(..) => Err(crate::proxy::ProxyError::ProcessingString(
+				"AWS support is not compiled; enable providers-aws".into(),
+			)),
+			_ => Ok(()),
+		}
+	}
+
+	pub(crate) fn resource_name(&self) -> Option<&ResourceName> {
+		match self {
+			Self::Opaque(name, _)
+			| Self::MCP(name, _)
+			| Self::Aws(name, _)
+			| Self::Dynamic(name, _)
+			| Self::Internal(name, _) => Some(name),
+			#[cfg(feature = "gateway-llm")]
+			Self::AI(name, _) | Self::LLMRouter(name, _) => Some(name),
+			Self::Service(..) | Self::Invalid => None,
+		}
+	}
+
+	pub(crate) fn is_llm(&self) -> bool {
+		match self {
+			#[cfg(feature = "gateway-llm")]
+			Self::AI(..) | Self::LLMRouter(..) => true,
+			_ => false,
+		}
+	}
+
 	pub fn target(&self) -> BackendTarget {
 		match self {
 			Backend::Service(svc, port) => BackendTarget::Service {
@@ -1404,18 +1439,15 @@ impl Backend {
 				namespace: svc.namespace.clone(),
 				port: Some(*port),
 			},
-			Backend::Opaque(name, _)
-			| Backend::MCP(name, _)
-			| Backend::AI(name, _)
-			| Backend::LLMRouter(name, _)
-			| Backend::Aws(name, _)
-			| Backend::Dynamic(name, _)
-			| Backend::Internal(name, _) => BackendTarget::Backend {
-				name: name.name.clone(),
-				namespace: name.namespace.clone(),
-				section: None,
+			backend if backend.resource_name().is_some() => {
+				let name = backend.resource_name().expect("named backend");
+				BackendTarget::Backend {
+					name: name.name.clone(),
+					namespace: name.namespace.clone(),
+					section: None,
+				}
 			},
-			Backend::Invalid => BackendTarget::Invalid,
+			_ => BackendTarget::Invalid,
 		}
 	}
 
@@ -1426,38 +1458,30 @@ impl Backend {
 				namespace: svc.namespace.as_ref(),
 				port: Some(*port),
 			},
-			Backend::Opaque(name, _)
-			| Backend::MCP(name, _)
-			| Backend::AI(name, _)
-			| Backend::LLMRouter(name, _)
-			| Backend::Aws(name, _)
-			| Backend::Dynamic(name, _)
-			| Backend::Internal(name, _) => BackendTargetRef::Backend {
-				name: name.name.as_ref(),
-				namespace: name.namespace.as_ref(),
-				section: None,
+			backend if backend.resource_name().is_some() => {
+				let name = backend.resource_name().expect("named backend");
+				BackendTargetRef::Backend {
+					name: name.name.as_ref(),
+					namespace: name.namespace.as_ref(),
+					section: None,
+				}
 			},
-			Backend::Invalid => BackendTargetRef::Invalid,
+			_ => BackendTargetRef::Invalid,
 		}
 	}
 
 	pub fn name(&self) -> Strng {
 		match self {
 			Backend::Service(svc, port) => strng::format!("{}:{}", svc.hostname.clone(), port),
-			Backend::Opaque(name, _)
-			| Backend::MCP(name, _)
-			| Backend::AI(name, _)
-			| Backend::LLMRouter(name, _)
-			| Backend::Aws(name, _)
-			| Backend::Dynamic(name, _)
-			| Backend::Internal(name, _) => {
+			backend if backend.resource_name().is_some() => {
+				let name = backend.resource_name().expect("named backend");
 				let mut s = String::with_capacity(name.namespace.len() + name.name.len() + 1);
 				s.push_str(&name.namespace);
 				s.push('/');
 				s.push_str(&name.name);
 				strng::new(&s)
 			},
-			Backend::Invalid => strng::literal!("invalid"),
+			_ => strng::literal!("invalid"),
 		}
 	}
 
@@ -1466,6 +1490,7 @@ impl Backend {
 			Backend::Service(_, _) => cel::BackendType::Service,
 			Backend::Opaque(_, _) => cel::BackendType::Static,
 			Backend::MCP(_, _) => cel::BackendType::MCP,
+			#[cfg(feature = "gateway-llm")]
 			Backend::AI(_, _) | Backend::LLMRouter(_, _) => cel::BackendType::AI,
 			Backend::Aws(_, _) => cel::BackendType::Unknown,
 			Backend::Dynamic(_, _) => cel::BackendType::Dynamic,
@@ -1477,6 +1502,7 @@ impl Backend {
 	pub fn backend_protocol(&self) -> Option<cel::BackendProtocol> {
 		match self {
 			Backend::MCP(_, _) => Some(cel::BackendProtocol::mcp),
+			#[cfg(feature = "gateway-llm")]
 			Backend::AI(_, _) | Backend::LLMRouter(_, _) => Some(cel::BackendProtocol::llm),
 			_ => None,
 		}
@@ -2208,6 +2234,7 @@ pub struct TracingPolicy {
 	pub fields: Arc<crate::telemetry::log::LoggingFields>,
 	/// Lazily initialized tracer. Created on first access in the dataplane
 	/// using a PolicyClient so that backend routing and auth can be applied.
+	#[cfg(feature = "telemetry-otlp")]
 	pub tracer: once_cell::sync::OnceCell<Arc<crate::telemetry::trc::Tracer>>,
 }
 
@@ -2220,6 +2247,7 @@ impl serde::Serialize for TracingPolicy {
 	}
 }
 
+#[cfg(feature = "telemetry-otlp")]
 impl TracingPolicy {
 	pub fn get_or_init(
 		&self,
@@ -2236,9 +2264,11 @@ impl TracingPolicy {
 #[derive(Clone, Debug)]
 pub struct AccessLogPolicy {
 	pub config: crate::types::frontend::OtlpLoggingConfig,
+	#[cfg(feature = "telemetry-otlp")]
 	pub logger: once_cell::sync::OnceCell<Arc<crate::telemetry::log::OtelAccessLogger>>,
 }
 
+#[cfg(feature = "telemetry-otlp")]
 impl AccessLogPolicy {
 	pub fn get_or_init(
 		&self,
@@ -2562,10 +2592,19 @@ pub struct JwtAuthentication {
 impl store::RequestPolicyTrait for JwtAuthentication {
 	async fn apply(
 		&self,
-		client: &crate::proxy::httpproxy::PolicyClient,
+		_client: &crate::proxy::httpproxy::PolicyClient,
 		log: &mut crate::telemetry::log::RequestLog,
 		req: &mut crate::http::Request,
 	) -> Result<crate::http::PolicyResponse, crate::proxy::ProxyResponse> {
+		if !cfg!(feature = "gateway-mcp") && self.mcp.is_some() {
+			return Err(
+				crate::proxy::ProxyError::ProcessingString(
+					"MCP support is not compiled; enable gateway-mcp".into(),
+				)
+				.into(),
+			);
+		}
+		#[cfg(feature = "gateway-mcp")]
 		if let Some(auth) = &self.mcp {
 			if !crate::mcp::auth::is_well_known_endpoint(req.uri().path()) {
 				self.jwt.apply(Some(log), req).await.map_err(|e| {
@@ -2577,7 +2616,7 @@ impl store::RequestPolicyTrait for JwtAuthentication {
 				})?;
 			}
 
-			if let Some(resp) = crate::mcp::auth::handle_mcp_request(req, auth, client).await? {
+			if let Some(resp) = crate::mcp::auth::handle_mcp_request(req, auth, _client).await? {
 				return Err(crate::proxy::ProxyResponse::DirectResponse(Box::new(resp)));
 			}
 			return Ok(crate::http::PolicyResponse::default());

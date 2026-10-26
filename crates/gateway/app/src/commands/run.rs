@@ -47,11 +47,13 @@ pub(crate) fn execute(args: RunArgs) -> anyhow::Result<()> {
 				&config.logging.level,
 				config.logging.format == LoggingFormat::Json,
 			);
+			#[cfg(feature = "database")]
 			let request_log_store = match config.database.as_ref() {
 				Some(cfg) => Some(ai_security_platform_runtime::telemetry::log_store::setup(cfg).await?),
 				None => None,
 			};
 			let result = proxy(Arc::new(config)).await;
+			#[cfg(feature = "database")]
 			if let Some(request_log_store) = request_log_store {
 				request_log_store.shutdown_and_wait().await;
 			}

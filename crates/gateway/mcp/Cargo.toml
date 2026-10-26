@@ -1,0 +1,32 @@
+[package]
+name = "gateway-mcp"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[features]
+openapi = ["dep:anyhow", "dep:openapiv3", "dep:percent-encoding", "dep:regex", "dep:thiserror", "dep:tracing", "dep:url"]
+
+[dependencies]
+anyhow = { workspace = true, optional = true }
+openapiv3 = { workspace = true, optional = true }
+percent-encoding = { workspace = true, optional = true }
+regex = { workspace = true, optional = true }
+thiserror = { workspace = true, optional = true }
+tracing = { workspace = true, optional = true }
+url = { workspace = true, optional = true }
+http.workspace = true
+base64.workspace = true
+futures-core.workspace = true
+futures-util.workspace = true
+serde.workspace = true
+gateway-protocol-core = { path = "../protocol-core" }
+rmcp = { version = "2.0", default-features = false }
+security-pipeline = { path = "../../security/pipeline" }
+security-types = { path = "../../security/types" }
+serde_json.workspace = true
+
+[dev-dependencies]
+tokio.workspace = true

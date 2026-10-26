@@ -11,7 +11,7 @@ use crate::trusted_https;
 /// Authoritative Agent Directory configuration. The gateway queries it for every request carrying
 /// an Agent claim, without an allow cache, so disablement and lifecycle changes apply immediately.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct RemoteAgentIdentityConfig {
 	pub endpoint: String,
 	/// Deny requests without an Agent claim instead of allowing a human-only request through.

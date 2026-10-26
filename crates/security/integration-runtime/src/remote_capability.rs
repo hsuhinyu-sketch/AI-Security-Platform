@@ -12,7 +12,7 @@ use crate::trusted_https;
 /// authorization and approval. The protected Tool/API consumes the token directly with this
 /// broker; the gateway never accepts a capability supplied by the original caller.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct RemoteCapabilityBrokerConfig {
 	pub issue_endpoint: String,
 	#[serde(default = "default_timeout_millis")]

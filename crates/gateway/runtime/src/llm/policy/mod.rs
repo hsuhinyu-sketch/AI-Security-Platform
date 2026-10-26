@@ -1,22 +1,38 @@
+#[cfg(feature = "gateway-llm")]
 use ::http::HeaderMap;
 use bytes::Bytes;
+#[cfg(feature = "gateway-llm")]
 use http_body_util::BodyExt as _;
+#[cfg(feature = "gateway-llm")]
 use itertools::Itertools;
+#[cfg(feature = "gateway-llm")]
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-use crate::http::filters::{BackendRequestTimeout, HeaderModifier};
+#[cfg(feature = "gateway-llm")]
+use crate::http::auth;
+#[cfg(feature = "gateway-llm")]
+use crate::http::filters::BackendRequestTimeout;
+use crate::http::filters::HeaderModifier;
+#[cfg(feature = "gateway-llm")]
 use crate::http::jwt::Claims;
-use crate::http::{Response, StatusCode, auth};
+use crate::http::{Response, StatusCode};
+#[cfg(feature = "gateway-llm")]
 use crate::llm::policy::webhook::{MaskActionBody, RequestAction, ResponseAction};
+#[cfg(feature = "gateway-llm")]
 use crate::llm::{AIError, RequestType, ResponseType};
+#[cfg(feature = "gateway-llm")]
 use crate::proxy::httpproxy::PolicyClient;
+#[cfg(feature = "gateway-llm")]
 use crate::telemetry::log::RequestLog;
-use crate::types::agent::{
-	BackendTrafficPolicy, HeaderMatch, HeaderValueMatch, SimpleBackendReference,
-};
+#[cfg(feature = "gateway-llm")]
+use crate::telemetry::metrics::{OutboundCallKind, OutboundCallSubtype};
+#[cfg(feature = "gateway-llm")]
+use crate::types::agent::HeaderValueMatch;
+use crate::types::agent::{BackendTrafficPolicy, HeaderMatch, SimpleBackendReference};
 use crate::*;
 
+#[cfg(feature = "gateway-llm")]
 fn with_default_timeout(mut req: crate::http::Request) -> crate::http::Request {
 	req
 		.extensions_mut()
@@ -26,12 +42,20 @@ fn with_default_timeout(mut req: crate::http::Request) -> crate::http::Request {
 
 pub mod webhook;
 
+#[cfg(all(feature = "gateway-llm", feature = "providers-azure"))]
 mod azure_content_safety;
+#[cfg(all(feature = "gateway-llm", feature = "providers-aws"))]
 mod bedrock_guardrails;
+#[cfg(all(feature = "gateway-llm", feature = "providers-gcp"))]
 mod google_model_armor;
+#[cfg(feature = "gateway-llm")]
 mod moderation;
+#[cfg(feature = "gateway-llm")]
 mod pii;
+#[cfg(feature = "gateway-llm")]
 pub mod streaming_guardrails;
+pub mod streaming_limits;
+#[cfg(feature = "gateway-llm")]
 pub(crate) mod streaming_wire;
 
 /// Routes stored in a deterministic order: **longest key to shortest key**, with `"*"` always last.
@@ -115,6 +139,9 @@ impl<'de> Deserialize<'de> for SortedRoutes {
 #[apply(schema!)]
 #[derive(Default)]
 pub struct Policy {
+	/// Finite per-response resource admission before streaming conversion.
+	#[serde(default, skip_serializing_if = "Option::is_none")]
+	pub streaming_limits: Option<streaming_limits::StreamingLimits>,
 	/// Prompt and response guardrails to apply to LLM traffic.
 	#[serde(default, skip_serializing_if = "Option::is_none")]
 	pub prompt_guard: Option<PromptGuard>,
@@ -202,41 +229,7 @@ impl ModelAliasPattern {
 	}
 }
 
-#[apply(schema!)]
-#[serde(default)]
-pub struct PromptCachingConfig {
-	/// Add cache markers to system prompts when supported by the provider.
-	#[serde(rename = "cacheSystem")]
-	pub cache_system: bool,
-
-	/// Add cache markers to chat messages when supported by the provider.
-	#[serde(rename = "cacheMessages")]
-	pub cache_messages: bool,
-
-	/// Add cache markers to tool definitions when supported by the provider.
-	#[serde(rename = "cacheTools")]
-	pub cache_tools: bool,
-
-	/// Minimum prompt size required before cache markers are added.
-	#[serde(rename = "minTokens")]
-	pub min_tokens: Option<usize>,
-
-	/// Message offset used when choosing where to place cache markers.
-	#[serde(rename = "cacheMessageOffset")]
-	pub cache_message_offset: usize,
-}
-
-impl Default for PromptCachingConfig {
-	fn default() -> Self {
-		Self {
-			cache_system: true,
-			cache_messages: true,
-			cache_tools: false,
-			min_tokens: Some(1024),
-			cache_message_offset: 0,
-		}
-	}
-}
+pub use gateway_llm::provider::PromptCachingConfig;
 
 #[apply(schema!)]
 pub struct PromptEnrichment {
@@ -251,7 +244,7 @@ pub struct PromptEnrichment {
 #[apply(schema!)]
 pub struct PromptGuard {
 	/// Apply prompt guards to streaming responses and realtime websocket messages.
-	#[serde(default, skip_serializing_if = "PromptGuardStreamingMode::is_disabled")]
+	#[serde(default, skip_serializing_if = "PromptGuardStreamingMode::is_enabled")]
 	pub streaming: PromptGuardStreamingMode,
 	/// Guards applied to client requests before they reach the LLM.
 	#[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -264,25 +257,22 @@ pub struct PromptGuard {
 #[apply(schema!)]
 #[derive(Default, Copy, PartialEq, Eq)]
 pub enum PromptGuardStreamingMode {
-	/// Do not apply prompt guards to streaming responses or realtime websocket messages.
-	#[default]
+	/// Do not apply streaming guards; guarded HTTP streams are refused before sending.
 	#[serde(rename = "Disabled")]
 	Disabled,
-	/// Apply prompt guards to streaming responses and realtime websocket messages.
+	/// Apply configured response guards to streams by default.
+	#[default]
 	#[serde(rename = "Enabled")]
 	Enabled,
 }
 
 impl PromptGuardStreamingMode {
-	pub(crate) fn is_disabled(&self) -> bool {
-		*self == Self::Disabled
-	}
-
 	pub(crate) fn is_enabled(&self) -> bool {
 		*self == Self::Enabled
 	}
 }
 
+#[cfg(feature = "gateway-llm")]
 enum GuardrailOutcome {
 	None,
 	Masked,
@@ -303,28 +293,14 @@ enum GuardrailOutcome {
 ///
 /// The trait is object-safe and `Send` so it can be boxed and driven from the
 /// `GuardedSseBody` future.
-#[async_trait::async_trait]
-pub trait StreamingEvaluator: Send {
-	/// Evaluate a text window. Returns `Some(Blocked)` if the content should be blocked.
-	async fn evaluate(&mut self, window: &str) -> anyhow::Result<Option<StreamingGuardrailOutcome>>;
+pub use gateway_llm::{StreamingEvaluator, StreamingGuardrailOutcome};
 
-	/// Returns the failure mode to apply when `evaluate` returns an error.
-	/// Guard types without an explicit `failure_mode` field default to `FailOpen`.
-	fn failure_mode(&self) -> FailureMode {
-		FailureMode::FailOpen
-	}
-}
-
-/// Outcome returned by a `StreamingEvaluator`.
-pub enum StreamingGuardrailOutcome {
-	/// Content was blocked; include the rejection body to encode for the stream.
-	Blocked(Bytes),
-}
-
+#[cfg(feature = "gateway-llm")]
 struct TextResponse {
 	content: String,
 }
 
+#[cfg(feature = "gateway-llm")]
 impl crate::llm::ResponseType for TextResponse {
 	fn to_llm_response(&self, include_completion_in_log: bool) -> crate::llm::LLMResponse {
 		crate::llm::LLMResponse {
@@ -333,13 +309,13 @@ impl crate::llm::ResponseType for TextResponse {
 		}
 	}
 
-	fn to_webhook_choices(&self) -> Vec<webhook::ResponseChoice> {
-		vec![webhook::ResponseChoice {
+	fn to_webhook_choices(&self) -> anyhow::Result<Vec<webhook::ResponseChoice>> {
+		Ok(vec![webhook::ResponseChoice {
 			message: crate::llm::SimpleChatCompletionMessage {
 				role: "assistant".into(),
 				content: self.content.clone().into(),
 			},
-		}]
+		}])
 	}
 
 	fn set_webhook_choices(&mut self, resp: Vec<webhook::ResponseChoice>) -> anyhow::Result<()> {
@@ -350,7 +326,11 @@ impl crate::llm::ResponseType for TextResponse {
 	}
 
 	fn serialize(&self) -> serde_json::Result<Vec<u8>> {
-		serde_json::to_vec(&self.to_webhook_choices())
+		serde_json::to_vec(
+			&self
+				.to_webhook_choices()
+				.map_err(serde::ser::Error::custom)?,
+		)
 	}
 }
 
@@ -361,10 +341,12 @@ impl crate::llm::ResponseType for TextResponse {
 /// time guards run there is a plain `&str` rather than a full request object. This adapter wraps
 /// that string to satisfy the `&mut dyn RequestType` interface that all guard implementations
 /// expect.
+#[cfg(feature = "gateway-llm")]
 struct TextRequest {
 	content: String,
 }
 
+#[cfg(feature = "gateway-llm")]
 impl crate::llm::RequestType for TextRequest {
 	fn supports_model(&self) -> bool {
 		false
@@ -399,6 +381,7 @@ impl crate::llm::RequestType for TextRequest {
 	}
 }
 
+#[cfg(feature = "gateway-llm")]
 impl PromptGuard {
 	/// Apply request guards to a plain-text string extracted from a realtime WebSocket frame.
 	///
@@ -535,7 +518,7 @@ impl Policy {
 		self
 			.prompt_guard
 			.as_ref()
-			.map(|g| g.streaming.is_enabled() && g.has_response_guards())
+			.map(|g| g.streaming.is_enabled() && !g.response.is_empty())
 			.unwrap_or(false)
 	}
 }
@@ -596,6 +579,7 @@ impl Policy {
 		None
 	}
 
+	#[cfg(feature = "gateway-llm")]
 	pub fn apply_prompt_enrichment(&self, chat: &mut dyn RequestType) {
 		if let Some(prompts) = &self.prompts {
 			if !prompts.prepend.is_empty() {
@@ -607,6 +591,7 @@ impl Policy {
 		}
 	}
 
+	#[cfg(feature = "gateway-llm")]
 	pub fn resolve_route(&self, path: &str) -> crate::llm::RouteType {
 		let mut wildcard: Option<crate::llm::RouteType> = None;
 
@@ -624,10 +609,12 @@ impl Policy {
 		wildcard.unwrap_or(crate::llm::RouteType::Completions)
 	}
 
+	#[cfg(feature = "gateway-llm")]
 	pub fn has_request_body_mutations(&self) -> bool {
 		self.defaults.is_some() || self.overrides.is_some() || self.transformations.is_some()
 	}
 
+	#[cfg(feature = "gateway-llm")]
 	pub fn unmarshal_request<T: DeserializeOwned>(
 		&self,
 		bytes: &Bytes,
@@ -643,6 +630,7 @@ impl Policy {
 		self.unmarshal_request_value(v, log)
 	}
 
+	#[cfg(feature = "gateway-llm")]
 	pub fn unmarshal_request_value<T: DeserializeOwned>(
 		&self,
 		v: serde_json::Value,
@@ -652,6 +640,7 @@ impl Policy {
 		serde_json::from_value(v).map_err(AIError::RequestParsing)
 	}
 
+	#[cfg(feature = "gateway-llm")]
 	pub fn apply_request_body_mutations(
 		&self,
 		v: serde_json::Value,
@@ -690,6 +679,7 @@ impl Policy {
 		Ok(serde_json::Value::Object(map))
 	}
 
+	#[cfg(feature = "gateway-llm")]
 	fn eval_transformation_expression(
 		expression: &cel::Expression,
 		exec: &cel::Executor<'_>,
@@ -697,6 +687,7 @@ impl Policy {
 		exec.eval(expression).ok()?.json().ok()
 	}
 
+	#[cfg(feature = "gateway-llm")]
 	pub async fn apply_prompt_guard(
 		&self,
 		backend_info: &auth::BackendInfo,
@@ -752,6 +743,7 @@ impl Policy {
 	/// This is the single place where every `RequestGuardKind` is dispatched,
 	/// so both the HTTP request path (`apply_prompt_guard`) and the realtime
 	/// WebSocket path (`apply_realtime_request_guards`) stay in sync.
+	#[cfg(feature = "gateway-llm")]
 	async fn apply_single_request_guard(
 		guard: &RequestGuard,
 		req: &mut dyn RequestType,
@@ -768,10 +760,12 @@ impl Policy {
 					None => Ok(GuardrailOutcome::None),
 				}
 			},
+			#[cfg(feature = "providers-aws")]
 			RequestGuardKind::BedrockGuardrails(bg) => {
 				Self::apply_bedrock_guardrails_request(req, claims.clone(), client, &guard.rejection, bg)
 					.await
 			},
+			#[cfg(feature = "providers-gcp")]
 			RequestGuardKind::GoogleModelArmor(gma) => {
 				match Self::apply_google_model_armor_request(
 					req,
@@ -786,6 +780,7 @@ impl Policy {
 					None => Ok(GuardrailOutcome::None),
 				}
 			},
+			#[cfg(feature = "providers-azure")]
 			RequestGuardKind::AzureContentSafety(acs) => {
 				match Self::apply_azure_content_safety_request(
 					req,
@@ -803,6 +798,7 @@ impl Policy {
 		}
 	}
 
+	#[cfg(feature = "gateway-llm")]
 	async fn apply_moderation(
 		req: &mut dyn RequestType,
 		claims: Option<Claims>,
@@ -818,6 +814,8 @@ impl Policy {
 		}
 	}
 
+	#[cfg(feature = "providers-aws")]
+	#[cfg(feature = "gateway-llm")]
 	async fn apply_bedrock_guardrails_request(
 		req: &mut dyn RequestType,
 		claims: Option<Claims>,
@@ -841,6 +839,8 @@ impl Policy {
 		}
 	}
 
+	#[cfg(feature = "providers-aws")]
+	#[cfg(feature = "gateway-llm")]
 	async fn apply_bedrock_guardrails_response(
 		resp: &mut dyn ResponseType,
 		claims: Option<Claims>,
@@ -850,7 +850,7 @@ impl Policy {
 	) -> anyhow::Result<GuardrailOutcome> {
 		// Extract text content from response choices
 		let content: Vec<String> = resp
-			.to_webhook_choices()
+			.to_webhook_choices()?
 			.into_iter()
 			.map(|c| c.message.content.to_string())
 			.collect();
@@ -865,7 +865,7 @@ impl Policy {
 			Ok(GuardrailOutcome::Rejected(rej.as_response()))
 		} else if guardrail_resp.is_anonymized() {
 			let output_texts = guardrail_resp.output_texts();
-			let mut choices = resp.to_webhook_choices();
+			let mut choices = resp.to_webhook_choices()?;
 			for (choice, text) in choices.iter_mut().zip(output_texts) {
 				choice.message.content = text.into();
 			}
@@ -876,6 +876,8 @@ impl Policy {
 		}
 	}
 
+	#[cfg(feature = "providers-gcp")]
+	#[cfg(feature = "gateway-llm")]
 	async fn apply_google_model_armor_request(
 		req: &mut dyn RequestType,
 		claims: Option<Claims>,
@@ -891,6 +893,8 @@ impl Policy {
 		}
 	}
 
+	#[cfg(feature = "providers-azure")]
+	#[cfg(feature = "gateway-llm")]
 	async fn apply_azure_content_safety_request(
 		req: &mut dyn RequestType,
 		claims: Option<Claims>,
@@ -928,6 +932,8 @@ impl Policy {
 		Ok(None)
 	}
 
+	#[cfg(feature = "providers-gcp")]
+	#[cfg(feature = "gateway-llm")]
 	async fn apply_google_model_armor_response(
 		resp: &mut dyn ResponseType,
 		claims: Option<Claims>,
@@ -937,7 +943,7 @@ impl Policy {
 	) -> anyhow::Result<Option<Response>> {
 		// Extract text content from response choices
 		let content: Vec<String> = resp
-			.to_webhook_choices()
+			.to_webhook_choices()?
 			.into_iter()
 			.map(|c| c.message.content.to_string())
 			.collect();
@@ -955,6 +961,8 @@ impl Policy {
 		}
 	}
 
+	#[cfg(feature = "providers-azure")]
+	#[cfg(feature = "gateway-llm")]
 	async fn apply_azure_content_safety_response(
 		resp: &mut dyn ResponseType,
 		claims: Option<Claims>,
@@ -963,7 +971,7 @@ impl Policy {
 		config: &AzureContentSafety,
 	) -> anyhow::Result<Option<Response>> {
 		let content: Vec<String> = resp
-			.to_webhook_choices()
+			.to_webhook_choices()?
 			.into_iter()
 			.map(|c| c.message.content.to_string())
 			.collect();
@@ -990,6 +998,7 @@ impl Policy {
 		Ok(None)
 	}
 
+	#[cfg(feature = "gateway-llm")]
 	fn apply_regex(
 		req: &mut dyn RequestType,
 		rgx: &RegexRules,
@@ -1016,12 +1025,13 @@ impl Policy {
 		Ok(GuardrailOutcome::None)
 	}
 
+	#[cfg(feature = "gateway-llm")]
 	fn apply_regex_response(
 		resp: &mut dyn ResponseType,
 		rgx: &RegexRules,
 		rej: &RequestRejection,
 	) -> anyhow::Result<GuardrailOutcome> {
-		let mut msgs = resp.to_webhook_choices();
+		let mut msgs = resp.to_webhook_choices()?;
 		let mut any_changed = false;
 		for msg in &mut msgs {
 			match Self::apply_prompt_guard_regex(&msg.message.content, rgx) {
@@ -1042,6 +1052,7 @@ impl Policy {
 		Ok(GuardrailOutcome::None)
 	}
 
+	#[cfg(feature = "gateway-llm")]
 	async fn apply_webhook(
 		req: &mut dyn RequestType,
 		http_headers: &HeaderMap,
@@ -1050,7 +1061,15 @@ impl Policy {
 	) -> anyhow::Result<GuardrailOutcome> {
 		let messsages = req.get_messages();
 		let headers = Self::get_webhook_forward_headers(http_headers, &webhook.forward_header_matches);
-		let whr = match webhook::send_request(client, &webhook.target, &headers, messsages).await {
+		let whr = match webhook::send_request(
+			&client
+				.with_outbound(OutboundCallKind::Policy, OutboundCallSubtype::Guardrail)
+				.bind_reference(&webhook.target, &[]),
+			&headers,
+			messsages,
+		)
+		.await
+		{
 			Ok(whr) => whr,
 			Err(e) => {
 				return match webhook.failure_mode {
@@ -1101,15 +1120,24 @@ impl Policy {
 		}
 	}
 
+	#[cfg(feature = "gateway-llm")]
 	async fn apply_webhook_response(
 		resp: &mut dyn ResponseType,
 		http_headers: &HeaderMap,
 		client: &PolicyClient,
 		webhook: &Webhook,
 	) -> anyhow::Result<GuardrailOutcome> {
-		let messsages = resp.to_webhook_choices();
+		let messsages = resp.to_webhook_choices()?;
 		let headers = Self::get_webhook_forward_headers(http_headers, &webhook.forward_header_matches);
-		let whr = match webhook::send_response(client, &webhook.target, &headers, messsages).await {
+		let whr = match webhook::send_response(
+			&client
+				.with_outbound(OutboundCallKind::Policy, OutboundCallSubtype::Guardrail)
+				.bind_reference(&webhook.target, &[]),
+			&headers,
+			messsages,
+		)
+		.await
+		{
 			Ok(whr) => whr,
 			Err(e) => {
 				return match webhook.failure_mode {
@@ -1161,6 +1189,7 @@ impl Policy {
 		}
 	}
 
+	#[cfg(feature = "gateway-llm")]
 	fn get_webhook_forward_headers(
 		http_headers: &HeaderMap,
 		header_matches: &[HeaderMatch],
@@ -1201,38 +1230,16 @@ impl Policy {
 		headers
 	}
 
+	#[cfg(feature = "gateway-llm")]
 	fn record_guardrail_trip(
 		client: &PolicyClient,
 		phase: crate::telemetry::metrics::GuardrailPhase,
 		action: crate::telemetry::metrics::GuardrailAction,
 	) {
-		client
-			.inputs
-			.metrics
-			.guardrail_checks
-			.get_or_create(&crate::telemetry::metrics::GuardrailLabels { phase, action })
-			.inc();
+		client.record_guardrail_check(phase, action);
 	}
 
-	// fn convert_message(r: Message) -> ChatCompletionRequestMessage {
-	// 	match r.role.as_str() {
-	// 		"system" => universal::RequestMessage::from(universal::RequestSystemMessage::from(r.content)),
-	// 		"assistant" => {
-	// 			universal::RequestMessage::from(universal::RequestAssistantMessage::from(r.content))
-	// 		},
-	// 		// TODO: the webhook API cannot express functions or tools...
-	// 		"function" => universal::RequestMessage::from(universal::RequestFunctionMessage {
-	// 			content: Some(r.content),
-	// 			name: "".to_string(),
-	// 		}),
-	// 		"tool" => universal::RequestMessage::from(universal::RequestToolMessage {
-	// 			content: universal::RequestToolMessageContent::from(r.content),
-	// 			tool_call_id: "".to_string(),
-	// 		}),
-	// 		_ => universal::RequestMessage::from(universal::RequestUserMessage::from(r.content)),
-	// 	}
-	// }
-
+	#[cfg(feature = "gateway-llm")]
 	fn apply_prompt_guard_regex(original_content: &str, rgx: &RegexRules) -> Option<RegexResult> {
 		let mut working: Option<String> = None;
 
@@ -1296,6 +1303,7 @@ impl Policy {
 		working.map(RegexResult::Mask)
 	}
 
+	#[cfg(feature = "gateway-llm")]
 	pub async fn apply_response_prompt_guard(
 		client: &PolicyClient,
 		resp: &mut dyn ResponseType,
@@ -1338,6 +1346,7 @@ impl Policy {
 		Ok(None)
 	}
 
+	#[cfg(feature = "gateway-llm")]
 	async fn apply_single_response_guard(
 		guard: &ResponseGuard,
 		resp: &mut dyn ResponseType,
@@ -1349,9 +1358,11 @@ impl Policy {
 			ResponseGuardKind::Webhook(wh) => {
 				Self::apply_webhook_response(resp, http_headers, client, wh).await
 			},
+			#[cfg(feature = "providers-aws")]
 			ResponseGuardKind::BedrockGuardrails(bg) => {
 				Self::apply_bedrock_guardrails_response(resp, None, client, &guard.rejection, bg).await
 			},
+			#[cfg(feature = "providers-gcp")]
 			ResponseGuardKind::GoogleModelArmor(gma) => {
 				match Self::apply_google_model_armor_response(resp, None, client, &guard.rejection, gma)
 					.await?
@@ -1360,6 +1371,7 @@ impl Policy {
 					None => Ok(GuardrailOutcome::None),
 				}
 			},
+			#[cfg(feature = "providers-azure")]
 			ResponseGuardKind::AzureContentSafety(acs) => {
 				match Self::apply_azure_content_safety_response(resp, None, client, &guard.rejection, acs)
 					.await?
@@ -1372,6 +1384,7 @@ impl Policy {
 	}
 }
 
+#[cfg(feature = "gateway-llm")]
 enum RegexResult {
 	Mask(String),
 	Reject,
@@ -1387,6 +1400,7 @@ pub struct RequestGuard {
 	pub kind: RequestGuardKind,
 }
 
+#[cfg(feature = "gateway-llm")]
 impl RequestGuard {
 	/// Returns the configured failure mode for this guard, defaulting to `FailOpen` for
 	/// guard types that do not have an explicit `failure_mode` field.
@@ -1407,10 +1421,13 @@ pub enum RequestGuardKind {
 	/// Use OpenAI moderation to evaluate the prompt.
 	OpenAIModeration(Moderation),
 	/// Use AWS Bedrock Guardrails to evaluate the prompt.
+	#[cfg(feature = "providers-aws")]
 	BedrockGuardrails(BedrockGuardrails),
 	/// Use Google Model Armor to evaluate the prompt.
+	#[cfg(feature = "providers-gcp")]
 	GoogleModelArmor(GoogleModelArmor),
 	/// Use Azure Content Safety to evaluate the prompt.
+	#[cfg(feature = "providers-azure")]
 	AzureContentSafety(AzureContentSafety),
 }
 
@@ -1493,18 +1510,7 @@ pub struct NamedRegex {
 /// Defaults to `failClosed`. When failing closed, the error is propagated and
 /// the LLM request is rejected. When failing open, the request is allowed
 /// through despite the webhook failure.
-#[apply(schema!)]
-#[cfg_attr(feature = "schema", schemars(rename = "WebhookFailureMode"))]
-#[derive(Default, Copy, PartialEq, Eq)]
-pub enum FailureMode {
-	/// Reject the request when the webhook guardrail is unavailable (default).
-	#[default]
-	#[serde(rename = "failClosed")]
-	FailClosed,
-	/// Allow the request through when the webhook guardrail is unavailable.
-	#[serde(rename = "failOpen")]
-	FailOpen,
-}
+pub use gateway_llm::FailureMode;
 
 #[apply(schema!)]
 pub struct Webhook {
@@ -1605,6 +1611,7 @@ pub struct AzureContentSafety {
 	/// Cached implicit Azure auth credential, shared across requests.
 	#[serde(skip)]
 	#[cfg_attr(feature = "schema", schemars(skip))]
+	#[cfg(feature = "providers-azure")]
 	pub cached_azure_auth: crate::http::auth::AzureAuth,
 	/// Analyze Text configuration for detecting harmful content categories
 	/// (Hate, SelfHarm, Sexual, Violence) and blocklist matches.
@@ -1692,10 +1699,13 @@ pub enum ResponseGuardKind {
 	/// Call a webhook to evaluate the response.
 	Webhook(Webhook),
 	/// Use AWS Bedrock Guardrails to evaluate the response.
+	#[cfg(feature = "providers-aws")]
 	BedrockGuardrails(BedrockGuardrails),
 	/// Use Google Model Armor to evaluate the response.
+	#[cfg(feature = "providers-gcp")]
 	GoogleModelArmor(GoogleModelArmor),
 	/// Use Azure Content Safety to evaluate the response.
+	#[cfg(feature = "providers-azure")]
 	AzureContentSafety(AzureContentSafety),
 }
 

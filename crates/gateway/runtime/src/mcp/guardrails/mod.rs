@@ -14,7 +14,9 @@ use std::sync::Arc;
 
 use bytes::Bytes;
 
+#[cfg(feature = "gateway-mcp")]
 use crate::mcp::upstream::IncomingRequestContext;
+#[cfg(feature = "gateway-mcp")]
 use crate::proxy::httpproxy::PolicyClient;
 use crate::types::agent::{BackendTrafficPolicy, SimpleBackendReference};
 use crate::*;
@@ -33,6 +35,7 @@ impl McpGuardrailsDynamicMetadata {
 	}
 }
 
+#[cfg(feature = "gateway-mcp")]
 mod client;
 pub mod methods;
 pub mod phase;
@@ -40,12 +43,14 @@ pub mod phase;
 pub use phase::Phase;
 
 #[derive(Debug)]
+#[cfg(feature = "gateway-mcp")]
 pub enum Outcome<T> {
 	Pass,
 	Mutated(T),
 	Reject(rmcp::model::ErrorData),
 }
 
+#[cfg(feature = "gateway-mcp")]
 pub mod wire {
 	pub use platform_protos::ext_mcp::*;
 }
@@ -181,6 +186,7 @@ pub enum FailureMode {
 
 /// `params` is `None` for methods with no per-request body (e.g. `*/list`);
 /// any `Mutated` outcome there is logged and discarded.
+#[cfg(feature = "gateway-mcp")]
 pub struct CallRequestCtx<'a> {
 	pub backends: &'a [String],
 	pub method: &'a str,
@@ -196,6 +202,7 @@ impl Processor {
 		phase::resolve(method, &self.methods).runs_response()
 	}
 
+	#[cfg(feature = "gateway-mcp")]
 	async fn call_request<P: serde::de::DeserializeOwned>(
 		&self,
 		ctx: &mut CallRequestCtx<'_>,
@@ -217,6 +224,7 @@ impl Processor {
 		}
 	}
 
+	#[cfg(feature = "gateway-mcp")]
 	async fn response(
 		&self,
 		method: &str,
@@ -236,6 +244,7 @@ impl Processor {
 /// Processors fire in order; first `Reject` short-circuits leaving `ctx` in whatever
 /// partially-mutated state earlier processors produced. When `ctx.params` is `None`
 /// (e.g. `*/list`) mutations are discarded — list filtering belongs in the response phase.
+#[cfg(feature = "gateway-mcp")]
 pub async fn run_call_request<P: serde::de::DeserializeOwned>(
 	ext: &McpGuardrails,
 	ctx: &mut CallRequestCtx<'_>,
@@ -257,6 +266,7 @@ pub async fn run_call_request<P: serde::de::DeserializeOwned>(
 }
 
 /// Processors fire in order; first `Reject` short-circuits.
+#[cfg(feature = "gateway-mcp")]
 pub async fn run_response(
 	ext: &McpGuardrails,
 	method: &str,

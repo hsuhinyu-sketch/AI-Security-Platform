@@ -8,10 +8,19 @@ use prometheus_client::registry::Registry;
 use tokio::task::JoinSet;
 
 use crate::control::caclient;
+#[cfg(feature = "telemetry-otlp")]
 use crate::telemetry::trc;
-use crate::{Config, ProxyInputs, client, mcp, proxy, runtime};
+use crate::{Config, RuntimeContext, client, proxy, runtime};
 
 pub async fn run(config: Arc<Config>) -> anyhow::Result<Bound> {
+	// Embedders may supply Config directly, bypassing YAML validation.
+	if let Some(database) = &config.database {
+		database.validate_compiled()?;
+	}
+	if config.tracing.is_some() {
+		crate::telemetry::trc::validate_compiled()?;
+	}
+
 	crate::transport::tls::warn_if_key_log_enabled();
 	// Keep a bounded, redacted projection of security decisions for the administrative API.
 	if let Some(audit) = &config.security_audit {
@@ -19,13 +28,10 @@ pub async fn run(config: Arc<Config>) -> anyhow::Result<Bound> {
 	} else {
 		crate::security_events::initialize_persistent(10_000, config.security_audit_path.as_deref())?;
 	}
-	if std::env::var("SECURITY_UI_DEMO").as_deref() == Ok("1") {
-		crate::security_events::seed_demo_events();
-		info!("loaded explicitly requested Security Console demo events");
-	}
 	let (data_plane_handle, data_plane_pool) = new_data_plane_pool(config.num_worker_threads);
 
 	// Initialize OpenTelemetry resource defaults from gateway + proxy metadata
+	#[cfg(feature = "telemetry-otlp")]
 	trc::set_resource_defaults_from_config(config.as_ref());
 
 	let shutdown = signal::Shutdown::new();
@@ -91,29 +97,33 @@ pub async fn run(config: Arc<Config>) -> anyhow::Result<Bound> {
 		runtime::state_manager::StateManager::new(config.clone(), control_client.clone()).await?;
 	let stores = state_mgr.stores();
 	let resource_manager = state_mgr.resource_manager();
-	let rag_listener_count = crate::rag::start_configured_gateways(
-		&config,
-		&crate::resource_manager::ResourceFetcher::managed(resource_manager.clone()),
-		drain_rx.clone(),
-	)
-	.await?;
-	if rag_listener_count > 0 {
-		info!(
-			rag_listener_count,
-			"configured secure RAG gateway listeners"
-		);
+	#[cfg(feature = "gateway-rag")]
+	{
+		let rag_listener_count = state_mgr.rag().start(drain_rx.clone()).await?;
+		if rag_listener_count > 0 {
+			info!(
+				rag_listener_count,
+				"configured secure RAG gateway listeners"
+			);
+		}
 	}
 
 	runtime::state_manager::start_self_workload_resolution(&config, stores.clone(), &ready);
 
-	let model_catalog = crate::llm::cost::ModelCatalog::new(config.model_catalog.sources.clone())?;
+	let services = crate::runtime::services::ProtocolServices::new(
+		#[cfg(feature = "gateway-mcp")]
+		crate::mcp::Service::new(stores.clone(), config.session_encoder.clone()),
+		#[cfg(feature = "gateway-llm")]
+		crate::llm::cost::CatalogService::new(config.model_catalog.sources.clone())?,
+	);
 
 	// The initial local configuration has been loaded synchronously.
 	drop(state_mgr_task);
 
 	let admin_server = crate::management::admin::Service::new(
 		config.clone(),
-		model_catalog.clone(),
+		#[cfg(feature = "gateway-llm")]
+		services.catalog_admin(),
 		stores.clone(),
 		resource_manager,
 		shutdown.trigger(),
@@ -125,22 +135,20 @@ pub async fn run(config: Arc<Config>) -> anyhow::Result<Bound> {
 	#[cfg(feature = "ui")]
 	info!("serving UI at http://{}/ui", config.admin_addr);
 
-	let pi = ProxyInputs {
+	let pi = RuntimeContext {
 		cfg: config.clone(),
 		stores: stores.clone(),
 		metrics: metrics_handle.clone(),
-		model_catalog,
 		admin: Some(admin_server.service()),
 		upstream: client.clone(),
 		ca,
 
-		mcp_state: mcp::App::new(stores.clone(), config.session_encoder.clone()),
 		guardrails: None,
 		vehicle_state: Default::default(),
 		circuit_breakers: None,
 	};
 
-	let gw = proxy::Gateway::new(Arc::new(pi), drain_rx.clone());
+	let gw = proxy::Gateway::with_services(Arc::new(pi), services, drain_rx.clone());
 
 	// Run the agentgateway in the data plane worker pool.
 	data_plane_pool.send(DataPlaneTask {

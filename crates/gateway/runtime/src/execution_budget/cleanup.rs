@@ -13,7 +13,7 @@ pub(crate) struct CleanupScope {
 	deadline: Instant,
 	action: Arc<ActionRequest>,
 	owner: VerifiedOwner,
-	revision: crate::a2a::revision::ConfigLease,
+	revision: gateway_contracts::ConfigLease,
 	expires: i64,
 }
 impl std::fmt::Debug for CleanupScope {
@@ -98,7 +98,7 @@ pub(crate) async fn prepare(
 		.ok_or(ProxyError::AuthorizationFailed)?;
 	let revision = request
 		.extensions()
-		.get::<crate::a2a::revision::ConfigLease>()
+		.get::<gateway_contracts::ConfigLease>()
 		.cloned()
 		.ok_or(ProxyError::AuthorizationFailed)?;
 	handle.cleanup().map_err(ProxyError::ExecutionBudget)?;

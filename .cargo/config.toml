@@ -9,6 +9,13 @@ rustflags = [
     "-C", "force-frame-pointers",
 ]
 
+# 关闭增量编译：本工作区 Runtime 等巨型 crate 的编译指纹随 feature/RUSTFLAGS
+# 组合频繁变化，每变化一次就新开一个 GB 级 incremental 会话且不再回收，
+# 实测 target/debug/incremental 曾累积 309 GiB，而增量对这些 crate 的重建收益为负。
+# 需要临时开启时用：CARGO_INCREMENTAL=1 cargo build
+[build]
+incremental = false
+
 [env]
 CXXFLAGS = "-fno-omit-frame-pointer -mno-omit-leaf-frame-pointer"
 CFLAGS = "-fno-omit-frame-pointer -mno-omit-leaf-frame-pointer"

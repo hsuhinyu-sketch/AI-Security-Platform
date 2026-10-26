@@ -12,10 +12,14 @@ async-trait.workspace = true
 axum.workspace = true
 chrono.workspace = true
 security-pipeline = { path = "../../security/pipeline" }
-reqwest.workspace = true
+reqwest = { workspace = true, features = ["json"] }
 serde.workspace = true
 serde_json.workspace = true
 security-rag = { path = "../../security/rag" }
 security-types = { path = "../../security/types" }
 security-integrity = { path = "../../security/integrity" }
 uuid.workspace = true
+
+[dev-dependencies]
+tokio.workspace = true
+tower = { workspace = true, features = ["util"] }

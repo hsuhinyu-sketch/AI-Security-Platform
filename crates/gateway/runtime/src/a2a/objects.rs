@@ -13,34 +13,24 @@ use security_integration_runtime::a2a_objects::{
 use security_integration_runtime::{SecurityConfig, SecurityMode};
 use security_pipeline::{GatewayIdentity, agent_object_for_identity};
 use security_types::{ActionRequest, ResourceType};
-use serde::Deserialize;
-use serde_json::{Map, Value};
+use serde_json::Value;
 
 use crate::http::{Body, Request, Response, header};
 use crate::proxy::ProxyError;
 use crate::security_events::UiSecurityAuditSink;
 
-#[derive(Deserialize)]
-struct Rpc {
-	jsonrpc: String,
-	id: Value,
-	method: String,
-	params: Value,
-}
-
+use gateway_a2a::RequestEnvelope as Rpc;
 /// Only extracted from the JWT validator's verified Claims extension, never headers/JSON.
 #[derive(Clone)]
 pub(crate) struct TaskCredential {
-	revision: crate::a2a::revision::ConfigLease,
+	revision: gateway_contracts::ConfigLease,
 	issuer: String,
 	expires_at: i64,
 }
 pub(crate) fn verified_credential(extensions: &::http::Extensions) -> Option<TaskCredential> {
 	let claims = extensions.get::<crate::http::jwt::Claims>()?;
 	Some(TaskCredential {
-		revision: extensions
-			.get::<crate::a2a::revision::ConfigLease>()?
-			.clone(),
+		revision: extensions.get::<gateway_contracts::ConfigLease>()?.clone(),
 		issuer: claims.inner.get("iss")?.as_str()?.into(),
 		expires_at: claims.inner.get("exp")?.as_i64()?,
 	})
@@ -69,164 +59,17 @@ fn deny(action: &ActionRequest, error: ObjectError) -> ProxyError {
 	ProxyError::AuthorizationFailed
 }
 
+fn object_error(error: gateway_a2a::Error) -> ObjectError {
+	match error {
+		gateway_a2a::Error::Unsupported => ObjectError::Unsupported,
+		gateway_a2a::Error::ResponseBinding => ObjectError::ResponseBinding,
+		gateway_a2a::Error::EventCursor => ObjectError::EventCursor,
+		gateway_a2a::Error::DownloadSource => ObjectError::DownloadSource,
+		gateway_a2a::Error::DownloadIntegrity => ObjectError::DownloadIntegrity,
+	}
+}
 fn identifier(value: &Value) -> Result<&str, ObjectError> {
-	value
-		.as_str()
-		.filter(|s| !s.is_empty() && s.trim() == *s && s.len() <= 512)
-		.ok_or(ObjectError::Unsupported)
-}
-
-fn optional_id(value: Option<&Value>) -> Result<Option<&str>, ObjectError> {
-	value.filter(|v| !v.is_null()).map(identifier).transpose()
-}
-
-fn object<'a>(value: &'a Value, allowed: &[&str]) -> Result<&'a Map<String, Value>, ObjectError> {
-	let map = value.as_object().ok_or(ObjectError::Unsupported)?;
-	if map.keys().any(|key| !allowed.contains(&key.as_str())) {
-		return Err(ObjectError::Unsupported);
-	}
-	Ok(map)
-}
-
-fn no_references(value: &Value) -> Result<(), ObjectError> {
-	for field in ["referenceTaskIds", "extensions"] {
-		if let Some(value) = value.get(field) {
-			if !value.as_array().is_some_and(|a| a.is_empty()) {
-				return Err(ObjectError::Unsupported);
-			}
-		}
-	}
-	Ok(())
-}
-
-fn parse_operation(
-	rpc: &Rpc,
-) -> Result<(TaskOperation, Option<String>, Option<String>), ObjectError> {
-	if rpc.jsonrpc != "2.0" || !(rpc.id.is_string() || rpc.id.is_number()) {
-		return Err(ObjectError::Unsupported);
-	}
-	match rpc.method.as_str() {
-		"tasks/pushNotificationConfig/set"
-		| "tasks/pushNotificationConfig/get"
-		| "tasks/pushNotificationConfig/list"
-		| "tasks/pushNotificationConfig/delete" => {
-			let set = rpc.method.ends_with("/set");
-			object(
-				&rpc.params,
-				if set {
-					&["taskId", "pushNotificationConfig"]
-				} else if rpc.method.ends_with("/list") {
-					&["id"]
-				} else {
-					&["id", "pushNotificationConfigId"]
-				},
-			)?;
-			let id = identifier(&rpc.params[if set { "taskId" } else { "id" }])?;
-			Ok((TaskOperation::Read, Some(id.to_owned()), None))
-		},
-		recovery::METHOD => {
-			object(&rpc.params, &["id", "after", "limit"])?;
-			let id = identifier(&rpc.params["id"])?;
-			let after = rpc.params["after"]
-				.as_str()
-				.ok_or(ObjectError::EventCursor)?;
-			if !security_integration_runtime::a2a_objects::events::valid_cursor(after)
-				|| rpc.params.get("limit").is_some_and(|v| !v.is_u64())
-			{
-				return Err(ObjectError::EventCursor);
-			}
-			Ok((TaskOperation::Read, Some(id.to_owned()), None))
-		},
-		"tasks/get" | "tasks/cancel" | "tasks/resubscribe" => {
-			let params = object(
-				&rpc.params,
-				if rpc.method == "tasks/get" {
-					&["id", "historyLength", "metadata"]
-				} else {
-					&["id", "metadata"]
-				},
-			)?;
-			if params.get("historyLength").is_some_and(|v| !v.is_u64()) {
-				return Err(ObjectError::Unsupported);
-			}
-			let id = identifier(params.get("id").ok_or(ObjectError::Unsupported)?)?.to_owned();
-			Ok((
-				if rpc.method == "tasks/get" {
-					TaskOperation::Read
-				} else if rpc.method == "tasks/resubscribe" {
-					TaskOperation::Subscribe
-				} else {
-					TaskOperation::Cancel
-				},
-				Some(id),
-				None,
-			))
-		},
-		"message/send" | "message/stream" => {
-			object(&rpc.params, &["message", "configuration", "metadata"])?;
-			let message = rpc.params.get("message").ok_or(ObjectError::Unsupported)?;
-			object(
-				message,
-				&[
-					"role",
-					"kind",
-					"parts",
-					"messageId",
-					"taskId",
-					"contextId",
-					"metadata",
-					"extensions",
-					"referenceTaskIds",
-				],
-			)?;
-			no_references(message)?;
-			validate_parts(&message["parts"])?;
-			if message.get("kind").and_then(Value::as_str) != Some("message")
-				|| message.get("role").and_then(Value::as_str) != Some("user")
-				|| !message
-					.get("parts")
-					.and_then(Value::as_array)
-					.is_some_and(|p| !p.is_empty())
-			{
-				return Err(ObjectError::Unsupported);
-			}
-			identifier(message.get("messageId").ok_or(ObjectError::Unsupported)?)?;
-			if let Some(configuration) = rpc.params.get("configuration") {
-				object(
-					configuration,
-					&["blocking", "historyLength", "acceptedOutputModes"],
-				)?;
-				if configuration
-					.get("blocking")
-					.is_some_and(|v| !v.is_boolean())
-					|| configuration
-						.get("historyLength")
-						.is_some_and(|v| !v.is_u64())
-					|| configuration
-						.get("acceptedOutputModes")
-						.is_some_and(|v| !v.as_array().is_some_and(|a| a.iter().all(Value::is_string)))
-				{
-					return Err(ObjectError::Unsupported);
-				}
-			}
-			let task = optional_id(message.get("taskId"))?.map(ToOwned::to_owned);
-			let context = optional_id(message.get("contextId"))?.map(ToOwned::to_owned);
-			// A bare context/reference can identify other work without proving task ownership.
-			if task.is_none() && context.is_some() {
-				return Err(ObjectError::Unsupported);
-			}
-			Ok((
-				if task.is_some() {
-					TaskOperation::Continue
-				} else {
-					TaskOperation::Create
-				},
-				task,
-				context,
-			))
-		},
-		_ => Err(ObjectError::Unsupported),
-	}
+	gateway_a2a::objects::identifier(value).map_err(object_error)
 }
 
 fn request_scope(req: &Request, destination: &str) -> String {
@@ -243,6 +86,34 @@ fn request_scope(req: &Request, destination: &str) -> String {
 	endpoint_scope(destination, &path)
 }
 
+/// Bind existing Task metadata to all workflow constraints. This is an identity digest,
+/// not a grant. Preserve the legacy budget-only value when no context is installed.
+fn task_binding(
+	execution: Option<String>,
+	flow: Option<&crate::security_flow::FlowAccess>,
+	guards: Option<&crate::proxy::RoutingGuards>,
+) -> Result<Option<String>, ProxyError> {
+	let mut contexts = guards
+		.map(|guards| guards.context_bindings())
+		.transpose()?
+		.unwrap_or_default();
+	if let Some(flow) = flow {
+		contexts.push(flow.recovery_binding()?);
+	}
+	contexts.sort_unstable();
+	contexts.dedup();
+	if contexts.is_empty() {
+		return Ok(execution);
+	}
+	let metadata = serde_json::to_string(&("a2a-context-v1", execution, contexts))
+		.map_err(|_| ProxyError::AuthorizationFailed)?;
+	Ok(Some(crate::security::digest(&metadata)))
+}
+
+#[cfg(all(test, feature = "gateway-rag"))]
+#[path = "objects/binding_tests.rs"]
+mod binding_tests;
+
 pub(crate) async fn authorize_request(
 	config: Arc<SecurityConfig>,
 	req: &mut Request,
@@ -250,6 +121,8 @@ pub(crate) async fn authorize_request(
 	identity: GatewayIdentity,
 	request_id: String,
 	credential: Option<TaskCredential>,
+	flow: Option<crate::security_flow::FlowAccess>,
+	guards: Option<crate::proxy::RoutingGuards>,
 	execution: Option<crate::execution_budget::ExecutionScope>,
 ) -> Result<AuthorizedCall, ProxyError> {
 	let scope = request_scope(req, destination);
@@ -280,25 +153,23 @@ pub(crate) async fn authorize_request(
 	let rpc: Rpc = crate::json::inspect_body(req)
 		.await
 		.map_err(|_| deny(&fallback, ObjectError::Unsupported))?;
-	let (operation, task, context) = parse_operation(&rpc).map_err(|error| deny(&fallback, error))?;
+	let gateway_a2a::objects::RequestPlan {
+		operation,
+		task,
+		context,
+		method,
+	} = gateway_a2a::objects::parse_request(&rpc)
+		.map_err(|error| deny(&fallback, object_error(error)))?;
 	let recovery = if rpc.method == recovery::METHOD {
 		let settings = objects
 			.event_recovery
 			.as_ref()
 			.ok_or_else(|| deny(&fallback, ObjectError::Unsupported))?;
 		settings.store().map_err(|e| deny(&fallback, e))?;
-		let limit = rpc
-			.params
-			.get("limit")
-			.and_then(Value::as_u64)
-			.unwrap_or(settings.max_batch_events as u64);
-		if limit == 0 || limit > settings.max_batch_events as u64 {
-			return Err(deny(&fallback, ObjectError::EventCursor));
-		}
-		Some((
-			rpc.params["after"].as_str().expect("validated").to_owned(),
-			limit as usize,
-		))
+		Some(
+			gateway_a2a::recovery::request(&rpc, settings.max_batch_events)
+				.map_err(|e| deny(&fallback, object_error(e)))?,
+		)
 	} else {
 		// Declared-but-unprepared storage must fail before an upstream operation can run.
 		if let Some(events) = &objects.event_recovery {
@@ -340,14 +211,21 @@ pub(crate) async fn authorize_request(
 			operation,
 		)
 		.map_err(|error| deny(&action, error))?;
-	let binding = execution.as_ref().map(|e| e.binding());
+	if config.cross_component.is_some() && flow.is_none() {
+		return Err(deny(&action, ObjectError::ExecutionBinding));
+	}
+	let binding = task_binding(
+		execution.as_ref().map(|e| e.binding()),
+		flow.as_ref(),
+		guards.as_ref(),
+	)?;
 	permit
 		.bind_execution(binding.as_deref())
 		.map_err(|e| deny(&action, e))?;
 	if context.is_some() && context != permit.context_id {
 		return Err(deny(&action, ObjectError::ResponseBinding));
 	}
-	let streaming = matches!(rpc.method.as_str(), "message/stream" | "tasks/resubscribe");
+	let streaming = method.streaming();
 	let stream_lease = if streaming {
 		Some(
 			config
@@ -372,11 +250,8 @@ pub(crate) async fn authorize_request(
 	let mut call = AuthorizedCall {
 		push: None,
 		recovery,
-		download_guards: None,
-		flow: req
-			.extensions()
-			.get::<crate::security_flow::FlowAccess>()
-			.cloned(),
+		download_guards: guards,
+		flow,
 		execution,
 		credential,
 		invocation,
@@ -391,118 +266,6 @@ pub(crate) async fn authorize_request(
 	};
 	call.prepare_push(req, &rpc)?;
 	Ok(call)
-}
-
-fn validate_message(
-	message: &Value,
-	task: Option<&str>,
-	context: Option<&str>,
-) -> Result<(), ObjectError> {
-	object(
-		message,
-		&[
-			"role",
-			"kind",
-			"parts",
-			"messageId",
-			"taskId",
-			"contextId",
-			"metadata",
-			"extensions",
-			"referenceTaskIds",
-		],
-	)?;
-	if message.get("kind").and_then(Value::as_str) != Some("message") {
-		return Err(ObjectError::ResponseBinding);
-	}
-	identifier(
-		message
-			.get("messageId")
-			.ok_or(ObjectError::ResponseBinding)?,
-	)?;
-	if !matches!(
-		message.get("role").and_then(Value::as_str),
-		Some("user" | "agent")
-	) || !message.get("parts").is_some_and(Value::is_array)
-	{
-		return Err(ObjectError::ResponseBinding);
-	}
-	no_references(message)?;
-	validate_parts(&message["parts"])?;
-	let message_task = optional_id(message.get("taskId"))?;
-	let message_context = optional_id(message.get("contextId"))?;
-	if message_task.is_some() && message_task != task
-		|| context.is_some() && message_context.is_some() && message_context != context
-	{
-		return Err(ObjectError::ResponseBinding);
-	}
-	Ok(())
-}
-
-/// File URI download is a separate outbound operation, not an incidental part of
-/// Task read. Until a download adapter binds owner/target/digest and reauthorizes
-/// redirects, protected responses accept inline files only. No remote URL escapes
-/// the audited path by being handed directly to the client.
-fn validate_parts(parts: &Value) -> Result<(), ObjectError> {
-	validate_parts_with_downloads(parts, false)
-}
-
-fn validate_parts_with_downloads(parts: &Value, downloads: bool) -> Result<(), ObjectError> {
-	use base64::Engine;
-	let parts = parts
-		.as_array()
-		.filter(|p| p.len() <= 64)
-		.ok_or(ObjectError::ResponseBinding)?;
-	for part in parts {
-		match part["kind"].as_str() {
-			Some("text") => {
-				object(part, &["kind", "text", "metadata"])?;
-				if !part["text"].as_str().is_some_and(|s| s.len() <= 262144) {
-					return Err(ObjectError::ResponseBinding);
-				}
-			},
-			Some("data") => {
-				object(part, &["kind", "data", "metadata"])?;
-				if !part["data"].is_object() {
-					return Err(ObjectError::ResponseBinding);
-				}
-			},
-			Some("file") => {
-				object(part, &["kind", "file", "metadata"])?;
-				let file = &part["file"];
-				let external = downloads && file.get("uri").is_some();
-				object(
-					file,
-					if external {
-						&["name", "mimeType", "uri"]
-					} else {
-						&["name", "mimeType", "bytes"]
-					},
-				)?;
-				if ["name", "mimeType"].iter().any(|k| {
-					file.get(*k).is_some_and(|v| {
-						!v.as_str()
-							.is_some_and(|s| !s.is_empty() && s.len() <= 256 && !s.chars().any(char::is_control))
-					})
-				}) {
-					return Err(ObjectError::ResponseBinding);
-				}
-				if external {
-					downloads::FileReference::parse(part)?;
-					continue;
-				}
-				let bytes = file["bytes"]
-					.as_str()
-					.filter(|s| s.len() <= 262144)
-					.ok_or(ObjectError::Unsupported)?;
-				base64::engine::general_purpose::STANDARD
-					.decode(bytes)
-					.map_err(|_| ObjectError::ResponseBinding)?;
-			},
-			_ => return Err(ObjectError::Unsupported),
-		}
-	}
-	Ok(())
 }
 
 impl AuthorizedCall {
@@ -571,176 +334,75 @@ impl AuthorizedCall {
 		}
 		Ok(())
 	}
+	fn context(&self) -> gateway_a2a::execution::Context {
+		gateway_a2a::execution::Context {
+			operation: self.permit.operation,
+			task: self.permit.task_id.clone(),
+			context: self.permit.context_id.clone(),
+			downloads: !self.streaming
+				&& self
+					.config
+					.a2a_objects
+					.as_ref()
+					.is_some_and(|c| c.artifact_downloads.is_some()),
+		}
+	}
 	fn validate_envelope(&self, rpc: &mut Value) -> Result<bool, ProxyError> {
-		if rpc.get("jsonrpc").and_then(Value::as_str) != Some("2.0")
-			|| rpc.get("id") != Some(&self.rpc_id)
-			|| rpc.get("result").is_some() == rpc.get("error").is_some()
-		{
-			return Err(deny(&self.action, ObjectError::ResponseBinding));
-		}
-		object(rpc, &["jsonrpc", "id", "result", "error"]).map_err(|e| deny(&self.action, e))?;
-		if let Some(error) = rpc.get_mut("error") {
-			object(error, &["code", "message", "data"]).map_err(|e| deny(&self.action, e))?;
-			if !error.get("code").is_some_and(Value::is_i64)
-				|| !error.get("message").is_some_and(Value::is_string)
-			{
-				return Err(deny(&self.action, ObjectError::ResponseBinding));
-			}
-			error.as_object_mut().expect("checked").remove("data");
-			return Ok(true);
-		}
-		Ok(false)
+		gateway_a2a::execution::validate_envelope(rpc, &self.rpc_id)
+			.map_err(|e| deny(&self.action, object_error(e)))
 	}
 	fn process_rpc(&mut self, rpc: &mut Value, success: bool) -> Result<(), ProxyError> {
 		self.check_credential().map_err(|e| deny(&self.action, e))?;
-		if self.validate_envelope(rpc)? {
-			return Ok(());
-		}
-		if !success {
-			return Err(deny(&self.action, ObjectError::ResponseBinding));
-		}
-		self.process_result(rpc.get_mut("result").expect("checked"))
-	}
-
-	fn process_result(&mut self, result: &mut Value) -> Result<(), ProxyError> {
-		self.process_result_inner(result, true)
+		let context = self.context();
+		let id = self.rpc_id.clone();
+		gateway_a2a::execution::process_rpc(rpc, &id, success, &context, self)
 	}
 	fn process_result_inner(&mut self, result: &mut Value, commit: bool) -> Result<(), ProxyError> {
-		let checked = || -> Result<(String, String, TaskState), ObjectError> {
-			object(
-				result,
-				&[
-					"kind",
-					"id",
-					"contextId",
-					"status",
-					"artifacts",
-					"history",
-					"metadata",
-				],
-			)?;
-			object(&result["status"], &["state", "message", "timestamp"])?;
-			let id = identifier(result.get("id").ok_or(ObjectError::ResponseBinding)?)?.to_owned();
-			let context = identifier(
-				result
-					.get("contextId")
-					.ok_or(ObjectError::ResponseBinding)?,
-			)?
-			.to_owned();
-			let state: TaskState = serde_json::from_value(result["status"]["state"].clone())
-				.map_err(|_| ObjectError::ResponseBinding)?;
-			if let Some(message) = result["status"].get("message") {
-				validate_message(message, Some(&id), Some(&context))?;
-			}
-			if let Some(history) = result.get("history") {
-				for message in history.as_array().ok_or(ObjectError::ResponseBinding)? {
-					validate_message(message, Some(&id), Some(&context))?;
-				}
-			}
-			if let Some(artifacts) = result.get("artifacts") {
-				for artifact in artifacts.as_array().ok_or(ObjectError::ResponseBinding)? {
-					object(
-						artifact,
-						&[
-							"artifactId",
-							"name",
-							"description",
-							"parts",
-							"metadata",
-							"extensions",
-						],
-					)?;
-					if artifact
-						.get("extensions")
-						.is_some_and(|v| !v.as_array().is_some_and(|a| a.is_empty()))
-					{
-						return Err(ObjectError::Unsupported);
-					}
-					identifier(
-						artifact
-							.get("artifactId")
-							.ok_or(ObjectError::ResponseBinding)?,
-					)?;
-					if !artifact.get("parts").is_some_and(Value::is_array) {
-						return Err(ObjectError::ResponseBinding);
-					}
-					validate_parts_with_downloads(
-						&artifact["parts"],
-						!self.streaming
-							&& self
-								.config
-								.a2a_objects
-								.as_ref()
-								.is_some_and(|c| c.artifact_downloads.is_some()),
-					)?;
-				}
-			}
-			Ok((id, context, state))
-		};
-		match result.get("kind").and_then(Value::as_str) {
-			Some("message")
-				if matches!(
-					self.permit.operation,
-					TaskOperation::Create | TaskOperation::Continue
-				) =>
-			{
-				validate_message(
-					result,
-					self.permit.task_id.as_deref(),
-					self.permit.context_id.as_deref(),
-				)
-				.map_err(|error| deny(&self.action, error))?;
-			},
-			Some("task") => {
-				let (id, context, state) = checked().map_err(|error| deny(&self.action, error))?;
-				if !commit
-					&& (self.permit.task_id.as_deref() != Some(&id)
-						|| self.permit.context_id.as_deref() != Some(&context))
-				{
-					return Err(deny(&self.action, ObjectError::ResponseBinding));
-				}
-				if commit {
-					self
-						.config
-						.a2a_task_store
-						.finish(
-							self.config.a2a_objects.as_ref().expect("enabled"),
-							&mut self.permit,
-							&id,
-							&context,
-							state,
-						)
-						.map_err(|error| deny(&self.action, error))?;
-				}
-				let read = agent_object_for_identity(
-					&self.action.request_id,
-					self.identity.clone(),
-					"read",
-					ResourceType::AgentTask,
-					task_resource_id(&self.scope, &id),
-				);
-				crate::security::evaluate(&self.config, &read)
-					.map_err(|_| ProxyError::AuthorizationFailed)?;
-				audit_object_check(&read, Ok(()), &UiSecurityAuditSink);
-				if let Some(artifacts) = result.get_mut("artifacts").and_then(Value::as_array_mut) {
-					artifacts.retain(|artifact| {
-						let action = agent_object_for_identity(
-							&self.action.request_id,
-							self.identity.clone(),
-							"read",
-							ResourceType::AgentArtifact,
-							artifact_resource_id(
-								&self.scope,
-								&id,
-								artifact["artifactId"].as_str().expect("validated"),
-							),
-						);
-						crate::security::evaluate(&self.config, &action).is_ok()
-					});
-				}
-			},
-			_ => return Err(deny(&self.action, ObjectError::ResponseBinding)),
-		}
+		let context = self.context();
+		gateway_a2a::execution::process_result(result, &context, commit, self)
+	}
+}
+impl gateway_a2a::execution::ObjectAccess for AuthorizedCall {
+	type Error = ProxyError;
+	fn reject(&self, error: gateway_a2a::Error) -> ProxyError {
+		deny(&self.action, object_error(error))
+	}
+	fn stream_reject(&self, error: gateway_a2a::Error) -> ProxyError {
+		self.stream_denial(object_error(error))
+	}
+	fn finish_task(&mut self, id: &str, context: &str, state: TaskState) -> Result<(), ProxyError> {
+		self
+			.config
+			.a2a_task_store
+			.finish(
+				self.config.a2a_objects.as_ref().expect("enabled"),
+				&mut self.permit,
+				id,
+				context,
+				state,
+			)
+			.map_err(|e| deny(&self.action, e))
+	}
+	fn read_task(&self, id: &str) -> Result<(), ProxyError> {
+		let read = agent_object_for_identity(
+			&self.action.request_id,
+			self.identity.clone(),
+			"read",
+			ResourceType::AgentTask,
+			task_resource_id(&self.scope, id),
+		);
+		crate::security::evaluate(&self.config, &read).map_err(|_| ProxyError::AuthorizationFailed)?;
+		audit_object_check(&read, Ok(()), &UiSecurityAuditSink);
 		Ok(())
+	}
+	fn artifact_visible(&self, task: &str, artifact: &str) -> bool {
+		let action = agent_object_for_identity(
+			&self.action.request_id,
+			self.identity.clone(),
+			"read",
+			ResourceType::AgentArtifact,
+			artifact_resource_id(&self.scope, task, artifact),
+		);
+		crate::security::evaluate(&self.config, &action).is_ok()
 	}
 }

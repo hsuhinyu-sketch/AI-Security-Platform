@@ -1,0 +1,80 @@
+[
+  {
+    "input": {
+      "inputTokens": 17,
+      "outputTokens": 5,
+      "totalTokens": 22
+    },
+    "expected": {
+      "input_tokens": 17,
+      "output_tokens": 5
+    }
+  },
+  {
+    "input": {
+      "inputTokens": 17,
+      "outputTokens": 5,
+      "totalTokens": 22,
+      "cacheReadInputTokens": 0
+    },
+    "expected": {
+      "input_tokens": 17,
+      "output_tokens": 5,
+      "cache_read_input_tokens": 0
+    }
+  },
+  {
+    "input": {
+      "inputTokens": 17,
+      "outputTokens": 5,
+      "totalTokens": 22,
+      "cacheWriteInputTokens": 0
+    },
+    "expected": {
+      "input_tokens": 17,
+      "output_tokens": 5,
+      "cache_creation_input_tokens": 0
+    }
+  },
+  {
+    "input": {
+      "inputTokens": 17,
+      "outputTokens": 5,
+      "totalTokens": 22,
+      "cacheReadInputTokens": 3,
+      "cacheWriteInputTokens": 4
+    },
+    "expected": {
+      "input_tokens": 17,
+      "output_tokens": 5,
+      "cache_creation_input_tokens": 4,
+      "cache_read_input_tokens": 3
+    }
+  },
+  {
+    "input": {
+      "inputTokens": 0,
+      "outputTokens": 0,
+      "totalTokens": 0,
+      "cacheReadInputTokens": 0,
+      "cacheWriteInputTokens": 0
+    },
+    "expected": {
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 0
+    }
+  },
+  {
+    "input": {
+      "inputTokens": 4294967297,
+      "outputTokens": 4294967298,
+      "totalTokens": 8589934595
+    },
+    "expected": {
+      "input_tokens": 4294967297,
+      "output_tokens": 4294967298
+    }
+  }
+]

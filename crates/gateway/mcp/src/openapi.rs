@@ -1,0 +1,969 @@
+//! OpenAPI-to-MCP schema, dispatch and conversion. No network or Host policy state.
+use http::Method;
+use http::header::{
+	ACCEPT, CONTENT_LENGTH, CONTENT_TYPE, HOST, HeaderName, HeaderValue, TRANSFER_ENCODING,
+};
+use openapiv3::{OpenAPI, Parameter, ReferenceOr, RequestBody, Schema, SchemaKind, Type};
+use percent_encoding::{AsciiSet, utf8_percent_encode};
+use regex::{Captures, Regex, Replacer};
+use rmcp::model::{
+	ClientRequest, JsonObject, JsonRpcRequest, RequestId, ServerJsonRpcMessage, ServerResult, Tool,
+};
+use serde::{Deserialize, Serialize};
+use serde_json::{Value, json};
+use std::borrow::Cow;
+use std::collections::hash_map::Entry;
+use std::collections::{HashMap, HashSet};
+use std::sync::{Arc, LazyLock};
+use tracing::{debug, warn};
+
+#[derive(Clone, Serialize, Deserialize, Debug)]
+pub struct UpstreamOpenAPICall {
+	pub method: String, /* TODO: Switch to Method, but will require getting rid of Serialize/Deserialize */
+	pub path: String,
+	pub allowed_headers: HashSet<String>,
+	#[serde(default)]
+	pub content_type: Option<String>,
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum ParseError {
+	#[error("missing components")]
+	MissingComponents,
+	#[error("invalid reference: {0}")]
+	InvalidReference(String),
+	#[error("missing reference")]
+	MissingReference(String),
+	#[error("unsupported reference")]
+	UnsupportedReference(String),
+	#[error("information required: {0}")]
+	InformationRequired(String),
+	#[error("serde error: {0}")]
+	SerdeError(#[from] serde_json::Error),
+	#[error("io error: {0}")]
+	IoError(#[from] std::io::Error),
+	#[error("Invalid URL: {0}")]
+	InvalidUrl(#[from] url::ParseError),
+}
+
+pub fn get_server_prefix(server: &OpenAPI) -> Result<String, ParseError> {
+	match server.servers.len() {
+		0 => Ok("".to_string()),
+		1 => {
+			let raw = &server.servers[0].url;
+
+			let extract_path = |after_scheme: &str| -> String {
+				if let Some(path_idx) = after_scheme.find('/') {
+					let path = &after_scheme[path_idx..];
+					let path = path.split('?').next().unwrap_or(path);
+					let path = path.split('#').next().unwrap_or(path);
+					let path = path.trim_end_matches('/');
+					if path.is_empty() || path == "/" {
+						"".to_string()
+					} else {
+						path.to_string()
+					}
+				} else {
+					"".to_string()
+				}
+			};
+
+			if let Some(idx) = raw.find("://") {
+				Ok(extract_path(&raw[idx + 3..]))
+			} else if let Some(stripped) = raw.strip_prefix("//") {
+				Ok(extract_path(stripped))
+			} else {
+				// Not an absolute URL -- treat as a relative path prefix (existing behavior)
+				if let Ok(parsed) = url::Url::parse(raw) {
+					let path = parsed.path().trim_end_matches('/').to_string();
+					if path.is_empty() || path == "/" {
+						Ok("".to_string())
+					} else {
+						Ok(path)
+					}
+				} else {
+					Ok(raw.clone())
+				}
+			}
+		},
+		_ => Err(ParseError::UnsupportedReference(format!(
+			"multiple servers are not supported: {:?}",
+			server.servers
+		))),
+	}
+}
+
+fn resolve_schema<'a>(
+	reference: &'a ReferenceOr<Schema>,
+	doc: &'a OpenAPI,
+) -> Result<&'a Schema, ParseError> {
+	match reference {
+		ReferenceOr::Reference { reference } => {
+			let reference = reference
+				.strip_prefix("#/components/schemas/")
+				.ok_or(ParseError::InvalidReference(reference.to_string()))?;
+			let components: &openapiv3::Components = doc
+				.components
+				.as_ref()
+				.ok_or(ParseError::MissingComponents)?;
+			let schema = components
+				.schemas
+				.get(reference)
+				.ok_or(ParseError::MissingReference(reference.to_string()))?;
+			resolve_schema(schema, doc)
+		},
+		ReferenceOr::Item(schema) => Ok(schema),
+	}
+}
+
+/// Recursively resolves all nested schema references (`$ref`) within a given schema,
+/// returning a new `Schema` object with all references replaced by their corresponding items.
+fn resolve_nested_schema<'a>(
+	reference: &'a ReferenceOr<Schema>,
+	doc: &'a OpenAPI,
+) -> Result<Schema, ParseError> {
+	// 1. Resolve the initial reference to get the base Schema object (immutable borrow)
+	let base_schema = resolve_schema(reference, doc)?;
+
+	// 2. Clone the base schema to create a mutable owned version we can modify
+	let mut resolved_schema = base_schema.clone();
+
+	// 3. Match on the kind and recursively resolve + update the mutable clone
+	match &mut resolved_schema.schema_kind {
+		SchemaKind::Type(Type::Object(obj)) => {
+			for prop_ref_box in obj.properties.values_mut() {
+				let owned_prop_ref_or_box = prop_ref_box.clone();
+				let temp_prop_ref = match owned_prop_ref_or_box {
+					ReferenceOr::Reference { reference } => ReferenceOr::Reference { reference },
+					ReferenceOr::Item(boxed_item) => ReferenceOr::Item((*boxed_item).clone()),
+				};
+				let resolved_prop = resolve_nested_schema(&temp_prop_ref, doc)?;
+				*prop_ref_box = ReferenceOr::Item(Box::new(resolved_prop));
+			}
+		},
+		SchemaKind::Type(Type::Array(arr)) => {
+			if let Some(items_ref_box) = arr.items.as_mut() {
+				let owned_items_ref_or_box = items_ref_box.clone();
+				let temp_items_ref = match owned_items_ref_or_box {
+					ReferenceOr::Reference { reference } => ReferenceOr::Reference { reference },
+					ReferenceOr::Item(boxed_item) => ReferenceOr::Item((*boxed_item).clone()),
+				};
+				let resolved_items = resolve_nested_schema(&temp_items_ref, doc)?;
+				*items_ref_box = ReferenceOr::Item(Box::new(resolved_items));
+			}
+		},
+		// Handle combiners (OneOf, AllOf, AnyOf) with separate arms
+		SchemaKind::OneOf { one_of } => {
+			for ref_or_schema in one_of.iter_mut() {
+				let temp_ref = ref_or_schema.clone();
+				let resolved = resolve_nested_schema(&temp_ref, doc)?;
+				*ref_or_schema = ReferenceOr::Item(resolved);
+			}
+		},
+		SchemaKind::AllOf { all_of } => {
+			for ref_or_schema in all_of.iter_mut() {
+				let temp_ref = ref_or_schema.clone();
+				let resolved = resolve_nested_schema(&temp_ref, doc)?;
+				*ref_or_schema = ReferenceOr::Item(resolved);
+			}
+		},
+		SchemaKind::AnyOf { any_of } => {
+			for ref_or_schema in any_of.iter_mut() {
+				let temp_ref = ref_or_schema.clone();
+				let resolved = resolve_nested_schema(&temp_ref, doc)?;
+				*ref_or_schema = ReferenceOr::Item(resolved);
+			}
+		},
+		SchemaKind::Not { not } => {
+			let temp_ref = (**not).clone();
+			let resolved = resolve_nested_schema(&temp_ref, doc)?;
+			**not = ReferenceOr::Item(resolved);
+		},
+		SchemaKind::Any(any_schema) => {
+			// Properties
+			for prop_ref_box in any_schema.properties.values_mut() {
+				let owned_prop_ref_or_box = prop_ref_box.clone();
+				let temp_prop_ref = match owned_prop_ref_or_box {
+					ReferenceOr::Reference { reference } => ReferenceOr::Reference { reference },
+					ReferenceOr::Item(boxed_item) => ReferenceOr::Item((*boxed_item).clone()),
+				};
+				let resolved_prop = resolve_nested_schema(&temp_prop_ref, doc)?;
+				*prop_ref_box = ReferenceOr::Item(Box::new(resolved_prop));
+			}
+			// Items
+			if let Some(items_ref_box) = any_schema.items.as_mut() {
+				let owned_items_ref_or_box = items_ref_box.clone();
+				let temp_items_ref = match owned_items_ref_or_box {
+					ReferenceOr::Reference { reference } => ReferenceOr::Reference { reference },
+					ReferenceOr::Item(boxed_item) => ReferenceOr::Item((*boxed_item).clone()),
+				};
+				let resolved_items = resolve_nested_schema(&temp_items_ref, doc)?;
+				*items_ref_box = ReferenceOr::Item(Box::new(resolved_items));
+			}
+			// oneOf, allOf, anyOf
+			for vec_ref in [
+				&mut any_schema.one_of,
+				&mut any_schema.all_of,
+				&mut any_schema.any_of,
+			] {
+				for ref_or_schema in vec_ref.iter_mut() {
+					let temp_ref = ref_or_schema.clone();
+					let resolved = resolve_nested_schema(&temp_ref, doc)?;
+					*ref_or_schema = ReferenceOr::Item(resolved);
+				}
+			}
+			// not
+			if let Some(not_box) = any_schema.not.as_mut() {
+				let temp_ref = (**not_box).clone();
+				let resolved = resolve_nested_schema(&temp_ref, doc)?;
+				**not_box = ReferenceOr::Item(resolved);
+			}
+		},
+		// Base types (String, Number, Integer, Boolean) - no nested schemas to resolve further
+		SchemaKind::Type(_) => {}, // Do nothing, already resolved.
+	}
+
+	// 4. Return the modified owned schema
+	Ok(resolved_schema)
+}
+
+fn resolve_parameter<'a>(
+	reference: &'a ReferenceOr<Parameter>,
+	doc: &'a OpenAPI,
+) -> Result<&'a Parameter, ParseError> {
+	match reference {
+		ReferenceOr::Reference { reference } => {
+			let reference = reference
+				.strip_prefix("#/components/parameters/")
+				.ok_or(ParseError::MissingReference(reference.to_string()))?;
+			let components: &openapiv3::Components = doc
+				.components
+				.as_ref()
+				.ok_or(ParseError::MissingComponents)?;
+			let parameter = components
+				.parameters
+				.get(reference)
+				.ok_or(ParseError::MissingReference(reference.to_string()))?;
+			resolve_parameter(parameter, doc)
+		},
+		ReferenceOr::Item(parameter) => Ok(parameter),
+	}
+}
+
+fn resolve_request_body<'a>(
+	reference: &'a ReferenceOr<RequestBody>,
+	doc: &'a OpenAPI,
+) -> Result<&'a RequestBody, ParseError> {
+	match reference {
+		ReferenceOr::Reference { reference } => {
+			let reference = reference
+				.strip_prefix("#/components/requestBodies/")
+				.ok_or(ParseError::MissingReference(reference.to_string()))?;
+			let components: &openapiv3::Components = doc
+				.components
+				.as_ref()
+				.ok_or(ParseError::MissingComponents)?;
+			let request_body = components
+				.request_bodies
+				.get(reference)
+				.ok_or(ParseError::MissingReference(reference.to_string()))?;
+			resolve_request_body(request_body, doc)
+		},
+		ReferenceOr::Item(request_body) => Ok(request_body),
+	}
+}
+
+fn parameter_type(parameter: &Parameter) -> Result<ParameterType, ParseError> {
+	match parameter {
+		Parameter::Header { .. } => Ok(ParameterType::Header),
+		Parameter::Query { .. } => Ok(ParameterType::Query),
+		Parameter::Path { .. } => Ok(ParameterType::Path),
+		_ => Err(ParseError::UnsupportedReference(
+			"parameter type COOKIE is not supported".to_string(),
+		)),
+	}
+}
+
+fn parameter_merge_name(parameter: &Parameter) -> String {
+	let name = &parameter.parameter_data_ref().name;
+	match parameter {
+		Parameter::Header { .. } => name.to_ascii_lowercase(),
+		_ => name.clone(),
+	}
+}
+
+/// We need to rework this and I don't want to forget.
+///
+/// We need to be able to handle data which can end up in multiple destinations:
+/// 1. Headers
+/// 2. Body
+/// 3. Query Params
+/// 4. Templated Path Params
+///
+/// To support this we should create a nested JSON schema which has each of them.
+/// That way the client code can properly separate the objects passed by the client.
+pub fn parse_openapi_schema(
+	open_api: &OpenAPI,
+) -> Result<Vec<(Tool, UpstreamOpenAPICall)>, ParseError> {
+	let tool_defs: Result<Vec<_>, _> = open_api
+		.paths
+		.iter()
+		.map(
+			|(path, path_info)| -> Result<Vec<(Tool, UpstreamOpenAPICall)>, ParseError> {
+				let item = path_info
+					.as_item()
+					.ok_or(ParseError::UnsupportedReference(path.to_string()))?;
+				let items: Result<Vec<_>, _> = item
+					.iter()
+					.map(
+						|(method, op)| -> Result<(Tool, UpstreamOpenAPICall), ParseError> {
+							let name = op
+								.operation_id
+								.clone()
+								.ok_or(ParseError::InformationRequired(format!(
+									"operation_id is required for {path}"
+								)))?;
+
+							// Build the schema
+							let mut final_schema = JsonSchema::default();
+
+							let mut request_content_type: Option<String> = None;
+							let body: Option<(String, serde_json::Value, bool)> = match op.request_body.as_ref() {
+								Some(body) => {
+									let body = resolve_request_body(body, open_api)?;
+									if let Some(media_type) = body.content.get("application/json") {
+										let schema_ref = media_type
+											.schema
+											.as_ref()
+											.ok_or(ParseError::MissingReference("application/json".to_string()))?;
+										let schema = resolve_nested_schema(schema_ref, open_api)?;
+										let body_schema =
+											serde_json::to_value(schema).map_err(ParseError::SerdeError)?;
+										final_schema
+											.properties
+											.insert(BODY_NAME.to_owned(), body_schema.clone());
+										Some((BODY_NAME.to_owned(), body_schema, body.required))
+									} else if body.content.contains_key("application/octet-stream") {
+										request_content_type = Some("application/octet-stream".to_string());
+										let body_schema = json!({
+											"type": "string",
+											"format": "byte",
+											"description": "Base64-encoded binary content"
+										});
+										final_schema
+											.properties
+											.insert(BODY_NAME.to_owned(), body_schema.clone());
+										Some((BODY_NAME.to_owned(), body_schema, body.required))
+									} else {
+										None
+									}
+								},
+								None => None,
+							};
+
+							if let Some((name, schema, required)) = body {
+								if required {
+									final_schema.required.push(name.clone());
+								}
+								final_schema.properties.insert(name.clone(), schema.clone());
+							}
+
+							let mut parameters: Vec<&Parameter> = Vec::new();
+							let mut parameter_indexes: HashMap<(String, ParameterType), usize> = HashMap::new();
+							for parameter_ref in item.parameters.iter() {
+								let parameter = resolve_parameter(parameter_ref, open_api)?;
+								let Ok(param_type) = parameter_type(parameter) else {
+									continue;
+								};
+								let key = (parameter_merge_name(parameter), param_type);
+								match parameter_indexes.entry(key) {
+									Entry::Occupied(e) => parameters[*e.get()] = parameter,
+									Entry::Vacant(e) => {
+										e.insert(parameters.len());
+										parameters.push(parameter);
+									},
+								}
+							}
+							for parameter_ref in op.parameters.iter() {
+								let parameter = resolve_parameter(parameter_ref, open_api)?;
+								let key = (parameter_merge_name(parameter), parameter_type(parameter)?);
+								match parameter_indexes.entry(key) {
+									Entry::Occupied(e) => parameters[*e.get()] = parameter,
+									Entry::Vacant(e) => {
+										e.insert(parameters.len());
+										parameters.push(parameter);
+									},
+								}
+							}
+
+							let mut param_schemas: HashMap<ParameterType, Vec<(String, JsonObject, bool)>> =
+								HashMap::new();
+							parameters
+								.iter()
+								.try_for_each(|parameter| -> Result<(), ParseError> {
+									let (name, schema, required) = build_schema_property(open_api, parameter)?;
+									param_schemas
+										.entry(parameter_type(parameter)?)
+										.or_insert_with(Vec::new)
+										.push((name, schema, required));
+									Ok(())
+								})?;
+
+							// Extract allowed header names before consuming param_schemas
+							let allowed_headers: HashSet<String> = param_schemas
+								.get(&ParameterType::Header)
+								.map(|headers| headers.iter().map(|(name, _, _)| name.clone()).collect())
+								.unwrap_or_default();
+
+							for (param_type, props) in param_schemas {
+								let sub_schema = JsonSchema {
+									required: props
+										.iter()
+										.flat_map(|(name, _, req)| if *req { Some(name.clone()) } else { None })
+										.collect(),
+									properties: props
+										.iter()
+										.map(|(name, s, _)| (name.clone(), json!(s)))
+										.collect(),
+									..Default::default()
+								};
+
+								if !sub_schema.required.is_empty() {
+									final_schema.required.push(param_type.to_string());
+								}
+								final_schema
+									.properties
+									.insert(param_type.to_string(), json!(sub_schema));
+							}
+
+							let final_json =
+								serde_json::to_value(final_schema).map_err(ParseError::SerdeError)?;
+							let final_json = final_json
+								.as_object()
+								.ok_or(ParseError::UnsupportedReference(
+									"final schema is not an object".to_string(),
+								))?
+								.clone();
+							let tool = Tool::new_with_raw(
+								Cow::Owned(name.clone()),
+								Some(Cow::Owned(
+									op.description
+										.as_ref()
+										.unwrap_or_else(|| op.summary.as_ref().unwrap_or(&name))
+										.to_string(),
+								)),
+								Arc::new(final_json),
+							);
+							let upstream = UpstreamOpenAPICall {
+								// method: Method::from_bytes(method.as_ref()).expect("todo"),
+								method: method.to_string(),
+								path: path.clone(),
+								allowed_headers,
+								content_type: request_content_type,
+							};
+							Ok((tool, upstream))
+						},
+					)
+					.collect();
+				// Rust has a hard time with this...
+				let items = items?;
+				Ok(items)
+			},
+		)
+		.collect();
+
+	match tool_defs {
+		Ok(tool_defs) => Ok(tool_defs.into_iter().flatten().collect()),
+		Err(e) => Err(e),
+	}
+}
+
+// Used to index the parameter types for the schema
+pub const BODY_NAME: &str = "body";
+pub const HEADER_NAME: &str = "header";
+pub const QUERY_NAME: &str = "query";
+pub const PATH_NAME: &str = "path";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+enum ParameterType {
+	Header,
+	Query,
+	Path,
+}
+
+impl std::fmt::Display for ParameterType {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		write!(
+			f,
+			"{}",
+			match self {
+				ParameterType::Header => "header",
+				ParameterType::Query => "query",
+				ParameterType::Path => "path",
+			}
+		)
+	}
+}
+
+fn build_schema_property(
+	open_api: &OpenAPI,
+	item: &Parameter,
+) -> Result<(String, JsonObject, bool), ParseError> {
+	let p = item.parameter_data_ref();
+	let mut schema = match &p.format {
+		openapiv3::ParameterSchemaOrContent::Schema(reference) => {
+			let resolved_schema = resolve_schema(reference, open_api)?;
+			serde_json::to_value(resolved_schema)
+				.map_err(ParseError::SerdeError)?
+				.as_object()
+				.ok_or(ParseError::UnsupportedReference(format!(
+					"parameter {} is not an object",
+					p.name
+				)))?
+				.clone()
+		},
+		openapiv3::ParameterSchemaOrContent::Content(content) => {
+			return Err(ParseError::UnsupportedReference(format!(
+				"content is not supported for parameters: {content:?}"
+			)));
+		},
+	};
+
+	if let Some(desc) = &p.description {
+		schema.insert("description".to_string(), json!(desc));
+	}
+
+	Ok((p.name.clone(), schema, p.required))
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct JsonSchema {
+	required: Vec<String>,
+	properties: JsonObject,
+	r#type: String,
+}
+
+impl Default for JsonSchema {
+	fn default() -> Self {
+		Self {
+			required: vec![],
+			properties: JsonObject::new(),
+			r#type: "object".to_string(),
+		}
+	}
+}
+
+/// Regex to match path template parameters like `{param_name}`.
+static PATH_PARAM_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\{([^}]+)\}").unwrap());
+
+/// Characters that are safe in path segments (RFC 3986 unreserved characters).
+/// All other characters will be percent-encoded to prevent path traversal/injection.
+const PATH_SEGMENT_SAFE: &AsciiSet = &percent_encoding::NON_ALPHANUMERIC
+	.remove(b'-')
+	.remove(b'.')
+	.remove(b'_')
+	.remove(b'~');
+
+/// Replaces path template parameters.
+struct PathParamReplacer(serde_json::Map<String, Value>);
+
+impl Replacer for PathParamReplacer {
+	fn replace_append(&mut self, caps: &Captures<'_>, dst: &mut String) {
+		let param = &caps[1];
+		match self.0.get(param) {
+			Some(Value::Number(n_val)) => return dst.push_str(&n_val.to_string()),
+			Some(Value::String(s_val)) => {
+				return dst.extend(utf8_percent_encode(s_val, PATH_SEGMENT_SAFE));
+			},
+			Some(unexpected) => warn!(
+				"Unexpected parameter '{param}' (value: {:?}), leaving path param",
+				unexpected
+			),
+			_ => {},
+		};
+		// fallback to use path parm
+		dst.push_str(&caps[0]);
+	}
+}
+
+/// Normalizes URL path construction to avoid double slashes
+/// Ensures exactly one slash between prefix and path components
+fn normalize_url_path(prefix: &str, path: &str) -> String {
+	let prefix = prefix.trim_end_matches('/');
+	let path = if path.starts_with('/') {
+		path
+	} else {
+		// If path doesn't start with '/', add one
+		&format!("/{path}")
+	};
+
+	if prefix.is_empty() {
+		path.to_string()
+	} else {
+		format!("{prefix}{path}")
+	}
+}
+
+fn encode_query_value(value: &str) -> Cow<'_, str> {
+	Cow::from(utf8_percent_encode(
+		value,
+		percent_encoding::NON_ALPHANUMERIC,
+	))
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum DispatchError {
+	#[error("invalid method: {0}")]
+	InvalidMethod(String),
+	#[error(transparent)]
+	Conversion(#[from] anyhow::Error),
+}
+
+pub struct PreparedCall {
+	pub request: http::Request<Vec<u8>>,
+	/// Schema-approved candidate headers, applied only after trusted Host context.
+	pub headers: http::HeaderMap,
+}
+
+pub enum Dispatch {
+	Local(Option<ServerJsonRpcMessage>),
+	Call {
+		id: RequestId,
+		name: String,
+		call: PreparedCall,
+	},
+}
+
+fn tools_capabilities() -> rmcp::model::ServerCapabilities {
+	let mut capabilities = rmcp::model::ServerCapabilities::default();
+	capabilities.tools = Some(Default::default());
+	capabilities
+}
+
+fn local_response<T: Into<ServerResult>>(id: RequestId, result: T) -> Dispatch {
+	Dispatch::Local(Some(ServerJsonRpcMessage::response(result.into(), id)))
+}
+
+#[derive(Debug)]
+pub struct Adapter {
+	prefix: String,
+	tools: Vec<(Tool, UpstreamOpenAPICall)>,
+}
+
+impl Adapter {
+	pub fn new(tools: Vec<(Tool, UpstreamOpenAPICall)>, prefix: String) -> Self {
+		Self { tools, prefix }
+	}
+	pub fn dispatch(
+		&self,
+		request: JsonRpcRequest<ClientRequest>,
+		authority: &str,
+	) -> Result<Dispatch, DispatchError> {
+		use rmcp::model::*;
+		let method = request.request.method();
+		let id = request.id;
+		let res = match request.request {
+			ClientRequest::InitializeRequest(_) => {
+				local_response(id, ServerInfo::new(tools_capabilities()))
+			},
+			ClientRequest::GetPromptRequest(_) => local_response(id, GetPromptResult::new(vec![])),
+			ClientRequest::ListPromptsRequest(_) => local_response(
+				id,
+				ListPromptsResult {
+					..Default::default()
+				}
+				.with_ttl_ms(0)
+				.with_cache_scope(CacheScope::Private),
+			),
+			ClientRequest::ListResourcesRequest(_) => local_response(
+				id,
+				ListResourcesResult {
+					..Default::default()
+				}
+				.with_ttl_ms(0)
+				.with_cache_scope(CacheScope::Private),
+			),
+			ClientRequest::ListResourceTemplatesRequest(_) => local_response(
+				id,
+				ListResourceTemplatesResult {
+					..Default::default()
+				}
+				.with_ttl_ms(0)
+				.with_cache_scope(CacheScope::Private),
+			),
+			ClientRequest::DiscoverRequest(_) => local_response(
+				id,
+				DiscoverResult::new(
+					ProtocolVersion::KNOWN_VERSIONS.to_vec(),
+					tools_capabilities(),
+				)
+				.with_cache(0, CacheScope::Private),
+			),
+			ClientRequest::ListTasksRequest(_) => local_response(id, ListTasksResult::new(vec![])),
+			ClientRequest::GetTaskRequest(_) => local_response(id, GetTaskResult::new(Task::default())),
+			ClientRequest::GetTaskPayloadRequest(_) => {
+				return Err(DispatchError::InvalidMethod(method.to_string()));
+			},
+			ClientRequest::CancelTaskRequest(_) => Dispatch::Local(None),
+			ClientRequest::ReadResourceRequest(_) => local_response(id, ReadResourceResult::new(vec![])),
+			ClientRequest::PingRequest(_) => local_response(id, ServerResult::empty(())),
+			ClientRequest::SubscriptionsListenRequest(_) => {
+				let subscription_id = id.clone();
+				local_response(id, SubscriptionsListenResult::new(subscription_id))
+			},
+			ClientRequest::CustomRequest(_)
+			| ClientRequest::SetLevelRequest(_)
+			| ClientRequest::SubscribeRequest(_)
+			| ClientRequest::UnsubscribeRequest(_) => Dispatch::Local(None),
+			ClientRequest::CompleteRequest(_) => {
+				return Err(DispatchError::InvalidMethod(method.to_string()));
+			},
+			ClientRequest::CallToolRequest(ctr) => {
+				let name = ctr.params.name.to_string();
+				let call = self.prepare_call(authority, &name, ctr.params.arguments)?;
+				Dispatch::Call { id, name, call }
+			},
+			ClientRequest::ListToolsRequest(_) => local_response(
+				id,
+				ListToolsResult {
+					tools: self.tools(),
+					..Default::default()
+				}
+				.with_ttl_ms(0)
+				.with_cache_scope(CacheScope::Private),
+			),
+		};
+		Ok(res)
+	}
+	pub fn prepare_call(
+		&self,
+		authority: &str,
+		name: &str,
+		args: Option<JsonObject>,
+	) -> Result<PreparedCall, anyhow::Error> {
+		let (_tool, info) = self
+			.tools
+			.iter()
+			.find(|(t, _info)| t.name == name)
+			.ok_or_else(|| anyhow::anyhow!("tool {} not found", name))?;
+
+		let args = args.unwrap_or_default();
+
+		// --- Parameter Extraction ---
+		let path_params = args
+			.get(PATH_NAME)
+			.and_then(Value::as_object)
+			.cloned()
+			.unwrap_or_default();
+		let query_params = args
+			.get(QUERY_NAME)
+			.and_then(Value::as_object)
+			.cloned()
+			.unwrap_or_default();
+		let header_params = args
+			.get(HEADER_NAME)
+			.and_then(Value::as_object)
+			.cloned()
+			.unwrap_or_default();
+		let body_value = args.get(BODY_NAME).cloned();
+
+		// --- URL Construction ---
+		// Substitute path parameters into the path template in a single pass
+		let path = PATH_PARAM_RE.replace_all(&info.path, PathParamReplacer(path_params));
+
+		// Use normalize_url_path to avoid double slashes
+		let normalized_path = normalize_url_path(&self.prefix, &path);
+		let base_url = format!("{}://{}{}", "http", authority, normalized_path);
+
+		// --- Request Building ---
+		let method = Method::from_bytes(info.method.to_uppercase().as_bytes()).map_err(|e| {
+			anyhow::anyhow!(
+				"Invalid HTTP method '{}' for tool '{}': {}",
+				info.method,
+				name,
+				e
+			)
+		})?;
+
+		// Build query string
+		let query_string = if query_params.is_empty() {
+			String::new()
+		} else {
+			let format_pair = |param_name: &str, key: &str, v: &Value| -> Option<String> {
+				match v {
+					Value::Null => Some(key.to_string()),
+					Value::Bool(b) => Some(format!("{key}={b}")),
+					Value::Number(n) => Some(format!("{key}={n}")),
+					Value::String(s) => Some(format!("{key}={}", encode_query_value(s))),
+					_ => {
+						warn!(
+							"Query parameter '{}' for tool '{}' unsupported (value: {:?}), skipping",
+							param_name, name, v
+						);
+						None
+					},
+				}
+			};
+			query_params
+				.iter()
+				.flat_map(|(k, v)| {
+					let key = encode_query_value(k);
+					match v {
+						Value::Array(a) => a
+							.iter()
+							.filter_map(|v| format_pair(k, &key, v))
+							.collect::<Vec<_>>(),
+						_ => format_pair(k, &key, v).into_iter().collect(),
+					}
+				})
+				.fold(String::new(), |mut acc, pair| {
+					acc.push(if acc.is_empty() { '?' } else { '&' });
+					acc.push_str(&pair);
+					acc
+				})
+		};
+
+		let uri = format!("{base_url}{query_string}");
+
+		let mut rb = http::Request::builder()
+			.method(method)
+			.uri(uri)
+			.header(ACCEPT, HeaderValue::from_static("application/json"));
+
+		// Build request body
+		let body = if let Some(body_val) = body_value {
+			match info.content_type.as_deref() {
+				Some("application/octet-stream") => {
+					rb = rb.header(
+						CONTENT_TYPE,
+						HeaderValue::from_static("application/octet-stream"),
+					);
+					let s = body_val.as_str().unwrap_or_default();
+					use base64::Engine;
+					base64::engine::general_purpose::STANDARD
+						.decode(s)
+						.map_err(|e| anyhow::Error::from(e))?
+				},
+				_ => {
+					rb = rb.header(CONTENT_TYPE, HeaderValue::from_static("application/json"));
+					serde_json::to_vec(&body_val).map_err(|e| anyhow::Error::from(e))?
+				},
+			}
+		} else {
+			Vec::new()
+		};
+
+		// Build the final request
+		let request = rb
+			.body(body)
+			.map_err(|e| anyhow::anyhow!("Failed to build request: {}", e))?;
+
+		let mut candidates = http::Request::new(());
+
+		// First header set wins including headers set by ctx.apply or the gateway
+		for (key, value) in &header_params {
+			// Only allow headers defined in the OpenAPI schema
+			if !info.allowed_headers.contains(key) {
+				debug!(
+					"Ignoring header '{}' for tool '{}' not defined in schema",
+					key, name
+				);
+				continue;
+			}
+
+			if let Some(s_val) = value.as_str() {
+				match (
+					HeaderName::from_bytes(key.as_bytes()),
+					HeaderValue::from_str(s_val),
+				) {
+					(Ok(header_name), Ok(header_value)) => {
+						// Ingore if header is protected
+						if header_name == CONTENT_LENGTH
+							|| header_name == CONTENT_TYPE
+							|| header_name == TRANSFER_ENCODING
+							|| header_name == HOST
+						{
+							debug!("Ignoring protected header '{}' for tool '{}'", key, name);
+							continue;
+						}
+
+						// Don't override existing headers
+						if candidates.headers().contains_key(&header_name) {
+							debug!("Ingoring header '{}' for tool '{}' already set", key, name);
+							continue;
+						}
+
+						candidates.headers_mut().insert(header_name, header_value);
+					},
+					(Err(_), _) => warn!(
+						"Invalid header name '{}' for tool '{}', skipping",
+						key, name
+					),
+					(_, Err(_)) => warn!(
+						"Invalid header value '{}' for header '{}' in tool '{}', skipping",
+						s_val, key, name
+					),
+				}
+			} else {
+				warn!(
+					"Header parameter '{}' for tool '{}' is not a string (value: {:?}), skipping",
+					key, name, value
+				);
+			}
+		}
+
+		Ok(PreparedCall {
+			request,
+			headers: candidates.into_parts().0.headers,
+		})
+	}
+	pub fn tools(&self) -> Vec<Tool> {
+		self.tools.iter().map(|(tool, _)| tool.clone()).collect()
+	}
+}
+
+/// Merge schema headers after trusted Host headers; generated/structural headers win too.
+pub fn apply_headers(headers: &mut http::HeaderMap, candidates: http::HeaderMap) {
+	for (name, value) in candidates.iter() {
+		if !headers.contains_key(name) {
+			headers.insert(name.clone(), value.clone());
+		}
+	}
+}
+
+pub fn decode_tool_response(
+	name: &str,
+	status: http::StatusCode,
+	body: &[u8],
+) -> Result<Value, anyhow::Error> {
+	if status.is_server_error() {
+		let body = std::str::from_utf8(body)?;
+		return Err(anyhow::anyhow!(
+			"Upstream API call for tool '{}' failed with status {}: {}",
+			name,
+			status,
+			body
+		));
+	}
+	Ok(match serde_json::from_slice::<Value>(body) {
+		Ok(Value::Object(object)) => Value::Object(object),
+		Ok(Value::Null) => Value::Null,
+		Ok(data) => json!({"data":data}),
+		Err(_) => json!({"code":status.as_u16(),"message":String::from_utf8_lossy(body)}),
+	})
+}
+
+pub fn tool_response(
+	id: RequestId,
+	value: Value,
+) -> Result<ServerJsonRpcMessage, serde_json::Error> {
+	let mut result = rmcp::model::CallToolResult::success(vec![rmcp::model::ContentBlock::text(
+		serde_json::to_string(&value)?,
+	)]);
+	result.structured_content = Some(value);
+	Ok(ServerJsonRpcMessage::response(result.into(), id))
+}
+
+#[cfg(test)]
+#[path = "openapi/tests.rs"]
+mod tests;

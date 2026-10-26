@@ -1,0 +1,5498 @@
+[
+  {
+    "provider": {
+      "openAI": {}
+    },
+    "input": "Completions",
+    "model": null,
+    "expected": {
+      "supported": [
+        "completions",
+        "responses",
+        "embeddings",
+        "realtime",
+        "rerank"
+      ],
+      "native": "completions",
+      "promptGuard": true
+    }
+  },
+  {
+    "provider": {
+      "openAI": {}
+    },
+    "input": "Completions",
+    "model": "gpt",
+    "expected": {
+      "supported": [
+        "completions",
+        "responses",
+        "embeddings",
+        "realtime",
+        "rerank"
+      ],
+      "native": "completions",
+      "promptGuard": true
+    }
+  },
+  {
+    "provider": {
+      "openAI": {}
+    },
+    "input": "Completions",
+    "model": "claude-3",
+    "expected": {
+      "supported": [
+        "completions",
+        "responses",
+        "embeddings",
+        "realtime",
+        "rerank"
+      ],
+      "native": "completions",
+      "promptGuard": true
+    }
+  },
+  {
+    "provider": {
+      "openAI": {}
+    },
+    "input": "Messages",
+    "model": null,
+    "expected": {
+      "supported": [
+        "completions",
+        "responses",
+        "embeddings",
+        "realtime",
+        "rerank"
+      ],
+      "native": "completions",
+      "promptGuard": true
+    }
+  },
+  {
+    "provider": {
+      "openAI": {}
+    },
+    "input": "Messages",
+    "model": "gpt",
+    "expected": {
+      "supported": [
+        "completions",
+        "responses",
+        "embeddings",
+        "realtime",
+        "rerank"
+      ],
+      "native": "completions",
+      "promptGuard": true
+    }
+  },
+  {
+    "provider": {
+      "openAI": {}
+    },
+    "input": "Messages",
+    "model": "claude-3",
+    "expected": {
+      "supported": [
+        "completions",
+        "responses",
+        "embeddings",
+        "realtime",
+        "rerank"
+      ],
+      "native": "completions",
+      "promptGuard": true
+    }
+  },
+  {
+    "provider": {
+      "openAI": {}
+    },
+    "input": "Responses",
+    "model": null,
+    "expected": {
+      "supported": [
+        "completions",
+        "responses",
+        "embeddings",
+        "realtime",
+        "rerank"
+      ],
+      "native": "responses",
+      "promptGuard": true
+    }
+  },
+  {
+    "provider": {
+      "openAI": {}
+    },
+    "input": "Responses",
+    "model": "gpt",
+    "expected": {
+      "supported": [
+        "completions",
+        "responses",
+        "embeddings",
+        "realtime",
+        "rerank"
+      ],
+      "native": "responses",
+      "promptGuard": true
+    }
+  },
+  {
+    "provider": {
+      "openAI": {}
+    },
+    "input": "Responses",
+    "model": "claude-3",
+    "expected": {
+      "supported": [
+        "completions",
+        "responses",
+        "embeddings",
+        "realtime",
+        "rerank"
+      ],
+      "native": "responses",
+      "promptGuard": true
+    }
+  },
+  {
+    "provider": {
+      "openAI": {}
+    },
+    "input": "Embeddings",
+    "model": null,
+    "expected": {
+      "supported": [
+        "completions",
+        "responses",
+        "embeddings",
+        "realtime",
+        "rerank"
+      ],
+      "native": "embeddings",
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "openAI": {}
+    },
+    "input": "Embeddings",
+    "model": "gpt",
+    "expected": {
+      "supported": [
+        "completions",
+        "responses",
+        "embeddings",
+        "realtime",
+        "rerank"
+      ],
+      "native": "embeddings",
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "openAI": {}
+    },
+    "input": "Embeddings",
+    "model": "claude-3",
+    "expected": {
+      "supported": [
+        "completions",
+        "responses",
+        "embeddings",
+        "realtime",
+        "rerank"
+      ],
+      "native": "embeddings",
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "openAI": {}
+    },
+    "input": "Realtime",
+    "model": null,
+    "expected": {
+      "supported": [
+        "completions",
+        "responses",
+        "embeddings",
+        "realtime",
+        "rerank"
+      ],
+      "native": "realtime",
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "openAI": {}
+    },
+    "input": "Realtime",
+    "model": "gpt",
+    "expected": {
+      "supported": [
+        "completions",
+        "responses",
+        "embeddings",
+        "realtime",
+        "rerank"
+      ],
+      "native": "realtime",
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "openAI": {}
+    },
+    "input": "Realtime",
+    "model": "claude-3",
+    "expected": {
+      "supported": [
+        "completions",
+        "responses",
+        "embeddings",
+        "realtime",
+        "rerank"
+      ],
+      "native": "realtime",
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "openAI": {}
+    },
+    "input": "CountTokens",
+    "model": null,
+    "expected": {
+      "supported": [
+        "completions",
+        "responses",
+        "embeddings",
+        "realtime",
+        "rerank"
+      ],
+      "native": null,
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "openAI": {}
+    },
+    "input": "CountTokens",
+    "model": "gpt",
+    "expected": {
+      "supported": [
+        "completions",
+        "responses",
+        "embeddings",
+        "realtime",
+        "rerank"
+      ],
+      "native": null,
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "openAI": {}
+    },
+    "input": "CountTokens",
+    "model": "claude-3",
+    "expected": {
+      "supported": [
+        "completions",
+        "responses",
+        "embeddings",
+        "realtime",
+        "rerank"
+      ],
+      "native": null,
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "openAI": {}
+    },
+    "input": "Detect",
+    "model": null,
+    "expected": {
+      "supported": [
+        "completions",
+        "responses",
+        "embeddings",
+        "realtime",
+        "rerank"
+      ],
+      "native": null,
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "openAI": {}
+    },
+    "input": "Detect",
+    "model": "gpt",
+    "expected": {
+      "supported": [
+        "completions",
+        "responses",
+        "embeddings",
+        "realtime",
+        "rerank"
+      ],
+      "native": null,
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "openAI": {}
+    },
+    "input": "Detect",
+    "model": "claude-3",
+    "expected": {
+      "supported": [
+        "completions",
+        "responses",
+        "embeddings",
+        "realtime",
+        "rerank"
+      ],
+      "native": null,
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "openAI": {}
+    },
+    "input": "Rerank",
+    "model": null,
+    "expected": {
+      "supported": [
+        "completions",
+        "responses",
+        "embeddings",
+        "realtime",
+        "rerank"
+      ],
+      "native": "rerank",
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "openAI": {}
+    },
+    "input": "Rerank",
+    "model": "gpt",
+    "expected": {
+      "supported": [
+        "completions",
+        "responses",
+        "embeddings",
+        "realtime",
+        "rerank"
+      ],
+      "native": "rerank",
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "openAI": {}
+    },
+    "input": "Rerank",
+    "model": "claude-3",
+    "expected": {
+      "supported": [
+        "completions",
+        "responses",
+        "embeddings",
+        "realtime",
+        "rerank"
+      ],
+      "native": "rerank",
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "anthropic": {}
+    },
+    "input": "Completions",
+    "model": null,
+    "expected": {
+      "supported": [
+        "messages",
+        "anthropicTokenCount"
+      ],
+      "native": "messages",
+      "promptGuard": true
+    }
+  },
+  {
+    "provider": {
+      "anthropic": {}
+    },
+    "input": "Completions",
+    "model": "gpt",
+    "expected": {
+      "supported": [
+        "messages",
+        "anthropicTokenCount"
+      ],
+      "native": "messages",
+      "promptGuard": true
+    }
+  },
+  {
+    "provider": {
+      "anthropic": {}
+    },
+    "input": "Completions",
+    "model": "claude-3",
+    "expected": {
+      "supported": [
+        "messages",
+        "anthropicTokenCount"
+      ],
+      "native": "messages",
+      "promptGuard": true
+    }
+  },
+  {
+    "provider": {
+      "anthropic": {}
+    },
+    "input": "Messages",
+    "model": null,
+    "expected": {
+      "supported": [
+        "messages",
+        "anthropicTokenCount"
+      ],
+      "native": "messages",
+      "promptGuard": true
+    }
+  },
+  {
+    "provider": {
+      "anthropic": {}
+    },
+    "input": "Messages",
+    "model": "gpt",
+    "expected": {
+      "supported": [
+        "messages",
+        "anthropicTokenCount"
+      ],
+      "native": "messages",
+      "promptGuard": true
+    }
+  },
+  {
+    "provider": {
+      "anthropic": {}
+    },
+    "input": "Messages",
+    "model": "claude-3",
+    "expected": {
+      "supported": [
+        "messages",
+        "anthropicTokenCount"
+      ],
+      "native": "messages",
+      "promptGuard": true
+    }
+  },
+  {
+    "provider": {
+      "anthropic": {}
+    },
+    "input": "Responses",
+    "model": null,
+    "expected": {
+      "supported": [
+        "messages",
+        "anthropicTokenCount"
+      ],
+      "native": null,
+      "promptGuard": true
+    }
+  },
+  {
+    "provider": {
+      "anthropic": {}
+    },
+    "input": "Responses",
+    "model": "gpt",
+    "expected": {
+      "supported": [
+        "messages",
+        "anthropicTokenCount"
+      ],
+      "native": null,
+      "promptGuard": true
+    }
+  },
+  {
+    "provider": {
+      "anthropic": {}
+    },
+    "input": "Responses",
+    "model": "claude-3",
+    "expected": {
+      "supported": [
+        "messages",
+        "anthropicTokenCount"
+      ],
+      "native": null,
+      "promptGuard": true
+    }
+  },
+  {
+    "provider": {
+      "anthropic": {}
+    },
+    "input": "Embeddings",
+    "model": null,
+    "expected": {
+      "supported": [
+        "messages",
+        "anthropicTokenCount"
+      ],
+      "native": null,
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "anthropic": {}
+    },
+    "input": "Embeddings",
+    "model": "gpt",
+    "expected": {
+      "supported": [
+        "messages",
+        "anthropicTokenCount"
+      ],
+      "native": null,
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "anthropic": {}
+    },
+    "input": "Embeddings",
+    "model": "claude-3",
+    "expected": {
+      "supported": [
+        "messages",
+        "anthropicTokenCount"
+      ],
+      "native": null,
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "anthropic": {}
+    },
+    "input": "Realtime",
+    "model": null,
+    "expected": {
+      "supported": [
+        "messages",
+        "anthropicTokenCount"
+      ],
+      "native": null,
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "anthropic": {}
+    },
+    "input": "Realtime",
+    "model": "gpt",
+    "expected": {
+      "supported": [
+        "messages",
+        "anthropicTokenCount"
+      ],
+      "native": null,
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "anthropic": {}
+    },
+    "input": "Realtime",
+    "model": "claude-3",
+    "expected": {
+      "supported": [
+        "messages",
+        "anthropicTokenCount"
+      ],
+      "native": null,
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "anthropic": {}
+    },
+    "input": "CountTokens",
+    "model": null,
+    "expected": {
+      "supported": [
+        "messages",
+        "anthropicTokenCount"
+      ],
+      "native": "anthropicTokenCount",
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "anthropic": {}
+    },
+    "input": "CountTokens",
+    "model": "gpt",
+    "expected": {
+      "supported": [
+        "messages",
+        "anthropicTokenCount"
+      ],
+      "native": "anthropicTokenCount",
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "anthropic": {}
+    },
+    "input": "CountTokens",
+    "model": "claude-3",
+    "expected": {
+      "supported": [
+        "messages",
+        "anthropicTokenCount"
+      ],
+      "native": "anthropicTokenCount",
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "anthropic": {}
+    },
+    "input": "Detect",
+    "model": null,
+    "expected": {
+      "supported": [
+        "messages",
+        "anthropicTokenCount"
+      ],
+      "native": null,
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "anthropic": {}
+    },
+    "input": "Detect",
+    "model": "gpt",
+    "expected": {
+      "supported": [
+        "messages",
+        "anthropicTokenCount"
+      ],
+      "native": null,
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "anthropic": {}
+    },
+    "input": "Detect",
+    "model": "claude-3",
+    "expected": {
+      "supported": [
+        "messages",
+        "anthropicTokenCount"
+      ],
+      "native": null,
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "anthropic": {}
+    },
+    "input": "Rerank",
+    "model": null,
+    "expected": {
+      "supported": [
+        "messages",
+        "anthropicTokenCount"
+      ],
+      "native": null,
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "anthropic": {}
+    },
+    "input": "Rerank",
+    "model": "gpt",
+    "expected": {
+      "supported": [
+        "messages",
+        "anthropicTokenCount"
+      ],
+      "native": null,
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "anthropic": {}
+    },
+    "input": "Rerank",
+    "model": "claude-3",
+    "expected": {
+      "supported": [
+        "messages",
+        "anthropicTokenCount"
+      ],
+      "native": null,
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "copilot": {}
+    },
+    "input": "Completions",
+    "model": null,
+    "expected": {
+      "supported": [
+        "completions",
+        "responses",
+        "rerank"
+      ],
+      "native": "completions",
+      "promptGuard": true
+    }
+  },
+  {
+    "provider": {
+      "copilot": {}
+    },
+    "input": "Completions",
+    "model": "gpt",
+    "expected": {
+      "supported": [
+        "completions",
+        "responses",
+        "rerank"
+      ],
+      "native": "completions",
+      "promptGuard": true
+    }
+  },
+  {
+    "provider": {
+      "copilot": {}
+    },
+    "input": "Completions",
+    "model": "claude-3",
+    "expected": {
+      "supported": [
+        "completions",
+        "responses",
+        "rerank"
+      ],
+      "native": "completions",
+      "promptGuard": true
+    }
+  },
+  {
+    "provider": {
+      "copilot": {}
+    },
+    "input": "Messages",
+    "model": null,
+    "expected": {
+      "supported": [
+        "completions",
+        "responses",
+        "rerank"
+      ],
+      "native": "completions",
+      "promptGuard": true
+    }
+  },
+  {
+    "provider": {
+      "copilot": {}
+    },
+    "input": "Messages",
+    "model": "gpt",
+    "expected": {
+      "supported": [
+        "completions",
+        "responses",
+        "rerank"
+      ],
+      "native": "completions",
+      "promptGuard": true
+    }
+  },
+  {
+    "provider": {
+      "copilot": {}
+    },
+    "input": "Messages",
+    "model": "claude-3",
+    "expected": {
+      "supported": [
+        "completions",
+        "responses",
+        "rerank"
+      ],
+      "native": "completions",
+      "promptGuard": true
+    }
+  },
+  {
+    "provider": {
+      "copilot": {}
+    },
+    "input": "Responses",
+    "model": null,
+    "expected": {
+      "supported": [
+        "completions",
+        "responses",
+        "rerank"
+      ],
+      "native": "responses",
+      "promptGuard": true
+    }
+  },
+  {
+    "provider": {
+      "copilot": {}
+    },
+    "input": "Responses",
+    "model": "gpt",
+    "expected": {
+      "supported": [
+        "completions",
+        "responses",
+        "rerank"
+      ],
+      "native": "responses",
+      "promptGuard": true
+    }
+  },
+  {
+    "provider": {
+      "copilot": {}
+    },
+    "input": "Responses",
+    "model": "claude-3",
+    "expected": {
+      "supported": [
+        "completions",
+        "responses",
+        "rerank"
+      ],
+      "native": "responses",
+      "promptGuard": true
+    }
+  },
+  {
+    "provider": {
+      "copilot": {}
+    },
+    "input": "Embeddings",
+    "model": null,
+    "expected": {
+      "supported": [
+        "completions",
+        "responses",
+        "rerank"
+      ],
+      "native": null,
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "copilot": {}
+    },
+    "input": "Embeddings",
+    "model": "gpt",
+    "expected": {
+      "supported": [
+        "completions",
+        "responses",
+        "rerank"
+      ],
+      "native": null,
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "copilot": {}
+    },
+    "input": "Embeddings",
+    "model": "claude-3",
+    "expected": {
+      "supported": [
+        "completions",
+        "responses",
+        "rerank"
+      ],
+      "native": null,
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "copilot": {}
+    },
+    "input": "Realtime",
+    "model": null,
+    "expected": {
+      "supported": [
+        "completions",
+        "responses",
+        "rerank"
+      ],
+      "native": null,
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "copilot": {}
+    },
+    "input": "Realtime",
+    "model": "gpt",
+    "expected": {
+      "supported": [
+        "completions",
+        "responses",
+        "rerank"
+      ],
+      "native": null,
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "copilot": {}
+    },
+    "input": "Realtime",
+    "model": "claude-3",
+    "expected": {
+      "supported": [
+        "completions",
+        "responses",
+        "rerank"
+      ],
+      "native": null,
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "copilot": {}
+    },
+    "input": "CountTokens",
+    "model": null,
+    "expected": {
+      "supported": [
+        "completions",
+        "responses",
+        "rerank"
+      ],
+      "native": null,
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "copilot": {}
+    },
+    "input": "CountTokens",
+    "model": "gpt",
+    "expected": {
+      "supported": [
+        "completions",
+        "responses",
+        "rerank"
+      ],
+      "native": null,
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "copilot": {}
+    },
+    "input": "CountTokens",
+    "model": "claude-3",
+    "expected": {
+      "supported": [
+        "completions",
+        "responses",
+        "rerank"
+      ],
+      "native": null,
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "copilot": {}
+    },
+    "input": "Detect",
+    "model": null,
+    "expected": {
+      "supported": [
+        "completions",
+        "responses",
+        "rerank"
+      ],
+      "native": null,
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "copilot": {}
+    },
+    "input": "Detect",
+    "model": "gpt",
+    "expected": {
+      "supported": [
+        "completions",
+        "responses",
+        "rerank"
+      ],
+      "native": null,
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "copilot": {}
+    },
+    "input": "Detect",
+    "model": "claude-3",
+    "expected": {
+      "supported": [
+        "completions",
+        "responses",
+        "rerank"
+      ],
+      "native": null,
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "copilot": {}
+    },
+    "input": "Rerank",
+    "model": null,
+    "expected": {
+      "supported": [
+        "completions",
+        "responses",
+        "rerank"
+      ],
+      "native": "rerank",
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "copilot": {}
+    },
+    "input": "Rerank",
+    "model": "gpt",
+    "expected": {
+      "supported": [
+        "completions",
+        "responses",
+        "rerank"
+      ],
+      "native": "rerank",
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "copilot": {}
+    },
+    "input": "Rerank",
+    "model": "claude-3",
+    "expected": {
+      "supported": [
+        "completions",
+        "responses",
+        "rerank"
+      ],
+      "native": "rerank",
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "gemini": {}
+    },
+    "input": "Completions",
+    "model": null,
+    "expected": {
+      "supported": [
+        "completions",
+        "embeddings"
+      ],
+      "native": "completions",
+      "promptGuard": true
+    }
+  },
+  {
+    "provider": {
+      "gemini": {}
+    },
+    "input": "Completions",
+    "model": "gpt",
+    "expected": {
+      "supported": [
+        "completions",
+        "embeddings"
+      ],
+      "native": "completions",
+      "promptGuard": true
+    }
+  },
+  {
+    "provider": {
+      "gemini": {}
+    },
+    "input": "Completions",
+    "model": "claude-3",
+    "expected": {
+      "supported": [
+        "completions",
+        "embeddings"
+      ],
+      "native": "completions",
+      "promptGuard": true
+    }
+  },
+  {
+    "provider": {
+      "gemini": {}
+    },
+    "input": "Messages",
+    "model": null,
+    "expected": {
+      "supported": [
+        "completions",
+        "embeddings"
+      ],
+      "native": "completions",
+      "promptGuard": true
+    }
+  },
+  {
+    "provider": {
+      "gemini": {}
+    },
+    "input": "Messages",
+    "model": "gpt",
+    "expected": {
+      "supported": [
+        "completions",
+        "embeddings"
+      ],
+      "native": "completions",
+      "promptGuard": true
+    }
+  },
+  {
+    "provider": {
+      "gemini": {}
+    },
+    "input": "Messages",
+    "model": "claude-3",
+    "expected": {
+      "supported": [
+        "completions",
+        "embeddings"
+      ],
+      "native": "completions",
+      "promptGuard": true
+    }
+  },
+  {
+    "provider": {
+      "gemini": {}
+    },
+    "input": "Responses",
+    "model": null,
+    "expected": {
+      "supported": [
+        "completions",
+        "embeddings"
+      ],
+      "native": "completions",
+      "promptGuard": true
+    }
+  },
+  {
+    "provider": {
+      "gemini": {}
+    },
+    "input": "Responses",
+    "model": "gpt",
+    "expected": {
+      "supported": [
+        "completions",
+        "embeddings"
+      ],
+      "native": "completions",
+      "promptGuard": true
+    }
+  },
+  {
+    "provider": {
+      "gemini": {}
+    },
+    "input": "Responses",
+    "model": "claude-3",
+    "expected": {
+      "supported": [
+        "completions",
+        "embeddings"
+      ],
+      "native": "completions",
+      "promptGuard": true
+    }
+  },
+  {
+    "provider": {
+      "gemini": {}
+    },
+    "input": "Embeddings",
+    "model": null,
+    "expected": {
+      "supported": [
+        "completions",
+        "embeddings"
+      ],
+      "native": "embeddings",
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "gemini": {}
+    },
+    "input": "Embeddings",
+    "model": "gpt",
+    "expected": {
+      "supported": [
+        "completions",
+        "embeddings"
+      ],
+      "native": "embeddings",
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "gemini": {}
+    },
+    "input": "Embeddings",
+    "model": "claude-3",
+    "expected": {
+      "supported": [
+        "completions",
+        "embeddings"
+      ],
+      "native": "embeddings",
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "gemini": {}
+    },
+    "input": "Realtime",
+    "model": null,
+    "expected": {
+      "supported": [
+        "completions",
+        "embeddings"
+      ],
+      "native": null,
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "gemini": {}
+    },
+    "input": "Realtime",
+    "model": "gpt",
+    "expected": {
+      "supported": [
+        "completions",
+        "embeddings"
+      ],
+      "native": null,
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "gemini": {}
+    },
+    "input": "Realtime",
+    "model": "claude-3",
+    "expected": {
+      "supported": [
+        "completions",
+        "embeddings"
+      ],
+      "native": null,
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "gemini": {}
+    },
+    "input": "CountTokens",
+    "model": null,
+    "expected": {
+      "supported": [
+        "completions",
+        "embeddings"
+      ],
+      "native": null,
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "gemini": {}
+    },
+    "input": "CountTokens",
+    "model": "gpt",
+    "expected": {
+      "supported": [
+        "completions",
+        "embeddings"
+      ],
+      "native": null,
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "gemini": {}
+    },
+    "input": "CountTokens",
+    "model": "claude-3",
+    "expected": {
+      "supported": [
+        "completions",
+        "embeddings"
+      ],
+      "native": null,
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "gemini": {}
+    },
+    "input": "Detect",
+    "model": null,
+    "expected": {
+      "supported": [
+        "completions",
+        "embeddings"
+      ],
+      "native": null,
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "gemini": {}
+    },
+    "input": "Detect",
+    "model": "gpt",
+    "expected": {
+      "supported": [
+        "completions",
+        "embeddings"
+      ],
+      "native": null,
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "gemini": {}
+    },
+    "input": "Detect",
+    "model": "claude-3",
+    "expected": {
+      "supported": [
+        "completions",
+        "embeddings"
+      ],
+      "native": null,
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "gemini": {}
+    },
+    "input": "Rerank",
+    "model": null,
+    "expected": {
+      "supported": [
+        "completions",
+        "embeddings"
+      ],
+      "native": null,
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "gemini": {}
+    },
+    "input": "Rerank",
+    "model": "gpt",
+    "expected": {
+      "supported": [
+        "completions",
+        "embeddings"
+      ],
+      "native": null,
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "gemini": {}
+    },
+    "input": "Rerank",
+    "model": "claude-3",
+    "expected": {
+      "supported": [
+        "completions",
+        "embeddings"
+      ],
+      "native": null,
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "bedrock": {
+        "region": "us-east-1"
+      }
+    },
+    "input": "Completions",
+    "model": null,
+    "expected": {
+      "supported": [
+        "completions",
+        "messages",
+        "responses",
+        "embeddings",
+        "rerank"
+      ],
+      "native": "completions",
+      "promptGuard": true
+    }
+  },
+  {
+    "provider": {
+      "bedrock": {
+        "region": "us-east-1"
+      }
+    },
+    "input": "Completions",
+    "model": "gpt",
+    "expected": {
+      "supported": [
+        "completions",
+        "messages",
+        "responses",
+        "embeddings",
+        "rerank"
+      ],
+      "native": "completions",
+      "promptGuard": true
+    }
+  },
+  {
+    "provider": {
+      "bedrock": {
+        "region": "us-east-1"
+      }
+    },
+    "input": "Completions",
+    "model": "claude-3",
+    "expected": {
+      "supported": [
+        "completions",
+        "messages",
+        "responses",
+        "embeddings",
+        "rerank"
+      ],
+      "native": "completions",
+      "promptGuard": true
+    }
+  },
+  {
+    "provider": {
+      "bedrock": {
+        "region": "us-east-1"
+      }
+    },
+    "input": "Messages",
+    "model": null,
+    "expected": {
+      "supported": [
+        "completions",
+        "messages",
+        "responses",
+        "embeddings",
+        "rerank"
+      ],
+      "native": "messages",
+      "promptGuard": true
+    }
+  },
+  {
+    "provider": {
+      "bedrock": {
+        "region": "us-east-1"
+      }
+    },
+    "input": "Messages",
+    "model": "gpt",
+    "expected": {
+      "supported": [
+        "completions",
+        "messages",
+        "responses",
+        "embeddings",
+        "rerank"
+      ],
+      "native": "messages",
+      "promptGuard": true
+    }
+  },
+  {
+    "provider": {
+      "bedrock": {
+        "region": "us-east-1"
+      }
+    },
+    "input": "Messages",
+    "model": "claude-3",
+    "expected": {
+      "supported": [
+        "completions",
+        "messages",
+        "responses",
+        "embeddings",
+        "rerank"
+      ],
+      "native": "messages",
+      "promptGuard": true
+    }
+  },
+  {
+    "provider": {
+      "bedrock": {
+        "region": "us-east-1"
+      }
+    },
+    "input": "Responses",
+    "model": null,
+    "expected": {
+      "supported": [
+        "completions",
+        "messages",
+        "responses",
+        "embeddings",
+        "rerank"
+      ],
+      "native": "responses",
+      "promptGuard": true
+    }
+  },
+  {
+    "provider": {
+      "bedrock": {
+        "region": "us-east-1"
+      }
+    },
+    "input": "Responses",
+    "model": "gpt",
+    "expected": {
+      "supported": [
+        "completions",
+        "messages",
+        "responses",
+        "embeddings",
+        "rerank"
+      ],
+      "native": "responses",
+      "promptGuard": true
+    }
+  },
+  {
+    "provider": {
+      "bedrock": {
+        "region": "us-east-1"
+      }
+    },
+    "input": "Responses",
+    "model": "claude-3",
+    "expected": {
+      "supported": [
+        "completions",
+        "messages",
+        "responses",
+        "embeddings",
+        "rerank"
+      ],
+      "native": "responses",
+      "promptGuard": true
+    }
+  },
+  {
+    "provider": {
+      "bedrock": {
+        "region": "us-east-1"
+      }
+    },
+    "input": "Embeddings",
+    "model": null,
+    "expected": {
+      "supported": [
+        "completions",
+        "messages",
+        "responses",
+        "embeddings",
+        "rerank"
+      ],
+      "native": "embeddings",
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "bedrock": {
+        "region": "us-east-1"
+      }
+    },
+    "input": "Embeddings",
+    "model": "gpt",
+    "expected": {
+      "supported": [
+        "completions",
+        "messages",
+        "responses",
+        "embeddings",
+        "rerank"
+      ],
+      "native": "embeddings",
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "bedrock": {
+        "region": "us-east-1"
+      }
+    },
+    "input": "Embeddings",
+    "model": "claude-3",
+    "expected": {
+      "supported": [
+        "completions",
+        "messages",
+        "responses",
+        "embeddings",
+        "rerank"
+      ],
+      "native": "embeddings",
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "bedrock": {
+        "region": "us-east-1"
+      }
+    },
+    "input": "Realtime",
+    "model": null,
+    "expected": {
+      "supported": [
+        "completions",
+        "messages",
+        "responses",
+        "embeddings",
+        "rerank"
+      ],
+      "native": null,
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "bedrock": {
+        "region": "us-east-1"
+      }
+    },
+    "input": "Realtime",
+    "model": "gpt",
+    "expected": {
+      "supported": [
+        "completions",
+        "messages",
+        "responses",
+        "embeddings",
+        "rerank"
+      ],
+      "native": null,
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "bedrock": {
+        "region": "us-east-1"
+      }
+    },
+    "input": "Realtime",
+    "model": "claude-3",
+    "expected": {
+      "supported": [
+        "completions",
+        "messages",
+        "responses",
+        "embeddings",
+        "rerank"
+      ],
+      "native": null,
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "bedrock": {
+        "region": "us-east-1"
+      }
+    },
+    "input": "CountTokens",
+    "model": null,
+    "expected": {
+      "supported": [
+        "completions",
+        "messages",
+        "responses",
+        "embeddings",
+        "rerank"
+      ],
+      "native": null,
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "bedrock": {
+        "region": "us-east-1"
+      }
+    },
+    "input": "CountTokens",
+    "model": "gpt",
+    "expected": {
+      "supported": [
+        "completions",
+        "messages",
+        "responses",
+        "embeddings",
+        "rerank"
+      ],
+      "native": null,
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "bedrock": {
+        "region": "us-east-1"
+      }
+    },
+    "input": "CountTokens",
+    "model": "claude-3",
+    "expected": {
+      "supported": [
+        "completions",
+        "messages",
+        "responses",
+        "embeddings",
+        "rerank"
+      ],
+      "native": null,
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "bedrock": {
+        "region": "us-east-1"
+      }
+    },
+    "input": "Detect",
+    "model": null,
+    "expected": {
+      "supported": [
+        "completions",
+        "messages",
+        "responses",
+        "embeddings",
+        "rerank"
+      ],
+      "native": null,
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "bedrock": {
+        "region": "us-east-1"
+      }
+    },
+    "input": "Detect",
+    "model": "gpt",
+    "expected": {
+      "supported": [
+        "completions",
+        "messages",
+        "responses",
+        "embeddings",
+        "rerank"
+      ],
+      "native": null,
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "bedrock": {
+        "region": "us-east-1"
+      }
+    },
+    "input": "Detect",
+    "model": "claude-3",
+    "expected": {
+      "supported": [
+        "completions",
+        "messages",
+        "responses",
+        "embeddings",
+        "rerank"
+      ],
+      "native": null,
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "bedrock": {
+        "region": "us-east-1"
+      }
+    },
+    "input": "Rerank",
+    "model": null,
+    "expected": {
+      "supported": [
+        "completions",
+        "messages",
+        "responses",
+        "embeddings",
+        "rerank"
+      ],
+      "native": "rerank",
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "bedrock": {
+        "region": "us-east-1"
+      }
+    },
+    "input": "Rerank",
+    "model": "gpt",
+    "expected": {
+      "supported": [
+        "completions",
+        "messages",
+        "responses",
+        "embeddings",
+        "rerank"
+      ],
+      "native": "rerank",
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "bedrock": {
+        "region": "us-east-1"
+      }
+    },
+    "input": "Rerank",
+    "model": "claude-3",
+    "expected": {
+      "supported": [
+        "completions",
+        "messages",
+        "responses",
+        "embeddings",
+        "rerank"
+      ],
+      "native": "rerank",
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "vertex": {
+        "projectId": "p"
+      }
+    },
+    "input": "Completions",
+    "model": null,
+    "expected": {
+      "supported": [
+        "completions",
+        "embeddings",
+        "rerank"
+      ],
+      "native": "completions",
+      "promptGuard": true
+    }
+  },
+  {
+    "provider": {
+      "vertex": {
+        "projectId": "p"
+      }
+    },
+    "input": "Completions",
+    "model": "gpt",
+    "expected": {
+      "supported": [
+        "completions",
+        "embeddings",
+        "rerank"
+      ],
+      "native": "completions",
+      "promptGuard": true
+    }
+  },
+  {
+    "provider": {
+      "vertex": {
+        "projectId": "p"
+      }
+    },
+    "input": "Completions",
+    "model": "claude-3",
+    "expected": {
+      "supported": [
+        "messages",
+        "anthropicTokenCount",
+        "embeddings",
+        "rerank"
+      ],
+      "native": "messages",
+      "promptGuard": true
+    }
+  },
+  {
+    "provider": {
+      "vertex": {
+        "projectId": "p"
+      }
+    },
+    "input": "Messages",
+    "model": null,
+    "expected": {
+      "supported": [
+        "completions",
+        "embeddings",
+        "rerank"
+      ],
+      "native": "completions",
+      "promptGuard": true
+    }
+  },
+  {
+    "provider": {
+      "vertex": {
+        "projectId": "p"
+      }
+    },
+    "input": "Messages",
+    "model": "gpt",
+    "expected": {
+      "supported": [
+        "completions",
+        "embeddings",
+        "rerank"
+      ],
+      "native": "completions",
+      "promptGuard": true
+    }
+  },
+  {
+    "provider": {
+      "vertex": {
+        "projectId": "p"
+      }
+    },
+    "input": "Messages",
+    "model": "claude-3",
+    "expected": {
+      "supported": [
+        "messages",
+        "anthropicTokenCount",
+        "embeddings",
+        "rerank"
+      ],
+      "native": "messages",
+      "promptGuard": true
+    }
+  },
+  {
+    "provider": {
+      "vertex": {
+        "projectId": "p"
+      }
+    },
+    "input": "Responses",
+    "model": null,
+    "expected": {
+      "supported": [
+        "completions",
+        "embeddings",
+        "rerank"
+      ],
+      "native": null,
+      "promptGuard": true
+    }
+  },
+  {
+    "provider": {
+      "vertex": {
+        "projectId": "p"
+      }
+    },
+    "input": "Responses",
+    "model": "gpt",
+    "expected": {
+      "supported": [
+        "completions",
+        "embeddings",
+        "rerank"
+      ],
+      "native": null,
+      "promptGuard": true
+    }
+  },
+  {
+    "provider": {
+      "vertex": {
+        "projectId": "p"
+      }
+    },
+    "input": "Responses",
+    "model": "claude-3",
+    "expected": {
+      "supported": [
+        "messages",
+        "anthropicTokenCount",
+        "embeddings",
+        "rerank"
+      ],
+      "native": null,
+      "promptGuard": true
+    }
+  },
+  {
+    "provider": {
+      "vertex": {
+        "projectId": "p"
+      }
+    },
+    "input": "Embeddings",
+    "model": null,
+    "expected": {
+      "supported": [
+        "completions",
+        "embeddings",
+        "rerank"
+      ],
+      "native": "embeddings",
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "vertex": {
+        "projectId": "p"
+      }
+    },
+    "input": "Embeddings",
+    "model": "gpt",
+    "expected": {
+      "supported": [
+        "completions",
+        "embeddings",
+        "rerank"
+      ],
+      "native": "embeddings",
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "vertex": {
+        "projectId": "p"
+      }
+    },
+    "input": "Embeddings",
+    "model": "claude-3",
+    "expected": {
+      "supported": [
+        "messages",
+        "anthropicTokenCount",
+        "embeddings",
+        "rerank"
+      ],
+      "native": "embeddings",
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "vertex": {
+        "projectId": "p"
+      }
+    },
+    "input": "Realtime",
+    "model": null,
+    "expected": {
+      "supported": [
+        "completions",
+        "embeddings",
+        "rerank"
+      ],
+      "native": null,
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "vertex": {
+        "projectId": "p"
+      }
+    },
+    "input": "Realtime",
+    "model": "gpt",
+    "expected": {
+      "supported": [
+        "completions",
+        "embeddings",
+        "rerank"
+      ],
+      "native": null,
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "vertex": {
+        "projectId": "p"
+      }
+    },
+    "input": "Realtime",
+    "model": "claude-3",
+    "expected": {
+      "supported": [
+        "messages",
+        "anthropicTokenCount",
+        "embeddings",
+        "rerank"
+      ],
+      "native": null,
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "vertex": {
+        "projectId": "p"
+      }
+    },
+    "input": "CountTokens",
+    "model": null,
+    "expected": {
+      "supported": [
+        "completions",
+        "embeddings",
+        "rerank"
+      ],
+      "native": null,
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "vertex": {
+        "projectId": "p"
+      }
+    },
+    "input": "CountTokens",
+    "model": "gpt",
+    "expected": {
+      "supported": [
+        "completions",
+        "embeddings",
+        "rerank"
+      ],
+      "native": null,
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "vertex": {
+        "projectId": "p"
+      }
+    },
+    "input": "CountTokens",
+    "model": "claude-3",
+    "expected": {
+      "supported": [
+        "messages",
+        "anthropicTokenCount",
+        "embeddings",
+        "rerank"
+      ],
+      "native": "anthropicTokenCount",
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "vertex": {
+        "projectId": "p"
+      }
+    },
+    "input": "Detect",
+    "model": null,
+    "expected": {
+      "supported": [
+        "completions",
+        "embeddings",
+        "rerank"
+      ],
+      "native": null,
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "vertex": {
+        "projectId": "p"
+      }
+    },
+    "input": "Detect",
+    "model": "gpt",
+    "expected": {
+      "supported": [
+        "completions",
+        "embeddings",
+        "rerank"
+      ],
+      "native": null,
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "vertex": {
+        "projectId": "p"
+      }
+    },
+    "input": "Detect",
+    "model": "claude-3",
+    "expected": {
+      "supported": [
+        "messages",
+        "anthropicTokenCount",
+        "embeddings",
+        "rerank"
+      ],
+      "native": null,
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "vertex": {
+        "projectId": "p"
+      }
+    },
+    "input": "Rerank",
+    "model": null,
+    "expected": {
+      "supported": [
+        "completions",
+        "embeddings",
+        "rerank"
+      ],
+      "native": "rerank",
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "vertex": {
+        "projectId": "p"
+      }
+    },
+    "input": "Rerank",
+    "model": "gpt",
+    "expected": {
+      "supported": [
+        "completions",
+        "embeddings",
+        "rerank"
+      ],
+      "native": "rerank",
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "vertex": {
+        "projectId": "p"
+      }
+    },
+    "input": "Rerank",
+    "model": "claude-3",
+    "expected": {
+      "supported": [
+        "messages",
+        "anthropicTokenCount",
+        "embeddings",
+        "rerank"
+      ],
+      "native": "rerank",
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "vertex": {
+        "projectId": "p",
+        "model": "claude-3"
+      }
+    },
+    "input": "Completions",
+    "model": null,
+    "expected": {
+      "supported": [
+        "messages",
+        "anthropicTokenCount",
+        "embeddings",
+        "rerank"
+      ],
+      "native": "messages",
+      "promptGuard": true
+    }
+  },
+  {
+    "provider": {
+      "vertex": {
+        "projectId": "p",
+        "model": "claude-3"
+      }
+    },
+    "input": "Completions",
+    "model": "gpt",
+    "expected": {
+      "supported": [
+        "messages",
+        "anthropicTokenCount",
+        "embeddings",
+        "rerank"
+      ],
+      "native": "messages",
+      "promptGuard": true
+    }
+  },
+  {
+    "provider": {
+      "vertex": {
+        "projectId": "p",
+        "model": "claude-3"
+      }
+    },
+    "input": "Completions",
+    "model": "claude-3",
+    "expected": {
+      "supported": [
+        "messages",
+        "anthropicTokenCount",
+        "embeddings",
+        "rerank"
+      ],
+      "native": "messages",
+      "promptGuard": true
+    }
+  },
+  {
+    "provider": {
+      "vertex": {
+        "projectId": "p",
+        "model": "claude-3"
+      }
+    },
+    "input": "Messages",
+    "model": null,
+    "expected": {
+      "supported": [
+        "messages",
+        "anthropicTokenCount",
+        "embeddings",
+        "rerank"
+      ],
+      "native": "messages",
+      "promptGuard": true
+    }
+  },
+  {
+    "provider": {
+      "vertex": {
+        "projectId": "p",
+        "model": "claude-3"
+      }
+    },
+    "input": "Messages",
+    "model": "gpt",
+    "expected": {
+      "supported": [
+        "messages",
+        "anthropicTokenCount",
+        "embeddings",
+        "rerank"
+      ],
+      "native": "messages",
+      "promptGuard": true
+    }
+  },
+  {
+    "provider": {
+      "vertex": {
+        "projectId": "p",
+        "model": "claude-3"
+      }
+    },
+    "input": "Messages",
+    "model": "claude-3",
+    "expected": {
+      "supported": [
+        "messages",
+        "anthropicTokenCount",
+        "embeddings",
+        "rerank"
+      ],
+      "native": "messages",
+      "promptGuard": true
+    }
+  },
+  {
+    "provider": {
+      "vertex": {
+        "projectId": "p",
+        "model": "claude-3"
+      }
+    },
+    "input": "Responses",
+    "model": null,
+    "expected": {
+      "supported": [
+        "messages",
+        "anthropicTokenCount",
+        "embeddings",
+        "rerank"
+      ],
+      "native": null,
+      "promptGuard": true
+    }
+  },
+  {
+    "provider": {
+      "vertex": {
+        "projectId": "p",
+        "model": "claude-3"
+      }
+    },
+    "input": "Responses",
+    "model": "gpt",
+    "expected": {
+      "supported": [
+        "messages",
+        "anthropicTokenCount",
+        "embeddings",
+        "rerank"
+      ],
+      "native": null,
+      "promptGuard": true
+    }
+  },
+  {
+    "provider": {
+      "vertex": {
+        "projectId": "p",
+        "model": "claude-3"
+      }
+    },
+    "input": "Responses",
+    "model": "claude-3",
+    "expected": {
+      "supported": [
+        "messages",
+        "anthropicTokenCount",
+        "embeddings",
+        "rerank"
+      ],
+      "native": null,
+      "promptGuard": true
+    }
+  },
+  {
+    "provider": {
+      "vertex": {
+        "projectId": "p",
+        "model": "claude-3"
+      }
+    },
+    "input": "Embeddings",
+    "model": null,
+    "expected": {
+      "supported": [
+        "messages",
+        "anthropicTokenCount",
+        "embeddings",
+        "rerank"
+      ],
+      "native": "embeddings",
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "vertex": {
+        "projectId": "p",
+        "model": "claude-3"
+      }
+    },
+    "input": "Embeddings",
+    "model": "gpt",
+    "expected": {
+      "supported": [
+        "messages",
+        "anthropicTokenCount",
+        "embeddings",
+        "rerank"
+      ],
+      "native": "embeddings",
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "vertex": {
+        "projectId": "p",
+        "model": "claude-3"
+      }
+    },
+    "input": "Embeddings",
+    "model": "claude-3",
+    "expected": {
+      "supported": [
+        "messages",
+        "anthropicTokenCount",
+        "embeddings",
+        "rerank"
+      ],
+      "native": "embeddings",
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "vertex": {
+        "projectId": "p",
+        "model": "claude-3"
+      }
+    },
+    "input": "Realtime",
+    "model": null,
+    "expected": {
+      "supported": [
+        "messages",
+        "anthropicTokenCount",
+        "embeddings",
+        "rerank"
+      ],
+      "native": null,
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "vertex": {
+        "projectId": "p",
+        "model": "claude-3"
+      }
+    },
+    "input": "Realtime",
+    "model": "gpt",
+    "expected": {
+      "supported": [
+        "messages",
+        "anthropicTokenCount",
+        "embeddings",
+        "rerank"
+      ],
+      "native": null,
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "vertex": {
+        "projectId": "p",
+        "model": "claude-3"
+      }
+    },
+    "input": "Realtime",
+    "model": "claude-3",
+    "expected": {
+      "supported": [
+        "messages",
+        "anthropicTokenCount",
+        "embeddings",
+        "rerank"
+      ],
+      "native": null,
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "vertex": {
+        "projectId": "p",
+        "model": "claude-3"
+      }
+    },
+    "input": "CountTokens",
+    "model": null,
+    "expected": {
+      "supported": [
+        "messages",
+        "anthropicTokenCount",
+        "embeddings",
+        "rerank"
+      ],
+      "native": "anthropicTokenCount",
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "vertex": {
+        "projectId": "p",
+        "model": "claude-3"
+      }
+    },
+    "input": "CountTokens",
+    "model": "gpt",
+    "expected": {
+      "supported": [
+        "messages",
+        "anthropicTokenCount",
+        "embeddings",
+        "rerank"
+      ],
+      "native": "anthropicTokenCount",
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "vertex": {
+        "projectId": "p",
+        "model": "claude-3"
+      }
+    },
+    "input": "CountTokens",
+    "model": "claude-3",
+    "expected": {
+      "supported": [
+        "messages",
+        "anthropicTokenCount",
+        "embeddings",
+        "rerank"
+      ],
+      "native": "anthropicTokenCount",
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "vertex": {
+        "projectId": "p",
+        "model": "claude-3"
+      }
+    },
+    "input": "Detect",
+    "model": null,
+    "expected": {
+      "supported": [
+        "messages",
+        "anthropicTokenCount",
+        "embeddings",
+        "rerank"
+      ],
+      "native": null,
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "vertex": {
+        "projectId": "p",
+        "model": "claude-3"
+      }
+    },
+    "input": "Detect",
+    "model": "gpt",
+    "expected": {
+      "supported": [
+        "messages",
+        "anthropicTokenCount",
+        "embeddings",
+        "rerank"
+      ],
+      "native": null,
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "vertex": {
+        "projectId": "p",
+        "model": "claude-3"
+      }
+    },
+    "input": "Detect",
+    "model": "claude-3",
+    "expected": {
+      "supported": [
+        "messages",
+        "anthropicTokenCount",
+        "embeddings",
+        "rerank"
+      ],
+      "native": null,
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "vertex": {
+        "projectId": "p",
+        "model": "claude-3"
+      }
+    },
+    "input": "Rerank",
+    "model": null,
+    "expected": {
+      "supported": [
+        "messages",
+        "anthropicTokenCount",
+        "embeddings",
+        "rerank"
+      ],
+      "native": "rerank",
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "vertex": {
+        "projectId": "p",
+        "model": "claude-3"
+      }
+    },
+    "input": "Rerank",
+    "model": "gpt",
+    "expected": {
+      "supported": [
+        "messages",
+        "anthropicTokenCount",
+        "embeddings",
+        "rerank"
+      ],
+      "native": "rerank",
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "vertex": {
+        "projectId": "p",
+        "model": "claude-3"
+      }
+    },
+    "input": "Rerank",
+    "model": "claude-3",
+    "expected": {
+      "supported": [
+        "messages",
+        "anthropicTokenCount",
+        "embeddings",
+        "rerank"
+      ],
+      "native": "rerank",
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "azure": {
+        "resourceName": "r",
+        "resourceType": "openAI"
+      }
+    },
+    "input": "Completions",
+    "model": null,
+    "expected": {
+      "supported": [
+        "completions",
+        "responses",
+        "embeddings",
+        "rerank"
+      ],
+      "native": "completions",
+      "promptGuard": true
+    }
+  },
+  {
+    "provider": {
+      "azure": {
+        "resourceName": "r",
+        "resourceType": "openAI"
+      }
+    },
+    "input": "Completions",
+    "model": "gpt",
+    "expected": {
+      "supported": [
+        "completions",
+        "responses",
+        "embeddings",
+        "rerank"
+      ],
+      "native": "completions",
+      "promptGuard": true
+    }
+  },
+  {
+    "provider": {
+      "azure": {
+        "resourceName": "r",
+        "resourceType": "openAI"
+      }
+    },
+    "input": "Completions",
+    "model": "claude-3",
+    "expected": {
+      "supported": [
+        "completions",
+        "responses",
+        "embeddings",
+        "rerank"
+      ],
+      "native": "completions",
+      "promptGuard": true
+    }
+  },
+  {
+    "provider": {
+      "azure": {
+        "resourceName": "r",
+        "resourceType": "openAI"
+      }
+    },
+    "input": "Messages",
+    "model": null,
+    "expected": {
+      "supported": [
+        "completions",
+        "responses",
+        "embeddings",
+        "rerank"
+      ],
+      "native": "completions",
+      "promptGuard": true
+    }
+  },
+  {
+    "provider": {
+      "azure": {
+        "resourceName": "r",
+        "resourceType": "openAI"
+      }
+    },
+    "input": "Messages",
+    "model": "gpt",
+    "expected": {
+      "supported": [
+        "completions",
+        "responses",
+        "embeddings",
+        "rerank"
+      ],
+      "native": "completions",
+      "promptGuard": true
+    }
+  },
+  {
+    "provider": {
+      "azure": {
+        "resourceName": "r",
+        "resourceType": "openAI"
+      }
+    },
+    "input": "Messages",
+    "model": "claude-3",
+    "expected": {
+      "supported": [
+        "completions",
+        "responses",
+        "embeddings",
+        "rerank"
+      ],
+      "native": "completions",
+      "promptGuard": true
+    }
+  },
+  {
+    "provider": {
+      "azure": {
+        "resourceName": "r",
+        "resourceType": "openAI"
+      }
+    },
+    "input": "Responses",
+    "model": null,
+    "expected": {
+      "supported": [
+        "completions",
+        "responses",
+        "embeddings",
+        "rerank"
+      ],
+      "native": "responses",
+      "promptGuard": true
+    }
+  },
+  {
+    "provider": {
+      "azure": {
+        "resourceName": "r",
+        "resourceType": "openAI"
+      }
+    },
+    "input": "Responses",
+    "model": "gpt",
+    "expected": {
+      "supported": [
+        "completions",
+        "responses",
+        "embeddings",
+        "rerank"
+      ],
+      "native": "responses",
+      "promptGuard": true
+    }
+  },
+  {
+    "provider": {
+      "azure": {
+        "resourceName": "r",
+        "resourceType": "openAI"
+      }
+    },
+    "input": "Responses",
+    "model": "claude-3",
+    "expected": {
+      "supported": [
+        "completions",
+        "responses",
+        "embeddings",
+        "rerank"
+      ],
+      "native": "responses",
+      "promptGuard": true
+    }
+  },
+  {
+    "provider": {
+      "azure": {
+        "resourceName": "r",
+        "resourceType": "openAI"
+      }
+    },
+    "input": "Embeddings",
+    "model": null,
+    "expected": {
+      "supported": [
+        "completions",
+        "responses",
+        "embeddings",
+        "rerank"
+      ],
+      "native": "embeddings",
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "azure": {
+        "resourceName": "r",
+        "resourceType": "openAI"
+      }
+    },
+    "input": "Embeddings",
+    "model": "gpt",
+    "expected": {
+      "supported": [
+        "completions",
+        "responses",
+        "embeddings",
+        "rerank"
+      ],
+      "native": "embeddings",
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "azure": {
+        "resourceName": "r",
+        "resourceType": "openAI"
+      }
+    },
+    "input": "Embeddings",
+    "model": "claude-3",
+    "expected": {
+      "supported": [
+        "completions",
+        "responses",
+        "embeddings",
+        "rerank"
+      ],
+      "native": "embeddings",
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "azure": {
+        "resourceName": "r",
+        "resourceType": "openAI"
+      }
+    },
+    "input": "Realtime",
+    "model": null,
+    "expected": {
+      "supported": [
+        "completions",
+        "responses",
+        "embeddings",
+        "rerank"
+      ],
+      "native": null,
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "azure": {
+        "resourceName": "r",
+        "resourceType": "openAI"
+      }
+    },
+    "input": "Realtime",
+    "model": "gpt",
+    "expected": {
+      "supported": [
+        "completions",
+        "responses",
+        "embeddings",
+        "rerank"
+      ],
+      "native": null,
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "azure": {
+        "resourceName": "r",
+        "resourceType": "openAI"
+      }
+    },
+    "input": "Realtime",
+    "model": "claude-3",
+    "expected": {
+      "supported": [
+        "completions",
+        "responses",
+        "embeddings",
+        "rerank"
+      ],
+      "native": null,
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "azure": {
+        "resourceName": "r",
+        "resourceType": "openAI"
+      }
+    },
+    "input": "CountTokens",
+    "model": null,
+    "expected": {
+      "supported": [
+        "completions",
+        "responses",
+        "embeddings",
+        "rerank"
+      ],
+      "native": null,
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "azure": {
+        "resourceName": "r",
+        "resourceType": "openAI"
+      }
+    },
+    "input": "CountTokens",
+    "model": "gpt",
+    "expected": {
+      "supported": [
+        "completions",
+        "responses",
+        "embeddings",
+        "rerank"
+      ],
+      "native": null,
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "azure": {
+        "resourceName": "r",
+        "resourceType": "openAI"
+      }
+    },
+    "input": "CountTokens",
+    "model": "claude-3",
+    "expected": {
+      "supported": [
+        "completions",
+        "responses",
+        "embeddings",
+        "rerank"
+      ],
+      "native": null,
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "azure": {
+        "resourceName": "r",
+        "resourceType": "openAI"
+      }
+    },
+    "input": "Detect",
+    "model": null,
+    "expected": {
+      "supported": [
+        "completions",
+        "responses",
+        "embeddings",
+        "rerank"
+      ],
+      "native": null,
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "azure": {
+        "resourceName": "r",
+        "resourceType": "openAI"
+      }
+    },
+    "input": "Detect",
+    "model": "gpt",
+    "expected": {
+      "supported": [
+        "completions",
+        "responses",
+        "embeddings",
+        "rerank"
+      ],
+      "native": null,
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "azure": {
+        "resourceName": "r",
+        "resourceType": "openAI"
+      }
+    },
+    "input": "Detect",
+    "model": "claude-3",
+    "expected": {
+      "supported": [
+        "completions",
+        "responses",
+        "embeddings",
+        "rerank"
+      ],
+      "native": null,
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "azure": {
+        "resourceName": "r",
+        "resourceType": "openAI"
+      }
+    },
+    "input": "Rerank",
+    "model": null,
+    "expected": {
+      "supported": [
+        "completions",
+        "responses",
+        "embeddings",
+        "rerank"
+      ],
+      "native": "rerank",
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "azure": {
+        "resourceName": "r",
+        "resourceType": "openAI"
+      }
+    },
+    "input": "Rerank",
+    "model": "gpt",
+    "expected": {
+      "supported": [
+        "completions",
+        "responses",
+        "embeddings",
+        "rerank"
+      ],
+      "native": "rerank",
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "azure": {
+        "resourceName": "r",
+        "resourceType": "openAI"
+      }
+    },
+    "input": "Rerank",
+    "model": "claude-3",
+    "expected": {
+      "supported": [
+        "completions",
+        "responses",
+        "embeddings",
+        "rerank"
+      ],
+      "native": "rerank",
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "azure": {
+        "resourceName": "r",
+        "resourceType": "foundry"
+      }
+    },
+    "input": "Completions",
+    "model": null,
+    "expected": {
+      "supported": [
+        "completions",
+        "responses",
+        "embeddings",
+        "rerank"
+      ],
+      "native": "completions",
+      "promptGuard": true
+    }
+  },
+  {
+    "provider": {
+      "azure": {
+        "resourceName": "r",
+        "resourceType": "foundry"
+      }
+    },
+    "input": "Completions",
+    "model": "gpt",
+    "expected": {
+      "supported": [
+        "completions",
+        "responses",
+        "embeddings",
+        "rerank"
+      ],
+      "native": "completions",
+      "promptGuard": true
+    }
+  },
+  {
+    "provider": {
+      "azure": {
+        "resourceName": "r",
+        "resourceType": "foundry"
+      }
+    },
+    "input": "Completions",
+    "model": "claude-3",
+    "expected": {
+      "supported": [
+        "completions",
+        "responses",
+        "embeddings",
+        "rerank",
+        "messages",
+        "anthropicTokenCount"
+      ],
+      "native": "completions",
+      "promptGuard": true
+    }
+  },
+  {
+    "provider": {
+      "azure": {
+        "resourceName": "r",
+        "resourceType": "foundry"
+      }
+    },
+    "input": "Messages",
+    "model": null,
+    "expected": {
+      "supported": [
+        "completions",
+        "responses",
+        "embeddings",
+        "rerank"
+      ],
+      "native": "completions",
+      "promptGuard": true
+    }
+  },
+  {
+    "provider": {
+      "azure": {
+        "resourceName": "r",
+        "resourceType": "foundry"
+      }
+    },
+    "input": "Messages",
+    "model": "gpt",
+    "expected": {
+      "supported": [
+        "completions",
+        "responses",
+        "embeddings",
+        "rerank"
+      ],
+      "native": "completions",
+      "promptGuard": true
+    }
+  },
+  {
+    "provider": {
+      "azure": {
+        "resourceName": "r",
+        "resourceType": "foundry"
+      }
+    },
+    "input": "Messages",
+    "model": "claude-3",
+    "expected": {
+      "supported": [
+        "completions",
+        "responses",
+        "embeddings",
+        "rerank",
+        "messages",
+        "anthropicTokenCount"
+      ],
+      "native": "messages",
+      "promptGuard": true
+    }
+  },
+  {
+    "provider": {
+      "azure": {
+        "resourceName": "r",
+        "resourceType": "foundry"
+      }
+    },
+    "input": "Responses",
+    "model": null,
+    "expected": {
+      "supported": [
+        "completions",
+        "responses",
+        "embeddings",
+        "rerank"
+      ],
+      "native": "responses",
+      "promptGuard": true
+    }
+  },
+  {
+    "provider": {
+      "azure": {
+        "resourceName": "r",
+        "resourceType": "foundry"
+      }
+    },
+    "input": "Responses",
+    "model": "gpt",
+    "expected": {
+      "supported": [
+        "completions",
+        "responses",
+        "embeddings",
+        "rerank"
+      ],
+      "native": "responses",
+      "promptGuard": true
+    }
+  },
+  {
+    "provider": {
+      "azure": {
+        "resourceName": "r",
+        "resourceType": "foundry"
+      }
+    },
+    "input": "Responses",
+    "model": "claude-3",
+    "expected": {
+      "supported": [
+        "completions",
+        "responses",
+        "embeddings",
+        "rerank",
+        "messages",
+        "anthropicTokenCount"
+      ],
+      "native": "responses",
+      "promptGuard": true
+    }
+  },
+  {
+    "provider": {
+      "azure": {
+        "resourceName": "r",
+        "resourceType": "foundry"
+      }
+    },
+    "input": "Embeddings",
+    "model": null,
+    "expected": {
+      "supported": [
+        "completions",
+        "responses",
+        "embeddings",
+        "rerank"
+      ],
+      "native": "embeddings",
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "azure": {
+        "resourceName": "r",
+        "resourceType": "foundry"
+      }
+    },
+    "input": "Embeddings",
+    "model": "gpt",
+    "expected": {
+      "supported": [
+        "completions",
+        "responses",
+        "embeddings",
+        "rerank"
+      ],
+      "native": "embeddings",
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "azure": {
+        "resourceName": "r",
+        "resourceType": "foundry"
+      }
+    },
+    "input": "Embeddings",
+    "model": "claude-3",
+    "expected": {
+      "supported": [
+        "completions",
+        "responses",
+        "embeddings",
+        "rerank",
+        "messages",
+        "anthropicTokenCount"
+      ],
+      "native": "embeddings",
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "azure": {
+        "resourceName": "r",
+        "resourceType": "foundry"
+      }
+    },
+    "input": "Realtime",
+    "model": null,
+    "expected": {
+      "supported": [
+        "completions",
+        "responses",
+        "embeddings",
+        "rerank"
+      ],
+      "native": null,
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "azure": {
+        "resourceName": "r",
+        "resourceType": "foundry"
+      }
+    },
+    "input": "Realtime",
+    "model": "gpt",
+    "expected": {
+      "supported": [
+        "completions",
+        "responses",
+        "embeddings",
+        "rerank"
+      ],
+      "native": null,
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "azure": {
+        "resourceName": "r",
+        "resourceType": "foundry"
+      }
+    },
+    "input": "Realtime",
+    "model": "claude-3",
+    "expected": {
+      "supported": [
+        "completions",
+        "responses",
+        "embeddings",
+        "rerank",
+        "messages",
+        "anthropicTokenCount"
+      ],
+      "native": null,
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "azure": {
+        "resourceName": "r",
+        "resourceType": "foundry"
+      }
+    },
+    "input": "CountTokens",
+    "model": null,
+    "expected": {
+      "supported": [
+        "completions",
+        "responses",
+        "embeddings",
+        "rerank"
+      ],
+      "native": null,
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "azure": {
+        "resourceName": "r",
+        "resourceType": "foundry"
+      }
+    },
+    "input": "CountTokens",
+    "model": "gpt",
+    "expected": {
+      "supported": [
+        "completions",
+        "responses",
+        "embeddings",
+        "rerank"
+      ],
+      "native": null,
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "azure": {
+        "resourceName": "r",
+        "resourceType": "foundry"
+      }
+    },
+    "input": "CountTokens",
+    "model": "claude-3",
+    "expected": {
+      "supported": [
+        "completions",
+        "responses",
+        "embeddings",
+        "rerank",
+        "messages",
+        "anthropicTokenCount"
+      ],
+      "native": "anthropicTokenCount",
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "azure": {
+        "resourceName": "r",
+        "resourceType": "foundry"
+      }
+    },
+    "input": "Detect",
+    "model": null,
+    "expected": {
+      "supported": [
+        "completions",
+        "responses",
+        "embeddings",
+        "rerank"
+      ],
+      "native": null,
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "azure": {
+        "resourceName": "r",
+        "resourceType": "foundry"
+      }
+    },
+    "input": "Detect",
+    "model": "gpt",
+    "expected": {
+      "supported": [
+        "completions",
+        "responses",
+        "embeddings",
+        "rerank"
+      ],
+      "native": null,
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "azure": {
+        "resourceName": "r",
+        "resourceType": "foundry"
+      }
+    },
+    "input": "Detect",
+    "model": "claude-3",
+    "expected": {
+      "supported": [
+        "completions",
+        "responses",
+        "embeddings",
+        "rerank",
+        "messages",
+        "anthropicTokenCount"
+      ],
+      "native": null,
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "azure": {
+        "resourceName": "r",
+        "resourceType": "foundry"
+      }
+    },
+    "input": "Rerank",
+    "model": null,
+    "expected": {
+      "supported": [
+        "completions",
+        "responses",
+        "embeddings",
+        "rerank"
+      ],
+      "native": "rerank",
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "azure": {
+        "resourceName": "r",
+        "resourceType": "foundry"
+      }
+    },
+    "input": "Rerank",
+    "model": "gpt",
+    "expected": {
+      "supported": [
+        "completions",
+        "responses",
+        "embeddings",
+        "rerank"
+      ],
+      "native": "rerank",
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "azure": {
+        "resourceName": "r",
+        "resourceType": "foundry"
+      }
+    },
+    "input": "Rerank",
+    "model": "claude-3",
+    "expected": {
+      "supported": [
+        "completions",
+        "responses",
+        "embeddings",
+        "rerank",
+        "messages",
+        "anthropicTokenCount"
+      ],
+      "native": "rerank",
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "custom": {
+        "formats": []
+      }
+    },
+    "input": "Completions",
+    "model": null,
+    "expected": {
+      "supported": [],
+      "native": null,
+      "promptGuard": true
+    }
+  },
+  {
+    "provider": {
+      "custom": {
+        "formats": []
+      }
+    },
+    "input": "Completions",
+    "model": "gpt",
+    "expected": {
+      "supported": [],
+      "native": null,
+      "promptGuard": true
+    }
+  },
+  {
+    "provider": {
+      "custom": {
+        "formats": []
+      }
+    },
+    "input": "Completions",
+    "model": "claude-3",
+    "expected": {
+      "supported": [],
+      "native": null,
+      "promptGuard": true
+    }
+  },
+  {
+    "provider": {
+      "custom": {
+        "formats": []
+      }
+    },
+    "input": "Messages",
+    "model": null,
+    "expected": {
+      "supported": [],
+      "native": null,
+      "promptGuard": true
+    }
+  },
+  {
+    "provider": {
+      "custom": {
+        "formats": []
+      }
+    },
+    "input": "Messages",
+    "model": "gpt",
+    "expected": {
+      "supported": [],
+      "native": null,
+      "promptGuard": true
+    }
+  },
+  {
+    "provider": {
+      "custom": {
+        "formats": []
+      }
+    },
+    "input": "Messages",
+    "model": "claude-3",
+    "expected": {
+      "supported": [],
+      "native": null,
+      "promptGuard": true
+    }
+  },
+  {
+    "provider": {
+      "custom": {
+        "formats": []
+      }
+    },
+    "input": "Responses",
+    "model": null,
+    "expected": {
+      "supported": [],
+      "native": null,
+      "promptGuard": true
+    }
+  },
+  {
+    "provider": {
+      "custom": {
+        "formats": []
+      }
+    },
+    "input": "Responses",
+    "model": "gpt",
+    "expected": {
+      "supported": [],
+      "native": null,
+      "promptGuard": true
+    }
+  },
+  {
+    "provider": {
+      "custom": {
+        "formats": []
+      }
+    },
+    "input": "Responses",
+    "model": "claude-3",
+    "expected": {
+      "supported": [],
+      "native": null,
+      "promptGuard": true
+    }
+  },
+  {
+    "provider": {
+      "custom": {
+        "formats": []
+      }
+    },
+    "input": "Embeddings",
+    "model": null,
+    "expected": {
+      "supported": [],
+      "native": null,
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "custom": {
+        "formats": []
+      }
+    },
+    "input": "Embeddings",
+    "model": "gpt",
+    "expected": {
+      "supported": [],
+      "native": null,
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "custom": {
+        "formats": []
+      }
+    },
+    "input": "Embeddings",
+    "model": "claude-3",
+    "expected": {
+      "supported": [],
+      "native": null,
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "custom": {
+        "formats": []
+      }
+    },
+    "input": "Realtime",
+    "model": null,
+    "expected": {
+      "supported": [],
+      "native": null,
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "custom": {
+        "formats": []
+      }
+    },
+    "input": "Realtime",
+    "model": "gpt",
+    "expected": {
+      "supported": [],
+      "native": null,
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "custom": {
+        "formats": []
+      }
+    },
+    "input": "Realtime",
+    "model": "claude-3",
+    "expected": {
+      "supported": [],
+      "native": null,
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "custom": {
+        "formats": []
+      }
+    },
+    "input": "CountTokens",
+    "model": null,
+    "expected": {
+      "supported": [],
+      "native": null,
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "custom": {
+        "formats": []
+      }
+    },
+    "input": "CountTokens",
+    "model": "gpt",
+    "expected": {
+      "supported": [],
+      "native": null,
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "custom": {
+        "formats": []
+      }
+    },
+    "input": "CountTokens",
+    "model": "claude-3",
+    "expected": {
+      "supported": [],
+      "native": null,
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "custom": {
+        "formats": []
+      }
+    },
+    "input": "Detect",
+    "model": null,
+    "expected": {
+      "supported": [],
+      "native": null,
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "custom": {
+        "formats": []
+      }
+    },
+    "input": "Detect",
+    "model": "gpt",
+    "expected": {
+      "supported": [],
+      "native": null,
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "custom": {
+        "formats": []
+      }
+    },
+    "input": "Detect",
+    "model": "claude-3",
+    "expected": {
+      "supported": [],
+      "native": null,
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "custom": {
+        "formats": []
+      }
+    },
+    "input": "Rerank",
+    "model": null,
+    "expected": {
+      "supported": [],
+      "native": null,
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "custom": {
+        "formats": []
+      }
+    },
+    "input": "Rerank",
+    "model": "gpt",
+    "expected": {
+      "supported": [],
+      "native": null,
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "custom": {
+        "formats": []
+      }
+    },
+    "input": "Rerank",
+    "model": "claude-3",
+    "expected": {
+      "supported": [],
+      "native": null,
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "custom": {
+        "formats": [
+          {
+            "type": "messages",
+            "path": null
+          },
+          {
+            "type": "completions",
+            "path": null
+          },
+          {
+            "type": "responses",
+            "path": null
+          }
+        ]
+      }
+    },
+    "input": "Completions",
+    "model": null,
+    "expected": {
+      "supported": [
+        "messages",
+        "completions",
+        "responses"
+      ],
+      "native": "completions",
+      "promptGuard": true
+    }
+  },
+  {
+    "provider": {
+      "custom": {
+        "formats": [
+          {
+            "type": "messages",
+            "path": null
+          },
+          {
+            "type": "completions",
+            "path": null
+          },
+          {
+            "type": "responses",
+            "path": null
+          }
+        ]
+      }
+    },
+    "input": "Completions",
+    "model": "gpt",
+    "expected": {
+      "supported": [
+        "messages",
+        "completions",
+        "responses"
+      ],
+      "native": "completions",
+      "promptGuard": true
+    }
+  },
+  {
+    "provider": {
+      "custom": {
+        "formats": [
+          {
+            "type": "messages",
+            "path": null
+          },
+          {
+            "type": "completions",
+            "path": null
+          },
+          {
+            "type": "responses",
+            "path": null
+          }
+        ]
+      }
+    },
+    "input": "Completions",
+    "model": "claude-3",
+    "expected": {
+      "supported": [
+        "messages",
+        "completions",
+        "responses"
+      ],
+      "native": "completions",
+      "promptGuard": true
+    }
+  },
+  {
+    "provider": {
+      "custom": {
+        "formats": [
+          {
+            "type": "messages",
+            "path": null
+          },
+          {
+            "type": "completions",
+            "path": null
+          },
+          {
+            "type": "responses",
+            "path": null
+          }
+        ]
+      }
+    },
+    "input": "Messages",
+    "model": null,
+    "expected": {
+      "supported": [
+        "messages",
+        "completions",
+        "responses"
+      ],
+      "native": "messages",
+      "promptGuard": true
+    }
+  },
+  {
+    "provider": {
+      "custom": {
+        "formats": [
+          {
+            "type": "messages",
+            "path": null
+          },
+          {
+            "type": "completions",
+            "path": null
+          },
+          {
+            "type": "responses",
+            "path": null
+          }
+        ]
+      }
+    },
+    "input": "Messages",
+    "model": "gpt",
+    "expected": {
+      "supported": [
+        "messages",
+        "completions",
+        "responses"
+      ],
+      "native": "messages",
+      "promptGuard": true
+    }
+  },
+  {
+    "provider": {
+      "custom": {
+        "formats": [
+          {
+            "type": "messages",
+            "path": null
+          },
+          {
+            "type": "completions",
+            "path": null
+          },
+          {
+            "type": "responses",
+            "path": null
+          }
+        ]
+      }
+    },
+    "input": "Messages",
+    "model": "claude-3",
+    "expected": {
+      "supported": [
+        "messages",
+        "completions",
+        "responses"
+      ],
+      "native": "messages",
+      "promptGuard": true
+    }
+  },
+  {
+    "provider": {
+      "custom": {
+        "formats": [
+          {
+            "type": "messages",
+            "path": null
+          },
+          {
+            "type": "completions",
+            "path": null
+          },
+          {
+            "type": "responses",
+            "path": null
+          }
+        ]
+      }
+    },
+    "input": "Responses",
+    "model": null,
+    "expected": {
+      "supported": [
+        "messages",
+        "completions",
+        "responses"
+      ],
+      "native": "responses",
+      "promptGuard": true
+    }
+  },
+  {
+    "provider": {
+      "custom": {
+        "formats": [
+          {
+            "type": "messages",
+            "path": null
+          },
+          {
+            "type": "completions",
+            "path": null
+          },
+          {
+            "type": "responses",
+            "path": null
+          }
+        ]
+      }
+    },
+    "input": "Responses",
+    "model": "gpt",
+    "expected": {
+      "supported": [
+        "messages",
+        "completions",
+        "responses"
+      ],
+      "native": "responses",
+      "promptGuard": true
+    }
+  },
+  {
+    "provider": {
+      "custom": {
+        "formats": [
+          {
+            "type": "messages",
+            "path": null
+          },
+          {
+            "type": "completions",
+            "path": null
+          },
+          {
+            "type": "responses",
+            "path": null
+          }
+        ]
+      }
+    },
+    "input": "Responses",
+    "model": "claude-3",
+    "expected": {
+      "supported": [
+        "messages",
+        "completions",
+        "responses"
+      ],
+      "native": "responses",
+      "promptGuard": true
+    }
+  },
+  {
+    "provider": {
+      "custom": {
+        "formats": [
+          {
+            "type": "messages",
+            "path": null
+          },
+          {
+            "type": "completions",
+            "path": null
+          },
+          {
+            "type": "responses",
+            "path": null
+          }
+        ]
+      }
+    },
+    "input": "Embeddings",
+    "model": null,
+    "expected": {
+      "supported": [
+        "messages",
+        "completions",
+        "responses"
+      ],
+      "native": null,
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "custom": {
+        "formats": [
+          {
+            "type": "messages",
+            "path": null
+          },
+          {
+            "type": "completions",
+            "path": null
+          },
+          {
+            "type": "responses",
+            "path": null
+          }
+        ]
+      }
+    },
+    "input": "Embeddings",
+    "model": "gpt",
+    "expected": {
+      "supported": [
+        "messages",
+        "completions",
+        "responses"
+      ],
+      "native": null,
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "custom": {
+        "formats": [
+          {
+            "type": "messages",
+            "path": null
+          },
+          {
+            "type": "completions",
+            "path": null
+          },
+          {
+            "type": "responses",
+            "path": null
+          }
+        ]
+      }
+    },
+    "input": "Embeddings",
+    "model": "claude-3",
+    "expected": {
+      "supported": [
+        "messages",
+        "completions",
+        "responses"
+      ],
+      "native": null,
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "custom": {
+        "formats": [
+          {
+            "type": "messages",
+            "path": null
+          },
+          {
+            "type": "completions",
+            "path": null
+          },
+          {
+            "type": "responses",
+            "path": null
+          }
+        ]
+      }
+    },
+    "input": "Realtime",
+    "model": null,
+    "expected": {
+      "supported": [
+        "messages",
+        "completions",
+        "responses"
+      ],
+      "native": null,
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "custom": {
+        "formats": [
+          {
+            "type": "messages",
+            "path": null
+          },
+          {
+            "type": "completions",
+            "path": null
+          },
+          {
+            "type": "responses",
+            "path": null
+          }
+        ]
+      }
+    },
+    "input": "Realtime",
+    "model": "gpt",
+    "expected": {
+      "supported": [
+        "messages",
+        "completions",
+        "responses"
+      ],
+      "native": null,
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "custom": {
+        "formats": [
+          {
+            "type": "messages",
+            "path": null
+          },
+          {
+            "type": "completions",
+            "path": null
+          },
+          {
+            "type": "responses",
+            "path": null
+          }
+        ]
+      }
+    },
+    "input": "Realtime",
+    "model": "claude-3",
+    "expected": {
+      "supported": [
+        "messages",
+        "completions",
+        "responses"
+      ],
+      "native": null,
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "custom": {
+        "formats": [
+          {
+            "type": "messages",
+            "path": null
+          },
+          {
+            "type": "completions",
+            "path": null
+          },
+          {
+            "type": "responses",
+            "path": null
+          }
+        ]
+      }
+    },
+    "input": "CountTokens",
+    "model": null,
+    "expected": {
+      "supported": [
+        "messages",
+        "completions",
+        "responses"
+      ],
+      "native": null,
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "custom": {
+        "formats": [
+          {
+            "type": "messages",
+            "path": null
+          },
+          {
+            "type": "completions",
+            "path": null
+          },
+          {
+            "type": "responses",
+            "path": null
+          }
+        ]
+      }
+    },
+    "input": "CountTokens",
+    "model": "gpt",
+    "expected": {
+      "supported": [
+        "messages",
+        "completions",
+        "responses"
+      ],
+      "native": null,
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "custom": {
+        "formats": [
+          {
+            "type": "messages",
+            "path": null
+          },
+          {
+            "type": "completions",
+            "path": null
+          },
+          {
+            "type": "responses",
+            "path": null
+          }
+        ]
+      }
+    },
+    "input": "CountTokens",
+    "model": "claude-3",
+    "expected": {
+      "supported": [
+        "messages",
+        "completions",
+        "responses"
+      ],
+      "native": null,
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "custom": {
+        "formats": [
+          {
+            "type": "messages",
+            "path": null
+          },
+          {
+            "type": "completions",
+            "path": null
+          },
+          {
+            "type": "responses",
+            "path": null
+          }
+        ]
+      }
+    },
+    "input": "Detect",
+    "model": null,
+    "expected": {
+      "supported": [
+        "messages",
+        "completions",
+        "responses"
+      ],
+      "native": null,
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "custom": {
+        "formats": [
+          {
+            "type": "messages",
+            "path": null
+          },
+          {
+            "type": "completions",
+            "path": null
+          },
+          {
+            "type": "responses",
+            "path": null
+          }
+        ]
+      }
+    },
+    "input": "Detect",
+    "model": "gpt",
+    "expected": {
+      "supported": [
+        "messages",
+        "completions",
+        "responses"
+      ],
+      "native": null,
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "custom": {
+        "formats": [
+          {
+            "type": "messages",
+            "path": null
+          },
+          {
+            "type": "completions",
+            "path": null
+          },
+          {
+            "type": "responses",
+            "path": null
+          }
+        ]
+      }
+    },
+    "input": "Detect",
+    "model": "claude-3",
+    "expected": {
+      "supported": [
+        "messages",
+        "completions",
+        "responses"
+      ],
+      "native": null,
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "custom": {
+        "formats": [
+          {
+            "type": "messages",
+            "path": null
+          },
+          {
+            "type": "completions",
+            "path": null
+          },
+          {
+            "type": "responses",
+            "path": null
+          }
+        ]
+      }
+    },
+    "input": "Rerank",
+    "model": null,
+    "expected": {
+      "supported": [
+        "messages",
+        "completions",
+        "responses"
+      ],
+      "native": null,
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "custom": {
+        "formats": [
+          {
+            "type": "messages",
+            "path": null
+          },
+          {
+            "type": "completions",
+            "path": null
+          },
+          {
+            "type": "responses",
+            "path": null
+          }
+        ]
+      }
+    },
+    "input": "Rerank",
+    "model": "gpt",
+    "expected": {
+      "supported": [
+        "messages",
+        "completions",
+        "responses"
+      ],
+      "native": null,
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "custom": {
+        "formats": [
+          {
+            "type": "messages",
+            "path": null
+          },
+          {
+            "type": "completions",
+            "path": null
+          },
+          {
+            "type": "responses",
+            "path": null
+          }
+        ]
+      }
+    },
+    "input": "Rerank",
+    "model": "claude-3",
+    "expected": {
+      "supported": [
+        "messages",
+        "completions",
+        "responses"
+      ],
+      "native": null,
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "custom": {
+        "formats": [
+          {
+            "type": "messages",
+            "path": null
+          }
+        ]
+      }
+    },
+    "input": "Completions",
+    "model": null,
+    "expected": {
+      "supported": [
+        "messages"
+      ],
+      "native": "messages",
+      "promptGuard": true
+    }
+  },
+  {
+    "provider": {
+      "custom": {
+        "formats": [
+          {
+            "type": "messages",
+            "path": null
+          }
+        ]
+      }
+    },
+    "input": "Completions",
+    "model": "gpt",
+    "expected": {
+      "supported": [
+        "messages"
+      ],
+      "native": "messages",
+      "promptGuard": true
+    }
+  },
+  {
+    "provider": {
+      "custom": {
+        "formats": [
+          {
+            "type": "messages",
+            "path": null
+          }
+        ]
+      }
+    },
+    "input": "Completions",
+    "model": "claude-3",
+    "expected": {
+      "supported": [
+        "messages"
+      ],
+      "native": "messages",
+      "promptGuard": true
+    }
+  },
+  {
+    "provider": {
+      "custom": {
+        "formats": [
+          {
+            "type": "messages",
+            "path": null
+          }
+        ]
+      }
+    },
+    "input": "Messages",
+    "model": null,
+    "expected": {
+      "supported": [
+        "messages"
+      ],
+      "native": "messages",
+      "promptGuard": true
+    }
+  },
+  {
+    "provider": {
+      "custom": {
+        "formats": [
+          {
+            "type": "messages",
+            "path": null
+          }
+        ]
+      }
+    },
+    "input": "Messages",
+    "model": "gpt",
+    "expected": {
+      "supported": [
+        "messages"
+      ],
+      "native": "messages",
+      "promptGuard": true
+    }
+  },
+  {
+    "provider": {
+      "custom": {
+        "formats": [
+          {
+            "type": "messages",
+            "path": null
+          }
+        ]
+      }
+    },
+    "input": "Messages",
+    "model": "claude-3",
+    "expected": {
+      "supported": [
+        "messages"
+      ],
+      "native": "messages",
+      "promptGuard": true
+    }
+  },
+  {
+    "provider": {
+      "custom": {
+        "formats": [
+          {
+            "type": "messages",
+            "path": null
+          }
+        ]
+      }
+    },
+    "input": "Responses",
+    "model": null,
+    "expected": {
+      "supported": [
+        "messages"
+      ],
+      "native": null,
+      "promptGuard": true
+    }
+  },
+  {
+    "provider": {
+      "custom": {
+        "formats": [
+          {
+            "type": "messages",
+            "path": null
+          }
+        ]
+      }
+    },
+    "input": "Responses",
+    "model": "gpt",
+    "expected": {
+      "supported": [
+        "messages"
+      ],
+      "native": null,
+      "promptGuard": true
+    }
+  },
+  {
+    "provider": {
+      "custom": {
+        "formats": [
+          {
+            "type": "messages",
+            "path": null
+          }
+        ]
+      }
+    },
+    "input": "Responses",
+    "model": "claude-3",
+    "expected": {
+      "supported": [
+        "messages"
+      ],
+      "native": null,
+      "promptGuard": true
+    }
+  },
+  {
+    "provider": {
+      "custom": {
+        "formats": [
+          {
+            "type": "messages",
+            "path": null
+          }
+        ]
+      }
+    },
+    "input": "Embeddings",
+    "model": null,
+    "expected": {
+      "supported": [
+        "messages"
+      ],
+      "native": null,
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "custom": {
+        "formats": [
+          {
+            "type": "messages",
+            "path": null
+          }
+        ]
+      }
+    },
+    "input": "Embeddings",
+    "model": "gpt",
+    "expected": {
+      "supported": [
+        "messages"
+      ],
+      "native": null,
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "custom": {
+        "formats": [
+          {
+            "type": "messages",
+            "path": null
+          }
+        ]
+      }
+    },
+    "input": "Embeddings",
+    "model": "claude-3",
+    "expected": {
+      "supported": [
+        "messages"
+      ],
+      "native": null,
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "custom": {
+        "formats": [
+          {
+            "type": "messages",
+            "path": null
+          }
+        ]
+      }
+    },
+    "input": "Realtime",
+    "model": null,
+    "expected": {
+      "supported": [
+        "messages"
+      ],
+      "native": null,
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "custom": {
+        "formats": [
+          {
+            "type": "messages",
+            "path": null
+          }
+        ]
+      }
+    },
+    "input": "Realtime",
+    "model": "gpt",
+    "expected": {
+      "supported": [
+        "messages"
+      ],
+      "native": null,
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "custom": {
+        "formats": [
+          {
+            "type": "messages",
+            "path": null
+          }
+        ]
+      }
+    },
+    "input": "Realtime",
+    "model": "claude-3",
+    "expected": {
+      "supported": [
+        "messages"
+      ],
+      "native": null,
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "custom": {
+        "formats": [
+          {
+            "type": "messages",
+            "path": null
+          }
+        ]
+      }
+    },
+    "input": "CountTokens",
+    "model": null,
+    "expected": {
+      "supported": [
+        "messages"
+      ],
+      "native": null,
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "custom": {
+        "formats": [
+          {
+            "type": "messages",
+            "path": null
+          }
+        ]
+      }
+    },
+    "input": "CountTokens",
+    "model": "gpt",
+    "expected": {
+      "supported": [
+        "messages"
+      ],
+      "native": null,
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "custom": {
+        "formats": [
+          {
+            "type": "messages",
+            "path": null
+          }
+        ]
+      }
+    },
+    "input": "CountTokens",
+    "model": "claude-3",
+    "expected": {
+      "supported": [
+        "messages"
+      ],
+      "native": null,
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "custom": {
+        "formats": [
+          {
+            "type": "messages",
+            "path": null
+          }
+        ]
+      }
+    },
+    "input": "Detect",
+    "model": null,
+    "expected": {
+      "supported": [
+        "messages"
+      ],
+      "native": null,
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "custom": {
+        "formats": [
+          {
+            "type": "messages",
+            "path": null
+          }
+        ]
+      }
+    },
+    "input": "Detect",
+    "model": "gpt",
+    "expected": {
+      "supported": [
+        "messages"
+      ],
+      "native": null,
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "custom": {
+        "formats": [
+          {
+            "type": "messages",
+            "path": null
+          }
+        ]
+      }
+    },
+    "input": "Detect",
+    "model": "claude-3",
+    "expected": {
+      "supported": [
+        "messages"
+      ],
+      "native": null,
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "custom": {
+        "formats": [
+          {
+            "type": "messages",
+            "path": null
+          }
+        ]
+      }
+    },
+    "input": "Rerank",
+    "model": null,
+    "expected": {
+      "supported": [
+        "messages"
+      ],
+      "native": null,
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "custom": {
+        "formats": [
+          {
+            "type": "messages",
+            "path": null
+          }
+        ]
+      }
+    },
+    "input": "Rerank",
+    "model": "gpt",
+    "expected": {
+      "supported": [
+        "messages"
+      ],
+      "native": null,
+      "promptGuard": false
+    }
+  },
+  {
+    "provider": {
+      "custom": {
+        "formats": [
+          {
+            "type": "messages",
+            "path": null
+          }
+        ]
+      }
+    },
+    "input": "Rerank",
+    "model": "claude-3",
+    "expected": {
+      "supported": [
+        "messages"
+      ],
+      "native": null,
+      "promptGuard": false
+    }
+  }
+]

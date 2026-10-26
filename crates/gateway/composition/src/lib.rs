@@ -1,8 +1,8 @@
 //! Compile-time gateway capability profiles.
 //!
 //! This crate intentionally contains no protocol implementation. It is the stable boundary
-//! between application build profiles and the gateway runtime while LLM, A2A, MCP, and routing
-//! continue their gradual extraction into standalone protocol crates.
+//! between application build profiles and the shared gateway host. Protocol implementations
+//! and security controls are selected through Cargo features.
 
 /// An independently selectable gateway or common security capability.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

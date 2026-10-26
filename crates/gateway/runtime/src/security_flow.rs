@@ -261,21 +261,27 @@ pub(crate) fn prepare(
 	result.map(Some)
 }
 
+#[cfg(feature = "gateway-rag")]
 pub(crate) struct RagIssuer {
 	pub config: Arc<SecurityConfig>,
 	pub owner: VerifiedOwner,
+	request_id: String,
 }
+#[cfg(feature = "gateway-rag")]
 pub(crate) fn rag_issuer(
 	config: Arc<SecurityConfig>,
 	claims: &crate::http::jwt::Claims,
+	request_id: String,
 ) -> Result<RagIssuer, ProxyError> {
 	let mut extensions = http::Extensions::new();
 	extensions.insert(claims.clone());
 	Ok(RagIssuer {
 		owner: owner(&extensions)?,
 		config,
+		request_id,
 	})
 }
+#[cfg(feature = "gateway-rag")]
 impl gateway_rag::http::ContextConstraintIssuer for RagIssuer {
 	fn revoke(&self, id: &str) -> Result<(), String> {
 		let policy = self
@@ -284,7 +290,7 @@ impl gateway_rag::http::ContextConstraintIssuer for RagIssuer {
 			.as_ref()
 			.ok_or("context controls unavailable")?;
 		let mut action = security_pipeline::context_assemble_for_identity(
-			uuid::Uuid::new_v4().to_string(),
+			self.request_id.clone(),
 			self.owner.identity(),
 			policy.namespace.clone(),
 		);
@@ -336,7 +342,7 @@ impl gateway_rag::http::ContextConstraintIssuer for RagIssuer {
 			)
 			.map_err(|_| "cross-component context issuance denied".to_string());
 		let action = security_pipeline::context_assemble_for_identity(
-			uuid::Uuid::new_v4().to_string(),
+			self.request_id.clone(),
 			self.owner.identity(),
 			context.corpus_id.clone(),
 		);

@@ -283,9 +283,11 @@ pub struct LoggingPolicy {
 	pub remove: Arc<FzHashSet<String>>,
 	/// OTLP log export settings.
 	#[serde(default, skip_serializing_if = "Option::is_none")]
+	#[serde(deserialize_with = "crate::telemetry::trc::deserialize_optional")]
 	pub otlp: Option<OtlpLoggingConfig>,
 	/// Database-specific access log settings.
 	#[serde(default, skip_serializing_if = "Option::is_none")]
+	#[serde(deserialize_with = "crate::telemetry::log_store::deserialize_optional")]
 	pub database: Option<DatabaseLoggingConfig>,
 	#[serde(skip)]
 	#[cfg_attr(feature = "schema", schemars(skip))]
@@ -304,6 +306,16 @@ pub struct DatabaseLoggingConfig {
 }
 
 impl LoggingPolicy {
+	pub fn validate_compiled(&self) -> anyhow::Result<()> {
+		if self.otlp.is_some() || self.access_log_policy.is_some() {
+			crate::telemetry::trc::validate_compiled()?;
+		}
+		if self.database.is_some() {
+			crate::telemetry::log_store::validate_compiled()?;
+		}
+		Ok(())
+	}
+
 	/// Initializes the shared `AccessLogPolicy` from the OTLP config, if present.
 	/// Must be called after deserialization so the `OnceCell`-backed logger is
 	/// shared across requests instead of being recreated each time.
@@ -311,6 +323,7 @@ impl LoggingPolicy {
 		if let Some(otlp_cfg) = &self.otlp {
 			self.access_log_policy = Some(Arc::new(super::agent::AccessLogPolicy {
 				config: otlp_cfg.clone(),
+				#[cfg(feature = "telemetry-otlp")]
 				logger: once_cell::sync::OnceCell::new(),
 			}));
 		}

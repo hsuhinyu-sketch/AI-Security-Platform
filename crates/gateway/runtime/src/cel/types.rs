@@ -532,15 +532,6 @@ impl<'a> VariableResolver<'a> for ExecutorResolver<'a> {
 					.and_then(|h| h.to_str().ok())
 					.map(|s| Value::String(s.into())),
 			),
-			// OptimizedExpr::HeaderLookup { request, header } if !*request => Some(
-			// 	self
-			// 		.executor
-			// 		.response
-			// 		.as_ref()
-			// 		.and_then(|r| r.headers.get(header))
-			// 		.and_then(|h| h.to_str().ok())
-			// 		.map(|s| Value::String(s.into())),
-			// ),
 			_ => None,
 		}
 	}
@@ -1349,9 +1340,19 @@ pub struct LLMContext {
 }
 
 impl LLMContext {
+	#[cfg(feature = "gateway-llm")]
 	pub fn from_llm_info(value: LLMInfo, model_catalog: Option<&llm::cost::ModelCatalog>) -> Self {
 		let projection = model_catalog.map(|catalog| catalog.project(&value));
+		Self::from_projection(value, projection)
+	}
 
+	#[cfg(feature = "gateway-llm")]
+	pub fn from_catalog(value: LLMInfo, catalog: Option<&llm::cost::CatalogReader>) -> Self {
+		let projection = catalog.map(|catalog| catalog.project(&value));
+		Self::from_projection(value, projection)
+	}
+
+	fn from_projection(value: LLMInfo, projection: Option<llm::cost::CostProjection>) -> Self {
 		let resp = value.response;
 		let mut base = LLMContext {
 			output_tokens: resp.output_tokens,
@@ -1409,6 +1410,12 @@ impl LLMContext {
 				.ok()
 				.map(Into::into);
 		}
+	}
+}
+
+impl From<LLMInfo> for LLMContext {
+	fn from(value: LLMInfo) -> Self {
+		Self::from_projection(value, None)
 	}
 }
 

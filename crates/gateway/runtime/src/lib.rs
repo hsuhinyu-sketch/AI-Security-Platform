@@ -1,3 +1,8 @@
+// The request-scoped MCP Host adapter nests generic future, stream and merge
+// types deeply enough to exceed rustc's default trait-solver depth. This does
+// not relax any Send/Sync bound; it only gives the solver more recursion room.
+#![recursion_limit = "256"]
+
 use std::collections::HashMap;
 use std::fmt::{Debug, Display};
 use std::fs::File;
@@ -23,7 +28,6 @@ use crate::types::discovery::Identity;
 pub mod a2a;
 pub mod agentcore;
 pub mod app;
-#[cfg(feature = "providers-aws")]
 pub mod aws;
 pub mod capabilities;
 pub mod cel;
@@ -40,6 +44,7 @@ pub mod management;
 pub mod mcp;
 pub mod parse;
 pub mod proxy;
+#[cfg(feature = "gateway-rag")]
 pub(crate) mod rag;
 pub mod resource_manager;
 pub mod runtime;
@@ -692,6 +697,88 @@ impl ConfigSource {
 	}
 }
 
+/// Shared network, routing and execution facilities. Protocol state is owned by the Host.
+pub struct RuntimeContext {
+	pub cfg: Arc<Config>,
+	pub stores: Stores,
+
+	pub upstream: client::Client,
+
+	pub metrics: Arc<metrics::Metrics>,
+
+	pub admin: Option<management::admin::AdminService>,
+	pub ca: Option<Arc<CaClient>>,
+
+	/// Optional vehicle guardrails. When set, request-level guardrails are
+	/// enforced in the core HTTP proxy pipeline.
+	pub guardrails: Option<Arc<dyn crate::guardrails::VehicleGuardrails>>,
+	/// Current vehicle state used by vehicle guardrails.
+	pub vehicle_state: crate::guardrails::VehicleState,
+	/// Optional circuit breaker registry. Used by guardrails to open breakers.
+	pub circuit_breakers: Option<Arc<crate::circuit::CircuitBreakerRegistry>>,
+}
+
+impl Clone for RuntimeContext {
+	fn clone(&self) -> Self {
+		Self {
+			cfg: self.cfg.clone(),
+			stores: self.stores.clone(),
+			upstream: self.upstream.clone(),
+			metrics: self.metrics.clone(),
+			admin: self.admin.clone(),
+			ca: self.ca.clone(),
+			guardrails: self.guardrails.clone(),
+			vehicle_state: self.vehicle_state.clone(),
+			circuit_breakers: self.circuit_breakers.clone(),
+		}
+	}
+}
+
+impl std::fmt::Debug for RuntimeContext {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		f.debug_struct("RuntimeContext")
+			.field("cfg", &self.cfg)
+			.field("stores", &self.stores)
+			.field("upstream", &self.upstream)
+			.field("metrics", &self.metrics)
+			.field("admin", &self.admin)
+			.field("ca", &self.ca)
+			.field(
+				"guardrails",
+				&self.guardrails.as_ref().map(|_| "dyn VehicleGuardrails"),
+			)
+			.field("vehicle_state", &self.vehicle_state)
+			.field("circuit_breakers", &self.circuit_breakers)
+			.finish()
+	}
+}
+
+/// Input accepted by constructors that previously required the embedding facade.
+pub trait IntoRuntimeContext {
+	fn into_runtime_context(self) -> Arc<RuntimeContext>;
+}
+impl IntoRuntimeContext for Arc<RuntimeContext> {
+	fn into_runtime_context(self) -> Arc<RuntimeContext> {
+		self
+	}
+}
+impl IntoRuntimeContext for Arc<ProxyInputs> {
+	fn into_runtime_context(self) -> Arc<RuntimeContext> {
+		Arc::new(RuntimeContext {
+			cfg: self.cfg.clone(),
+			stores: self.stores.clone(),
+			upstream: self.upstream.clone(),
+			metrics: self.metrics.clone(),
+			admin: self.admin.clone(),
+			ca: self.ca.clone(),
+			guardrails: self.guardrails.clone(),
+			vehicle_state: self.vehicle_state.clone(),
+			circuit_breakers: self.circuit_breakers.clone(),
+		})
+	}
+}
+
+/// Compatibility assembly facade for existing embedders. Internal requests use RuntimeContext.
 pub struct ProxyInputs {
 	pub cfg: Arc<Config>,
 	pub stores: Stores,
@@ -699,9 +786,11 @@ pub struct ProxyInputs {
 	pub upstream: client::Client,
 
 	pub metrics: Arc<metrics::Metrics>,
+	#[cfg(feature = "gateway-llm")]
 	pub model_catalog: Arc<llm::cost::ModelCatalog>,
 
 	pub admin: Option<management::admin::AdminService>,
+	#[cfg(feature = "gateway-mcp")]
 	pub mcp_state: mcp::App,
 	pub ca: Option<Arc<CaClient>>,
 
@@ -721,8 +810,10 @@ impl Clone for ProxyInputs {
 			stores: self.stores.clone(),
 			upstream: self.upstream.clone(),
 			metrics: self.metrics.clone(),
+			#[cfg(feature = "gateway-llm")]
 			model_catalog: self.model_catalog.clone(),
 			admin: self.admin.clone(),
+			#[cfg(feature = "gateway-mcp")]
 			mcp_state: self.mcp_state.clone(),
 			ca: self.ca.clone(),
 			guardrails: self.guardrails.clone(),
@@ -739,9 +830,7 @@ impl std::fmt::Debug for ProxyInputs {
 			.field("stores", &self.stores)
 			.field("upstream", &self.upstream)
 			.field("metrics", &self.metrics)
-			.field("model_catalog", &self.model_catalog)
 			.field("admin", &self.admin)
-			.field("mcp_state", &self.mcp_state)
 			.field("ca", &self.ca)
 			.field(
 				"guardrails",
@@ -764,8 +853,8 @@ impl ProxyInputs {
 		stores: Stores,
 		upstream: client::Client,
 		metrics: Arc<metrics::Metrics>,
-		mcp_state: mcp::App,
-		model_catalog: Option<llm::cost::ModelCatalog>,
+		#[cfg(feature = "gateway-mcp")] mcp_state: mcp::App,
+		#[cfg(feature = "gateway-llm")] model_catalog: Option<llm::cost::ModelCatalog>,
 		ca: Option<Arc<CaClient>>,
 	) -> Self {
 		Self {
@@ -773,8 +862,10 @@ impl ProxyInputs {
 			stores,
 			upstream,
 			metrics,
+			#[cfg(feature = "gateway-llm")]
 			model_catalog: Arc::new(model_catalog.unwrap_or_default()),
 			admin: None,
+			#[cfg(feature = "gateway-mcp")]
 			mcp_state,
 			ca,
 			guardrails: None,
@@ -899,3 +990,6 @@ pub struct ProxyMetadata {
 	pub role: String,
 	pub node_id: String,
 }
+
+#[cfg(test)]
+mod infrastructure_tests;

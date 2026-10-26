@@ -4,7 +4,7 @@ use security_integration_runtime::a2a_objects::events::EventBinding;
 use security_types::ActionType;
 use std::sync::OnceLock;
 
-pub(crate) const METHOD: &str = "aisp.events/read";
+pub(crate) const METHOD: &str = gateway_a2a::EVENT_READ_METHOD;
 
 // Disk I/O runs off the Tokio workers, with no unbounded blocking-pool queue or body staging.
 pub(super) fn io_slot() -> Result<tokio::sync::OwnedSemaphorePermit, ObjectError> {
@@ -150,12 +150,10 @@ impl AuthorizedCall {
 		else {
 			return Ok(None);
 		};
-		let Some(result) = rpc.get("result").filter(|r| {
-			matches!(
-				r["kind"].as_str(),
-				Some("task" | "status-update" | "artifact-update")
-			)
-		}) else {
+		let Some(result) = rpc
+			.get("result")
+			.filter(|result| gateway_a2a::recovery::recoverable(result))
+		else {
 			return Ok(None);
 		};
 		self.check_continuation()?;
@@ -199,27 +197,10 @@ impl AuthorizedCall {
 			})
 	}
 	pub(super) fn project_event(&self, result: Option<&mut Value>) -> Result<bool, ProxyError> {
-		let Some(result) = result else {
-			return Ok(true);
-		}; // sanitized RPC error, no Task data
-		match result["kind"].as_str() {
-			Some("artifact-update") => Ok(self.artifact_visible(
-				identifier(&result["artifact"]["artifactId"]).map_err(|e| deny(&self.action, e))?,
-			)),
-			Some("task") => {
-				if let Some(artifacts) = result.get_mut("artifacts").and_then(Value::as_array_mut) {
-					artifacts.retain(|a| {
-						a["artifactId"]
-							.as_str()
-							.is_some_and(|id| self.artifact_visible(id))
-					});
-				}
-				Ok(true)
-			},
-			Some("status-update" | "message") => Ok(true),
-			_ => Err(deny(&self.action, ObjectError::ResponseBinding)),
-		}
+		gateway_a2a::recovery::project_event(result, |id| self.artifact_visible(id))
+			.map_err(|e| deny(&self.action, object_error(e)))
 	}
+
 	/// A bounded local JSON batch. Does NOT finish old snapshots or reopen terminal Tasks.
 	pub(crate) async fn recovery_response(&self) -> Result<Option<Response>, ProxyError> {
 		let Some((after, limit)) = &self.recovery else {
@@ -267,15 +248,14 @@ impl AuthorizedCall {
 					.map_err(|e| deny(&recovery, e))
 			})
 			.await?;
-		let mut events = Vec::new();
-		for event in batch.events {
-			let mut result = event.result.clone();
-			if !self.project_event(Some(&mut result))? {
-				continue;
-			}
-			// Keep global integrity sequence private, including other tenants' traffic counts.
-			events.push(serde_json::json!({"cursor":event.cursor,"result":result}));
-		}
+		let events = gateway_a2a::recovery::project_batch(
+			batch
+				.events
+				.iter()
+				.map(|event| (event.cursor.as_str(), event.result.clone())),
+			|id| self.artifact_visible(id),
+		)
+		.map_err(|e| deny(&self.action, object_error(e)))?;
 		self.check_continuation()?;
 		self
 			.config
@@ -287,10 +267,8 @@ impl AuthorizedCall {
 		if let Some(guards) = &self.download_guards {
 			guards.authorize_a2a_continuation(&self.config, &[&recovery])?;
 		}
-		let body = serde_json::json!({"jsonrpc":"2.0","id":self.rpc_id,"result":{
-			"kind":"aisp-event-batch","events":events,"nextCursor":batch.next_cursor,
-			"hasMore":batch.has_more,"scope":"gateway-observed"
-		}});
+		let body =
+			gateway_a2a::recovery::response(&self.rpc_id, events, batch.next_cursor, batch.has_more);
 		security_audit::StateJournal::encoded_len(&body, settings.max_batch_bytes + 4096)
 			.map_err(|_| deny(&recovery, ObjectError::EventStorage))?;
 		audit_object_check(&recovery, Ok(()), &UiSecurityAuditSink);

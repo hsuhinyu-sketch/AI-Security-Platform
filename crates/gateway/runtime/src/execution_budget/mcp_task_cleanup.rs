@@ -13,7 +13,7 @@ pub(crate) struct Scope {
 	task: String,
 	deadline: Instant,
 	expires: i64,
-	revision: crate::a2a::revision::ConfigLease,
+	revision: gateway_contracts::ConfigLease,
 	action: Arc<ActionRequest>,
 }
 pub(crate) async fn prepare(
@@ -111,7 +111,7 @@ pub(crate) async fn prepare(
 			.ok_or(ProxyError::AuthorizationFailed)?,
 		revision: request
 			.extensions()
-			.get::<crate::a2a::revision::ConfigLease>()
+			.get::<gateway_contracts::ConfigLease>()
 			.cloned()
 			.ok_or(ProxyError::AuthorizationFailed)?,
 		action: Arc::new(action),

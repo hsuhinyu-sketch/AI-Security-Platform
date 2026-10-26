@@ -18,10 +18,16 @@ use tower::ServiceExt;
 use tower_serve_static::ServeDir;
 
 use crate::cel::{self, ExecutorSerde};
-use crate::llm::cost::ModelCatalog;
+#[cfg(feature = "gateway-llm")]
+use crate::llm::cost::CatalogAdmin;
 use crate::{Config, ConfigSource, yamlviajson};
 
 const BASE_COSTS_FILE: &str = "base-costs.json";
+
+#[cfg(test)]
+#[cfg(feature = "gateway-llm")]
+#[path = "ui_catalog_tests.rs"]
+mod catalog_tests;
 const CONFIG_SCHEMA_HEADER: &str =
 	"# yaml-language-server: $schema=https://agentgateway.dev/schema/config\n";
 
@@ -29,7 +35,8 @@ const CONFIG_SCHEMA_HEADER: &str =
 struct App {
 	state: Arc<Config>,
 	resource_manager: crate::resource_manager::ResourceManager,
-	model_catalog: Arc<ModelCatalog>,
+	#[cfg(feature = "gateway-llm")]
+	model_catalog: CatalogAdmin,
 }
 
 impl App {
@@ -48,11 +55,11 @@ lazy_static::lazy_static! {
 
 pub fn router(
 	cfg: Arc<Config>,
-	model_catalog: Arc<ModelCatalog>,
+	#[cfg(feature = "gateway-llm")] model_catalog: impl Into<CatalogAdmin>,
 	resource_manager: crate::resource_manager::ResourceManager,
 ) -> Router {
 	let ui_service = tower::service_fn(move |req| serve_ui_asset(req, &ASSETS_DIR));
-	Router::new()
+	let router = Router::new()
 		// Redirect to the UI
 		.route("/api/runtime", get(get_runtime))
 		.route(
@@ -74,8 +81,6 @@ pub fn router(
 		.route("/api/logs/get", post(get_log))
 		.route("/api/logs/tail", post(tail_logs))
 		.route("/api/logs/analytics/summary", post(analytics_summary))
-		.route("/api/costs/models", get(cost_models))
-		.route("/api/costs/refresh-base", post(refresh_base_costs))
 		.route("/api/security/overview", get(security_overview))
 		.route("/api/security/events", get(security_events))
 		.route("/api/security/events/history", get(security_event_history))
@@ -85,12 +90,17 @@ pub fn router(
 		)
 		.route("/api/security/stream", get(security_event_stream))
 		.nest_service("/ui", ui_service)
-		.route("/", get(|| async { Redirect::permanent("/ui") }))
-		.with_state(App {
-			state: cfg.clone(),
-			resource_manager,
-			model_catalog,
-		})
+		.route("/", get(|| async { Redirect::permanent("/ui") }));
+	#[cfg(feature = "gateway-llm")]
+	let router = router
+		.route("/api/costs/models", get(cost_models))
+		.route("/api/costs/refresh-base", post(refresh_base_costs));
+	router.with_state(App {
+		state: cfg.clone(),
+		resource_manager,
+		#[cfg(feature = "gateway-llm")]
+		model_catalog: model_catalog.into(),
+	})
 }
 
 #[derive(Serialize)]
@@ -253,6 +263,7 @@ async fn write_config(
 	))
 }
 
+#[cfg(feature = "gateway-llm")]
 async fn refresh_base_costs(State(app): State<App>) -> Result<Json<Value>, ErrorResponse> {
 	let config_source = app.cfg()?;
 	let file_path = match &config_source {
@@ -271,11 +282,7 @@ async fn refresh_base_costs(State(app): State<App>) -> Result<Json<Value>, Error
 	})?;
 	let base_costs_file = dir.join(BASE_COSTS_FILE);
 
-	let refreshed = crate::llm::cost::refresh::refresh_models_dev_base_catalog(
-		&base_costs_file,
-		app.model_catalog.as_ref(),
-	)
-	.await?;
+	let refreshed = app.model_catalog.refresh_base(&base_costs_file).await?;
 
 	let mut response =
 		serde_json::to_value(refreshed).map_err(|e| ErrorResponse::Anyhow(e.into()))?;
@@ -288,10 +295,11 @@ async fn refresh_base_costs(State(app): State<App>) -> Result<Json<Value>, Error
 	Ok(Json(response))
 }
 
+#[cfg(feature = "gateway-llm")]
 async fn cost_models(
 	State(app): State<App>,
 ) -> Result<Json<crate::llm::cost::ModelCatalogModels>, ErrorResponse> {
-	Ok(Json(app.model_catalog.list_models()))
+	Ok(Json(app.model_catalog.list_models()?))
 }
 
 /// Query contract for the redacted security timeline. `requestId` narrows the response to one

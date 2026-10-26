@@ -8,11 +8,14 @@ use std::sync::Arc;
 
 use axum::{
 	Json, Router,
-	extract::{Extension, State},
+	extract::{Extension, Request, State},
 	http::{HeaderMap, StatusCode},
+	middleware::{self, Next},
+	response::Response,
 	routing::post,
 };
 use security_pipeline::GatewayIdentity;
+use security_types::RequestContext;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -20,6 +23,10 @@ use security_rag::{DocumentIngestRequest, GuardedContext, IngestionResult};
 
 use crate::{RagGatewayAdapter, RagGatewayError, RagQueryRequest};
 use security_rag::TrustedHttpsSourceRegistry;
+
+#[cfg(test)]
+#[path = "http_tests.rs"]
+mod tests;
 
 /// Marker wrapper inserted by authentication middleware after identity verification.
 #[derive(Debug, Clone)]
@@ -181,7 +188,25 @@ pub fn router_with_sources(
 	if has_sources {
 		router = router.route("/v1/rag/import", post(import_document));
 	}
-	router.with_state(Arc::new(RagHttpState { service, sources }))
+	router
+		.with_state(Arc::new(RagHttpState { service, sources }))
+		.layer(middleware::from_fn(correlate_request))
+}
+
+/// Only trusted in-process extensions can provide a prior context. Client IDs never mint it.
+async fn correlate_request(mut request: Request, next: Next) -> Response {
+	let context = request
+		.extensions()
+		.get::<RequestContext>()
+		.cloned()
+		.unwrap_or_default();
+	request.extensions_mut().insert(context.clone());
+	let mut response = next.run(request).await;
+	response.headers_mut().insert(
+		"x-request-id",
+		context.request_id().parse().expect("UUID header"),
+	);
+	response
 }
 
 #[derive(Debug, Deserialize)]
@@ -212,14 +237,14 @@ struct DocumentOperationBody {
 async fn document_operation(
 	State(state): State<SharedState>,
 	identity: Option<Extension<VerifiedGatewayIdentity>>,
-	headers: HeaderMap,
+	Extension(context): Extension<RequestContext>,
 	Json(body): Json<DocumentOperationBody>,
 ) -> Result<(StatusCode, HeaderMap, Json<crate::DocumentStatus>), (StatusCode, Json<ApiError>)> {
 	let identity = verified_identity(identity)?;
 	let status = state
 		.service
 		.document_operation(
-			request_id(&headers),
+			context.request_id().to_owned(),
 			identity,
 			body.corpus_id,
 			body.document_id,
@@ -334,14 +359,14 @@ struct ApiError {
 async fn ingest_document(
 	State(state): State<SharedState>,
 	identity: Option<Extension<VerifiedGatewayIdentity>>,
-	headers: HeaderMap,
+	Extension(context): Extension<RequestContext>,
 	Json(body): Json<IngestBody>,
 ) -> ApiResult<IngestResponse> {
 	let identity = verified_identity(identity)?;
 	let result = state
 		.service
 		.ingest(
-			request_id(&headers),
+			context.request_id().to_owned(),
 			identity,
 			DocumentIngestRequest::new(
 				body.corpus_id,
@@ -358,11 +383,11 @@ async fn ingest_document(
 async fn import_document(
 	State(state): State<SharedState>,
 	identity: Option<Extension<VerifiedGatewayIdentity>>,
-	headers: HeaderMap,
+	Extension(context): Extension<RequestContext>,
 	Json(body): Json<ImportBody>,
 ) -> ApiResult<IngestResponse> {
 	let identity = verified_identity(identity)?;
-	let request_id = request_id(&headers);
+	let request_id = context.request_id().to_owned();
 	state
 		.service
 		.authorize_import(
@@ -456,6 +481,7 @@ async fn query_corpus(
 	State(state): State<SharedState>,
 	identity: Option<Extension<VerifiedGatewayIdentity>>,
 	issuer: Option<Extension<VerifiedContextIssuer>>,
+	Extension(context): Extension<RequestContext>,
 	headers: HeaderMap,
 	Json(body): Json<QueryBody>,
 ) -> Result<(StatusCode, HeaderMap, Json<QueryResponse>), (StatusCode, Json<ApiError>)> {
@@ -463,7 +489,7 @@ async fn query_corpus(
 	let context = state
 		.service
 		.query(
-			request_id(&headers),
+			context.request_id().to_owned(),
 			identity,
 			RagQueryRequest::new(body.corpus_id, body.query, body.limit),
 		)
@@ -532,15 +558,6 @@ fn verified_identity(
 				"verified identity is required",
 			)
 		})
-}
-
-fn request_id(headers: &HeaderMap) -> String {
-	headers
-		.get("x-request-id")
-		.and_then(|value| value.to_str().ok())
-		.filter(|value| !value.is_empty() && value.len() <= 128)
-		.map(str::to_owned)
-		.unwrap_or_else(|| Uuid::new_v4().to_string())
 }
 
 fn map_error(error: RagGatewayError) -> (StatusCode, Json<ApiError>) {

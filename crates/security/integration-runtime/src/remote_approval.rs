@@ -11,7 +11,7 @@ use crate::trusted_https;
 /// Trusted approval authority for high-risk Tool calls. It receives normalized request context and
 /// a hash of arguments, never a caller-provided approval header or raw Tool arguments.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct RemoteApprovalConfig {
 	pub endpoint: String,
 	#[serde(default = "default_timeout_millis")]

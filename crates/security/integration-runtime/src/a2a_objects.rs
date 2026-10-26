@@ -144,49 +144,7 @@ impl A2aObjectConfig {
 	}
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum TaskState {
-	Submitted,
-	Working,
-	InputRequired,
-	AuthRequired,
-	Completed,
-	Canceled,
-	Failed,
-	Rejected,
-	Unknown,
-}
-
-impl TaskState {
-	pub fn terminal(self) -> bool {
-		matches!(
-			self,
-			Self::Completed | Self::Canceled | Self::Failed | Self::Rejected
-		)
-	}
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TaskOperation {
-	Create,
-	Read,
-	Continue,
-	Cancel,
-	Subscribe,
-}
-
-impl TaskOperation {
-	pub fn name(self) -> &'static str {
-		match self {
-			Self::Create => "create",
-			Self::Read => "read",
-			Self::Continue => "continue",
-			Self::Cancel => "cancel",
-			Self::Subscribe => "subscribe",
-		}
-	}
-}
+pub use security_types::a2a::{TaskOperation, TaskState};
 
 use crate::identity_binding::VerifiedOwner as Owner;
 
