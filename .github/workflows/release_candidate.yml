@@ -30,7 +30,7 @@ jobs:
           - profile: full
             acceptance: full routing sampling mcp-wire mcp-security rag rag-llm security-content workflow workflow-durable a2a a2a-durable
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@efa25f7f19611383d5b0ccf2d1c8914531636bf9
