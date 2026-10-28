@@ -68,12 +68,7 @@ fn owner(request: &Request) -> Result<VerifiedOwner, BudgetError> {
 	.map_err(|_| BudgetError::InvalidContext)
 }
 fn fingerprint(config: &SecurityConfig) -> Result<String, BudgetError> {
-	config
-		.validate_composition()
-		.map_err(|_| BudgetError::InvalidContext)?;
-	serde_json::to_string(config)
-		.map(|s| crate::security::digest(&s))
-		.map_err(|_| BudgetError::InvalidContext)
+	crate::security::configuration_fingerprint(config).map_err(|_| BudgetError::InvalidContext)
 }
 fn operation(request: &Request, name: &str, resource: &str) -> ActionRequest {
 	let mut extensions = request.extensions().clone();

@@ -236,13 +236,16 @@ impl DelegationRevocationProvider for DelegationRevocationRegistry {
 }
 
 /// The default PoC authorizer: local policy evaluation with deny-by-default semantics.
+#[derive(Clone)]
 pub struct PolicyAuthorizer {
-	policies: Vec<Policy>,
+	policies: Arc<[Policy]>,
 }
 
 impl PolicyAuthorizer {
 	pub fn new(policies: Vec<Policy>) -> Self {
-		Self { policies }
+		Self {
+			policies: policies.into(),
+		}
 	}
 }
 
@@ -340,14 +343,14 @@ impl DynamicPolicy {
 /// configuration a safe way to express time- and session-bound restrictions today.
 #[derive(Debug, Clone)]
 pub struct LocalDynamicPdp {
-	policies: Vec<DynamicPolicy>,
+	policies: Arc<[DynamicPolicy]>,
 	policy_version: String,
 }
 
 impl LocalDynamicPdp {
 	pub fn new(policies: Vec<DynamicPolicy>, policy_version: impl Into<String>) -> Self {
 		Self {
-			policies,
+			policies: policies.into(),
 			policy_version: policy_version.into(),
 		}
 	}
@@ -409,10 +412,13 @@ impl DecisionCache {
 		if ttl <= Duration::zero() {
 			return;
 		}
+		let Some(ttl_expiry) = Utc::now().checked_add_signed(ttl) else {
+			return; // An unrepresentable lifetime must not become an unbounded cached permission.
+		};
 		let expires_at = decision
 			.expires_at
-			.map(|expires_at| expires_at.min(Utc::now() + ttl))
-			.unwrap_or_else(|| Utc::now() + ttl);
+			.map(|expires_at| expires_at.min(ttl_expiry))
+			.unwrap_or(ttl_expiry);
 		if expires_at <= Utc::now() {
 			return;
 		}
@@ -431,6 +437,7 @@ impl DecisionCache {
 }
 
 /// Adds a cache boundary and fail-closed error translation to any dynamic PDP.
+#[derive(Clone)]
 pub struct CachedDynamicPdp<P> {
 	pdp: P,
 	cache: DecisionCache,
@@ -474,9 +481,13 @@ impl<P> CachedDynamicPdp<P> {
 
 impl<P: DynamicPdp> DynamicPdp for CachedDynamicPdp<P> {
 	fn decide(&self, request: &ActionRequest) -> Result<Decision, DynamicPdpError> {
+		if self.cache_ttl <= Duration::zero() {
+			return self.pdp.decide(request);
+		}
 		let key = self.cache_key(request);
 		if self.failure_mode == DynamicPdpFailureMode::UseCachedDecision {
-			if let Some(decision) = self.cache.get(&key, Utc::now()) {
+			if let Some(mut decision) = self.cache.get(&key, Utc::now()) {
+				decision.request_id = request.request_id.clone();
 				return Ok(decision);
 			}
 		}
@@ -515,7 +526,10 @@ impl DynamicAuthorizationConfig {
 			pdp,
 			self.cache.clone(),
 			self.policy_version.clone(),
-			Duration::seconds(self.cache_ttl_seconds.try_into().unwrap_or(i64::MAX)),
+			i64::try_from(self.cache_ttl_seconds)
+				.ok()
+				.and_then(Duration::try_seconds)
+				.unwrap_or_else(Duration::zero),
 			self.failure_mode,
 		)
 	}
@@ -675,7 +689,7 @@ pub struct AgentIdentityRegistryConfig {
 #[derive(Debug, Clone)]
 pub struct AgentIdentityRegistry {
 	required: bool,
-	agents: Vec<RegisteredAgentConfig>,
+	agents: Arc<[RegisteredAgentConfig]>,
 }
 
 impl AgentIdentityRegistry {
@@ -710,7 +724,7 @@ impl AgentIdentityRegistry {
 		}
 		Ok(Self {
 			required: config.required,
-			agents: config.agents,
+			agents: config.agents.into(),
 		})
 	}
 }
@@ -857,19 +871,19 @@ pub struct SecurityPipelineConfig {
 /// HTTP, a UI, or a specific approval product.
 #[derive(Default)]
 pub struct RuntimeSecurityControls {
-	identity_controls: Vec<Box<dyn SecurityControl>>,
-	action_controls: Vec<Box<dyn SecurityControl>>,
+	identity_controls: Vec<Arc<dyn SecurityControl>>,
+	action_controls: Vec<Arc<dyn SecurityControl>>,
 	approval_provider: Option<Arc<dyn ApprovalProvider>>,
 }
 
 impl RuntimeSecurityControls {
 	pub fn add_identity_control(mut self, control: impl SecurityControl + 'static) -> Self {
-		self.identity_controls.push(Box::new(control));
+		self.identity_controls.push(Arc::new(control));
 		self
 	}
 
 	pub fn add_action_control(mut self, control: impl SecurityControl + 'static) -> Self {
-		self.action_controls.push(Box::new(control));
+		self.action_controls.push(Arc::new(control));
 		self
 	}
 
@@ -879,7 +893,60 @@ impl RuntimeSecurityControls {
 	}
 }
 
+/// Immutable rule data and validators, without an audit sink, request or capability.
+/// Dynamic PDPs retain only their existing explicitly configured decision-cache behavior.
+pub struct PreparedSecurityPipeline {
+	static_authorizer: PolicyAuthorizer,
+	dynamic: Option<CachedDynamicPdp<LocalDynamicPdp>>,
+	required_identity: Option<Arc<dyn SecurityControl>>,
+	delegation: Option<Arc<dyn SecurityControl>>,
+	arguments: Vec<Arc<dyn SecurityControl>>,
+	approvals: Vec<(Arc<str>, Arc<dyn SecurityControl>)>,
+}
+
 impl SecurityPipelineConfig {
+	/// A necessary-condition prefilter, without constructing controls or contacting a provider.
+	pub fn prefilter(&self, request: &ActionRequest) -> Decision {
+		decide(&self.policies, request)
+	}
+
+	pub fn prepare(&self) -> PreparedSecurityPipeline {
+		PreparedSecurityPipeline {
+			static_authorizer: PolicyAuthorizer::new(self.policies.clone()),
+			dynamic: self
+				.dynamic_authorization
+				.as_ref()
+				.map(DynamicAuthorizationConfig::build_pdp),
+			required_identity: self
+				.required_identity
+				.map(|identity| Arc::new(identity) as Arc<dyn SecurityControl>),
+			delegation: (!self.delegations.is_empty()).then(|| {
+				Arc::new(AgentDelegation::new(self.delegations.clone())) as Arc<dyn SecurityControl>
+			}),
+			arguments: self
+				.required_tool_arguments
+				.iter()
+				.map(|requirement| {
+					Arc::new(RequiredToolArguments::new(
+						requirement.tool_name.clone(),
+						requirement.required_fields.clone(),
+					)) as Arc<dyn SecurityControl>
+				})
+				.collect(),
+			approvals: self
+				.required_tool_approvals
+				.iter()
+				.map(|requirement| {
+					(
+						Arc::from(requirement.tool_name.as_str()),
+						Arc::new(RequiredToolApproval::new(requirement.tool_name.clone()))
+							as Arc<dyn SecurityControl>,
+					)
+				})
+				.collect(),
+		}
+	}
+
 	pub fn requires_tool_approval(&self, request: &ActionRequest) -> bool {
 		request.action.action_type == ActionType::ToolInvoke
 			&& self
@@ -889,65 +956,44 @@ impl SecurityPipelineConfig {
 	}
 
 	pub fn build<S: AuditSink>(&self, audit: S) -> SecurityPipeline<StaticAndDynamicAuthorizer, S> {
-		let authorizer = StaticAndDynamicAuthorizer::from_config(
-			self.policies.clone(),
-			self.dynamic_authorization.as_ref(),
-		);
-		self.build_with_authorizer(audit, authorizer, RuntimeSecurityControls::default())
+		self
+			.prepare()
+			.build_with_runtime_controls(audit, RuntimeSecurityControls::default())
 	}
 
-	/// Builds local authorization together with application-supplied identity and action controls.
 	pub fn build_with_runtime_controls<S: AuditSink>(
 		&self,
 		audit: S,
 		controls: RuntimeSecurityControls,
 	) -> SecurityPipeline<StaticAndDynamicAuthorizer, S> {
-		let authorizer = StaticAndDynamicAuthorizer::from_config(
-			self.policies.clone(),
-			self.dynamic_authorization.as_ref(),
-		);
-		self.build_with_authorizer(audit, authorizer, controls)
+		self.prepare().build_with_runtime_controls(audit, controls)
 	}
 
-	/// Adds a real-time delegation revocation check to the configured local authorization pipeline.
-	/// The provider is queried only for requests that carry a verified delegation identifier.
 	pub fn build_with_revocation<S: AuditSink, P: DelegationRevocationProvider + 'static>(
 		&self,
 		audit: S,
 		provider: P,
 	) -> SecurityPipeline<StaticAndDynamicAuthorizer, S> {
-		let authorizer = StaticAndDynamicAuthorizer::from_config(
-			self.policies.clone(),
-			self.dynamic_authorization.as_ref(),
-		);
-		self.build_with_authorizer(
+		self.prepare().build_with_runtime_controls(
 			audit,
-			authorizer,
 			RuntimeSecurityControls::default()
 				.add_identity_control(DelegationRevocationCheck::new(provider)),
 		)
 	}
 
-	/// Builds the configured controls around a remote PDP. A remote PDP is only meaningful with
-	/// `dynamicAuthorization`, whose policy version, cache, and failure mode bind the response.
 	pub fn build_with_remote_pdp<S: AuditSink, T: RemotePdpTransport>(
 		&self,
 		audit: S,
 		transport: T,
 	) -> Result<SecurityPipeline<StaticAndDynamicAuthorizer<RemoteDynamicPdp<T>>, S>, DynamicPdpError>
 	{
-		let dynamic = self.dynamic_authorization.as_ref().ok_or_else(|| {
-			DynamicPdpError::unavailable("remote PDP requires dynamicAuthorization configuration")
-		})?;
-		let remote_pdp = RemoteDynamicPdp::new(transport, Some(dynamic.policy_version.clone()));
-		let authorizer = StaticAndDynamicAuthorizer::new(
-			PolicyAuthorizer::new(self.policies.clone()),
-			Some(dynamic.cache_pdp(remote_pdp)),
-		);
-		Ok(self.build_with_authorizer(audit, authorizer, RuntimeSecurityControls::default()))
+		self.prepare().build_with_remote_pdp_and_runtime_controls(
+			audit,
+			transport,
+			RuntimeSecurityControls::default(),
+		)
 	}
 
-	/// Builds remote-PDP authorization together with application-supplied security bricks.
 	pub fn build_with_remote_pdp_and_runtime_controls<S: AuditSink, T: RemotePdpTransport>(
 		&self,
 		audit: S,
@@ -955,18 +1001,11 @@ impl SecurityPipelineConfig {
 		controls: RuntimeSecurityControls,
 	) -> Result<SecurityPipeline<StaticAndDynamicAuthorizer<RemoteDynamicPdp<T>>, S>, DynamicPdpError>
 	{
-		let dynamic = self.dynamic_authorization.as_ref().ok_or_else(|| {
-			DynamicPdpError::unavailable("remote PDP requires dynamicAuthorization configuration")
-		})?;
-		let remote_pdp = RemoteDynamicPdp::new(transport, Some(dynamic.policy_version.clone()));
-		let authorizer = StaticAndDynamicAuthorizer::new(
-			PolicyAuthorizer::new(self.policies.clone()),
-			Some(dynamic.cache_pdp(remote_pdp)),
-		);
-		Ok(self.build_with_authorizer(audit, authorizer, controls))
+		self
+			.prepare()
+			.build_with_remote_pdp_and_runtime_controls(audit, transport, controls)
 	}
 
-	/// Builds the remote-PDP variant with an additional real-time delegation revocation stage.
 	pub fn build_with_remote_pdp_and_revocation<
 		S: AuditSink,
 		T: RemotePdpTransport,
@@ -978,22 +1017,53 @@ impl SecurityPipelineConfig {
 		provider: P,
 	) -> Result<SecurityPipeline<StaticAndDynamicAuthorizer<RemoteDynamicPdp<T>>, S>, DynamicPdpError>
 	{
-		let dynamic = self.dynamic_authorization.as_ref().ok_or_else(|| {
+		self.prepare().build_with_remote_pdp_and_runtime_controls(
+			audit,
+			transport,
+			RuntimeSecurityControls::default()
+				.add_identity_control(DelegationRevocationCheck::new(provider)),
+		)
+	}
+}
+
+impl PreparedSecurityPipeline {
+	pub fn prefilter(&self, request: &ActionRequest) -> Decision {
+		self.static_authorizer.decide(request)
+	}
+
+	pub fn build_with_runtime_controls<S: AuditSink>(
+		&self,
+		audit: S,
+		controls: RuntimeSecurityControls,
+	) -> SecurityPipeline<StaticAndDynamicAuthorizer, S> {
+		let authorizer =
+			StaticAndDynamicAuthorizer::new(self.static_authorizer.clone(), self.dynamic.clone());
+		self.build_with_authorizer(audit, authorizer, controls)
+	}
+
+	pub fn build_with_remote_pdp_and_runtime_controls<S: AuditSink, T: RemotePdpTransport>(
+		&self,
+		audit: S,
+		transport: T,
+		controls: RuntimeSecurityControls,
+	) -> Result<SecurityPipeline<StaticAndDynamicAuthorizer<RemoteDynamicPdp<T>>, S>, DynamicPdpError>
+	{
+		let dynamic = self.dynamic.as_ref().ok_or_else(|| {
 			DynamicPdpError::unavailable("remote PDP requires dynamicAuthorization configuration")
 		})?;
-		let remote_pdp = RemoteDynamicPdp::new(transport, Some(dynamic.policy_version.clone()));
-		let authorizer = StaticAndDynamicAuthorizer::new(
-			PolicyAuthorizer::new(self.policies.clone()),
-			Some(dynamic.cache_pdp(remote_pdp)),
+		let remote = RemoteDynamicPdp::new(transport, Some(dynamic.policy_version.clone()));
+		let dynamic = CachedDynamicPdp::new(
+			remote,
+			dynamic.cache.clone(),
+			dynamic.policy_version.clone(),
+			dynamic.cache_ttl,
+			dynamic.failure_mode,
 		);
-		Ok(
-			self.build_with_authorizer(
-				audit,
-				authorizer,
-				RuntimeSecurityControls::default()
-					.add_identity_control(DelegationRevocationCheck::new(provider)),
-			),
-		)
+		Ok(self.build_with_authorizer(
+			audit,
+			StaticAndDynamicAuthorizer::new(self.static_authorizer.clone(), Some(dynamic)),
+			controls,
+		))
 	}
 
 	fn build_with_authorizer<S: AuditSink, A: Authorizer>(
@@ -1003,35 +1073,30 @@ impl SecurityPipelineConfig {
 		mut controls: RuntimeSecurityControls,
 	) -> SecurityPipeline<A, S> {
 		let mut pipeline = SecurityPipeline::new(authorizer, audit);
-		if let Some(identity) = self.required_identity {
-			pipeline = pipeline.add_identity_control(identity);
-		}
+		pipeline
+			.identity_controls
+			.extend(self.required_identity.iter().cloned());
 		pipeline
 			.identity_controls
 			.append(&mut controls.identity_controls);
-		for requirement in &self.required_tool_arguments {
-			pipeline = pipeline.add_action_control(RequiredToolArguments::new(
-				requirement.tool_name.clone(),
-				requirement.required_fields.clone(),
-			));
-		}
-		for requirement in &self.required_tool_approvals {
-			pipeline = match &controls.approval_provider {
-				Some(provider) => pipeline.add_action_control(ToolApproval::new(
-					requirement.tool_name.clone(),
-					provider.clone(),
-				)),
-				None => {
-					pipeline.add_action_control(RequiredToolApproval::new(requirement.tool_name.clone()))
-				},
-			};
+		pipeline
+			.identity_controls
+			.extend(self.delegation.iter().cloned());
+		pipeline
+			.action_controls
+			.extend(self.arguments.iter().cloned());
+		for (tool_name, fallback) in &self.approvals {
+			match &controls.approval_provider {
+				Some(provider) => pipeline.action_controls.push(Arc::new(ToolApproval {
+					tool_name: tool_name.clone(),
+					provider: provider.clone(),
+				})),
+				None => pipeline.action_controls.push(fallback.clone()),
+			}
 		}
 		pipeline
 			.action_controls
 			.append(&mut controls.action_controls);
-		if !self.delegations.is_empty() {
-			pipeline = pipeline.add_identity_control(AgentDelegation::new(self.delegations.clone()));
-		}
 		pipeline
 	}
 }
@@ -1330,14 +1395,14 @@ impl ApprovalProvider for StaticApproval {
 }
 
 pub struct ToolApproval<P> {
-	tool_name: String,
+	tool_name: Arc<str>,
 	provider: P,
 }
 
 impl<P> ToolApproval<P> {
 	pub fn new(tool_name: impl Into<String>, provider: P) -> Self {
 		Self {
-			tool_name: tool_name.into(),
+			tool_name: tool_name.into().into(),
 			provider,
 		}
 	}
@@ -1353,7 +1418,8 @@ impl<P: ApprovalProvider> SecurityControl for ToolApproval<P> {
 		request: &ActionRequest,
 		arguments: Option<&serde_json::Value>,
 	) -> Result<(), ControlDenial> {
-		if request.action.action_type != ActionType::ToolInvoke || request.action.name != self.tool_name
+		if request.action.action_type != ActionType::ToolInvoke
+			|| request.action.name.as_str() != self.tool_name.as_ref()
 		{
 			return Ok(());
 		}
@@ -1405,9 +1471,9 @@ impl GatewayError {
 /// controls run. Capability issuance is opt-in, allowing read-only services to use the
 /// same pipeline without introducing a credential broker.
 pub struct SecurityPipeline<A, S> {
-	identity_controls: Vec<Box<dyn SecurityControl>>,
+	identity_controls: Vec<Arc<dyn SecurityControl>>,
 	authorizer: A,
-	action_controls: Vec<Box<dyn SecurityControl>>,
+	action_controls: Vec<Arc<dyn SecurityControl>>,
 	capabilities: Option<CapabilityBroker>,
 	audit: S,
 }
@@ -1428,12 +1494,12 @@ where
 	}
 
 	pub fn add_identity_control(mut self, control: impl SecurityControl + 'static) -> Self {
-		self.identity_controls.push(Box::new(control));
+		self.identity_controls.push(Arc::new(control));
 		self
 	}
 
 	pub fn add_action_control(mut self, control: impl SecurityControl + 'static) -> Self {
-		self.action_controls.push(Box::new(control));
+		self.action_controls.push(Arc::new(control));
 		self
 	}
 
@@ -1516,3 +1582,7 @@ where
 		));
 	}
 }
+
+#[cfg(test)]
+#[path = "prepared_tests.rs"]
+mod prepared_tests;

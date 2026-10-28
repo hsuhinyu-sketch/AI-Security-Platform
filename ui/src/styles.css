@@ -828,6 +828,12 @@ a {
 	color: var(--bad);
 }
 
+.platform-capability-card svg,
+.platform-pipeline-panel > svg,
+.gateway-workbench-card svg {
+	color: var(--primary);
+}
+
 .icon-button.expanded svg {
 	transform: rotate(180deg);
 }
@@ -879,7 +885,6 @@ a {
 	gap: 5px;
 }
 
-/* biome-ignore lint/style/noDescendingSpecificity: Existing lint violation; remove this suppression when the underlying issue is fixed. */
 .field-label svg {
 	color: var(--muted);
 }
@@ -1221,7 +1226,6 @@ a {
 	border-radius: 6px;
 }
 
-/* biome-ignore lint/style/noDescendingSpecificity: Existing lint violation; remove this suppression when the underlying issue is fixed. */
 .client-svg-icon svg {
 	width: 22px;
 	height: 22px;
@@ -1703,7 +1707,6 @@ a {
 	gap: 8px;
 }
 
-/* biome-ignore lint/style/noDescendingSpecificity: Existing lint violation; remove this suppression when the underlying issue is fixed. */
 .guardrail-rule-title > svg {
 	color: var(--muted);
 	flex: 0 0 16px;
@@ -1756,7 +1759,6 @@ a {
 	white-space: nowrap;
 }
 
-/* biome-ignore lint/style/noDescendingSpecificity: Existing lint violation; remove this suppression when the underlying issue is fixed. */
 .transform-section-toggle > svg {
 	color: var(--muted);
 }
@@ -2481,7 +2483,6 @@ a {
 	min-width: 0;
 }
 
-/* biome-ignore lint/style/noDescendingSpecificity: Existing lint violation; remove this suppression when the underlying issue is fixed. */
 .surface-row-title svg {
 	color: var(--primary);
 }
@@ -2662,7 +2663,6 @@ a {
 	opacity: 1;
 }
 
-/* biome-ignore lint/style/noDescendingSpecificity: Existing lint violation; remove this suppression when the underlying issue is fixed. */
 .startup-chip svg {
 	color: var(--muted);
 }
@@ -2711,9 +2711,7 @@ a {
 	margin-bottom: 22px;
 }
 
-/* biome-ignore lint/style/noDescendingSpecificity: Existing lint violation; remove this suppression when the underlying issue is fixed. */
 .onboarding-hero > svg,
-/* biome-ignore lint/style/noDescendingSpecificity: Existing lint violation; remove this suppression when the underlying issue is fixed. */
 .onboarding-complete > svg {
 	border: 1px solid var(--line);
 	border-radius: 8px;
@@ -4032,7 +4030,6 @@ tbody tr:hover {
 	white-space: nowrap;
 }
 
-/* biome-ignore lint/style/noDescendingSpecificity: Existing lint violation; remove this suppression when the underlying issue is fixed. */
 .log-meta-item svg {
 	flex: 0 0 auto;
 }
@@ -5492,13 +5489,11 @@ textarea {
 	gap: 8px;
 }
 
-/* biome-ignore lint/style/noDescendingSpecificity: Existing lint violation; remove this suppression when the underlying issue is fixed. */
 .custom-select-value > svg,
 .custom-select-value > img {
 	flex: 0 0 auto;
 }
 
-/* biome-ignore lint/style/noDescendingSpecificity: Existing lint violation; remove this suppression when the underlying issue is fixed. */
 .custom-select-value > svg {
 	color: var(--muted);
 }
@@ -6946,7 +6941,11 @@ details summary {
 }
 
 .login-brand {
+	display: flex;
+	align-items: center;
+	gap: 12px;
 	margin-bottom: 32px;
+	color: var(--primary);
 }
 
 .login-brand .brand-logo {
@@ -6981,6 +6980,10 @@ details summary {
 	color: var(--text);
 }
 
+.login-brand .platform-wordmark {
+	font-size: 19px;
+}
+
 .platform-capability-grid,
 .security-summary-grid {
 	display: grid;
@@ -6992,11 +6995,6 @@ details summary {
 	display: grid;
 	gap: 10px;
 	min-height: 150px;
-}
-
-.platform-capability-card svg,
-.platform-pipeline-panel > svg {
-	color: var(--primary);
 }
 
 .platform-capability-card h3,
@@ -7053,10 +7051,6 @@ details summary {
 	line-height: 1.5;
 }
 
-.gateway-workbench-card svg {
-	color: var(--primary);
-}
-
 .deployment-profile-panel {
 	display: flex;
 	align-items: center;
@@ -7096,6 +7090,11 @@ details summary {
 .module-status.ready {
 	color: var(--success);
 	border-color: color-mix(in srgb, var(--success) 50%, var(--line));
+}
+
+.module-status.unavailable {
+	color: var(--muted);
+	background: color-mix(in srgb, var(--muted) 12%, transparent);
 }
 
 .module-status.pending {
@@ -7189,4 +7188,63 @@ details summary {
 
 .security-evidence small {
 	color: var(--muted);
+}
+
+.security-event-filters {
+	flex-wrap: wrap;
+}
+
+.security-event-filters select {
+	min-width: 150px;
+}
+
+.security-event-filters input {
+	width: min(220px, 70vw);
+}
+
+.security-live {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	color: var(--muted);
+	font-size: 12px;
+	font-weight: 600;
+	text-transform: uppercase;
+}
+
+.security-live::before {
+	content: '';
+	width: 8px;
+	height: 8px;
+	border-radius: 50%;
+	background: var(--muted);
+}
+
+.security-live.active {
+	color: var(--success);
+}
+
+.security-live.active::before {
+	background: var(--success);
+	box-shadow: 0 0 0 3px color-mix(in srgb, var(--success) 18%, transparent);
+}
+
+.security-action-summary {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+	gap: 12px;
+	margin-top: 12px;
+}
+
+.security-action-summary > div {
+	display: grid;
+	gap: 4px;
+	padding: 12px;
+	border: 1px solid var(--line);
+	border-radius: 8px;
+}
+
+.security-action-summary span {
+	color: var(--muted);
+	font-size: 12px;
 }

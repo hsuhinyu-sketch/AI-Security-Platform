@@ -105,3 +105,17 @@ fn reverse_response_from_other_session_or_after_deadline_is_denied() {
 		.expires = Instant::now() - Duration::from_secs(1);
 	assert!(response(&access, answer(&id)).is_err());
 }
+
+#[test]
+fn legacy_parent_constraint_is_rechecked_before_reverse_response() {
+	let (mut access, parent) = setup();
+	let id = question(&access, &parent);
+	let legacy: security_pipeline::SecurityPipelineConfig =
+		serde_json::from_value(json!({"policies":[
+				{"id":"allow","effect":"allow","enabled":true},
+				{"id":"deny-parent","effect":"deny","enabled":true,"actionType":"toolInvoke"}
+		]}))
+		.unwrap();
+	access.legacy = Some(legacy.into());
+	assert!(response(&access, answer(&id)).is_err());
+}

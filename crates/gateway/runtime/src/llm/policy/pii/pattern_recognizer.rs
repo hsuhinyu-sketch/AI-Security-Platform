@@ -1,39 +1,30 @@
 use regex::Regex;
 
-use super::recognizer::Recognizer;
-use super::recognizer_result::RecognizerResult;
+use super::{Recognizer, RecognizerResult};
 
 #[derive(Debug)]
-pub struct Pattern {
-	#[allow(dead_code)]
-	pub name: String,
-	pub regex: Regex,
-	pub score: f32,
+struct Pattern {
+	regex: Regex,
+	score: f32,
 }
 
 pub struct PatternRecognizer {
 	patterns: Vec<Pattern>,
-	#[allow(dead_code)]
-	context: Vec<String>,
-	entity_type: String,
+	entity_type: &'static str,
 }
 
 impl PatternRecognizer {
-	pub fn new(entity_type: &str, context: Vec<String>) -> Self {
+	pub fn new(entity_type: &'static str, patterns: &[(&str, f32)]) -> Self {
 		Self {
-			patterns: Vec::new(),
-			context,
-			entity_type: entity_type.to_string(),
+			patterns: patterns
+				.iter()
+				.map(|(pattern, score)| Pattern {
+					regex: Regex::new(pattern).expect("valid built-in PII pattern"),
+					score: *score,
+				})
+				.collect(),
+			entity_type,
 		}
-	}
-
-	pub fn add_pattern(&mut self, name: &str, regex: &str, score: f32) {
-		let pattern = Pattern {
-			name: name.to_string(),
-			regex: Regex::new(regex).unwrap(),
-			score,
-		};
-		self.patterns.push(pattern);
 	}
 }
 
@@ -41,23 +32,16 @@ impl Recognizer for PatternRecognizer {
 	fn recognize(&self, text: &str) -> Vec<RecognizerResult> {
 		let mut results = Vec::new();
 		for pattern in &self.patterns {
-			for cap in pattern.regex.captures_iter(text) {
-				if let Some(matched) = cap.get(0) {
-					let candidate = matched.as_str();
-					let score = pattern.score;
-					results.push(RecognizerResult {
-						entity_type: self.entity_type.clone(),
-						matched: candidate.to_string(),
-						start: matched.start(),
-						end: matched.end(),
-						score,
-					});
-				}
+			for matched in pattern.regex.find_iter(text) {
+				results.push(RecognizerResult {
+					entity_type: self.entity_type.to_string(),
+					matched: matched.as_str().to_string(),
+					start: matched.start(),
+					end: matched.end(),
+					score: pattern.score,
+				});
 			}
 		}
 		results
-	}
-	fn name(&self) -> &str {
-		&self.entity_type
 	}
 }

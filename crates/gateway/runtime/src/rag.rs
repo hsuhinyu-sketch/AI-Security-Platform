@@ -274,6 +274,14 @@ async fn build_router(
 		.build_trusted_sources()
 		.map_err(|error| anyhow::anyhow!("RAG trusted sources for '{}': {error}", system.name))?
 		.map(Arc::new);
+	system
+		.security
+		.configuration_digest()
+		.map_err(anyhow::Error::msg)?;
+	system
+		.security
+		.prepare_execution()
+		.map_err(anyhow::Error::msg)?;
 	let security = Arc::new(system.security);
 	let ingestor = SecureIngestor::new(
 		backend.clone(),

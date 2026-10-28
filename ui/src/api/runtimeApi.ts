@@ -10,6 +10,15 @@ export interface RuntimeUser {
 	canLogout: boolean;
 }
 
+export interface RuntimeCapabilities {
+	llm: boolean;
+	a2a: boolean;
+	mcp: boolean;
+	rag: boolean;
+	inferenceRouting: boolean;
+	securityS1: boolean;
+}
+
 export interface RuntimeInfo {
 	user?: RuntimeUser | null;
 	build: {
@@ -23,6 +32,7 @@ export interface RuntimeInfo {
 		gatewayMode: 'standalone' | 'xds';
 		managementMode?: 'edge' | 'diagnostic' | 'demo';
 		configStoreMode: 'file' | 'hybrid' | 'readOnly';
+		capabilities: RuntimeCapabilities;
 	};
 }
 

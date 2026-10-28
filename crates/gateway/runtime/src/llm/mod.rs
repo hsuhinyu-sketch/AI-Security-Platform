@@ -16,6 +16,8 @@ use platform_core::prelude::Strng;
 #[cfg(feature = "gateway-llm")]
 use platform_core::strng;
 pub use policy::Policy;
+#[cfg(all(feature = "gateway-llm", feature = "security-pii"))]
+pub(crate) mod pii;
 #[cfg(feature = "gateway-llm")]
 use rand::RngExt;
 #[cfg(feature = "gateway-llm")]
@@ -870,6 +872,16 @@ impl AIProvider {
 			}
 		}
 
+		#[cfg(feature = "security-pii")]
+		if pii::inspect(&mut req, original_format, &parts).await? {
+			return Ok(RequestResult::Rejected(
+				::http::Response::builder()
+					.status(::http::StatusCode::FORBIDDEN)
+					.header(::http::header::CONTENT_TYPE, "application/json")
+					.body(Body::from(r#"{"error":"pii_blocked"}"#))
+					.map_err(|_| AIError::PiiInspection)?,
+			));
+		}
 		let mut llm_info = req.to_llm_request(self.provider(), tokenize)?;
 		if original_format == InputFormat::Detect {
 			types::detect::amend_request_info(&mut llm_info, parts.uri.path());
@@ -1699,6 +1711,8 @@ pub(crate) fn logged_response_parsing(
 
 #[derive(thiserror::Error, Debug)]
 pub enum AIError {
+	#[error("PII request inspection refused")]
+	PiiInspection,
 	#[error("missing field: {0}")]
 	MissingField(Strng),
 	#[error("model not found")]

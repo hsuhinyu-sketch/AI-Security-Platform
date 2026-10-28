@@ -201,10 +201,9 @@ impl Call {
 			.security_audit
 			.as_ref()
 			.ok_or(ProxyError::AuthorizationFailed)?;
-		let route_config = serde_json::to_value(active).map_err(|_| ProxyError::AuthorizationFailed)?;
-		let parent_config =
-			serde_json::to_value(&self.binding.config).map_err(|_| ProxyError::AuthorizationFailed)?;
-		if route_config != parent_config
+		if !active
+			.same_configuration(&self.binding.config)
+			.map_err(|_| ProxyError::AuthorizationFailed)?
 			|| active.execution_budget.is_none()
 			|| request.extensions().get::<ExecutionScope>().is_none()
 			|| !policies

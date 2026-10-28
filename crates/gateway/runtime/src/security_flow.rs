@@ -108,12 +108,7 @@ impl FlowAccess {
 	}
 }
 fn fingerprint(config: &SecurityConfig) -> Result<String, ProxyError> {
-	config
-		.validate_composition()
-		.map_err(|_| ProxyError::AuthorizationFailed)?;
-	serde_json::to_string(config)
-		.map(|s| crate::security::digest(&s))
-		.map_err(|_| ProxyError::AuthorizationFailed)
+	crate::security::configuration_fingerprint(config).map_err(|_| ProxyError::AuthorizationFailed)
 }
 fn owner(extensions: &http::Extensions) -> Result<VerifiedOwner, ProxyError> {
 	let claims = extensions

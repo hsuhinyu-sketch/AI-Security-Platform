@@ -47,6 +47,14 @@ pub trait ResponseType: Send + Sync {
 /// uniform policy enforcement and observability
 #[cfg(feature = "gateway-llm")]
 pub trait RequestType: Send + Sync {
+	#[cfg(feature = "security-pii")]
+	fn pii_body(&self) -> Result<serde_json::Value, AIError> {
+		Err(AIError::PiiInspection)
+	}
+	#[cfg(feature = "security-pii")]
+	fn replace_pii_body(&mut self, _body: serde_json::Value) -> Result<(), AIError> {
+		Err(AIError::PiiInspection)
+	}
 	fn supports_model(&self) -> bool {
 		true
 	}

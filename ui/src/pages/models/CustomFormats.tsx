@@ -10,8 +10,6 @@ const formats: ProviderFormat[] = [
 	'responses',
 	'embeddings',
 	'anthropicTokenCount',
-	'generateContent',
-	'geminiCountTokens',
 	'realtime',
 	'rerank'
 ];
@@ -22,8 +20,6 @@ const formatLabels: Record<ProviderFormat, string> = {
 	responses: 'Responses (/v1/responses)',
 	embeddings: 'Embeddings (/v1/embeddings)',
 	anthropicTokenCount: 'Anthropic token count (/v1/messages/count_tokens)',
-	generateContent: 'Gemini chat (models/{model}:generateContent)',
-	geminiCountTokens: 'Gemini token count (models/{model}:countTokens)',
 	realtime: 'Realtime (/v1/realtime)',
 	rerank: 'Rerank (/v2/rerank)'
 };

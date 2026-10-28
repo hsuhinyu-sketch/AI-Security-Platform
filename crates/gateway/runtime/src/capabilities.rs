@@ -13,6 +13,16 @@ pub(crate) fn validate_security(
 	config: &security_integration_runtime::SecurityConfig,
 	profile: GatewayProfile,
 ) -> Result<(), String> {
+	if security_integration_runtime::pii::active(config.pii.as_ref())
+		&& !cfg!(feature = "security-pii")
+	{
+		return Err("PII support is not compiled; enable security-pii".into());
+	}
+	if security_integration_runtime::pii::active(config.pii.as_ref())
+		&& !profile.supports(GatewayCapability::Llm)
+	{
+		return Err("PII model egress requires LLM support; enable gateway-llm".into());
+	}
 	if !profile.supports(GatewayCapability::Llm)
 		&& config.mcp_sessions.as_ref().is_some_and(|sessions| {
 			sessions

@@ -88,7 +88,7 @@ pub(crate) struct SessionAccess {
 	_stream: Arc<Slot>,
 	flow: Option<crate::security_flow::FlowAccess>,
 	policies: super::rbac::McpAuthorizationSet,
-	legacy: Option<Arc<security_pipeline::SecurityPipelineConfig>>,
+	legacy: Option<crate::types::agent::LegacySecurityPipeline>,
 	authorization_request: Arc<http::Request<()>>,
 }
 
@@ -107,6 +107,10 @@ pub(crate) fn restrict_for_context(
 }
 
 impl SessionAccess {
+	fn security(&self) -> super::security::McpSecurity<'_> {
+		super::security::McpSecurity::new(Some(&self.config), self.legacy.as_ref())
+	}
+
 	pub fn prepare(
 		parts: &mut http::request::Parts,
 		inputs: &RelayInputs,

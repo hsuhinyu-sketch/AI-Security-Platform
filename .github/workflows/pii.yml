@@ -1,0 +1,60 @@
+name: PII component
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'crates/security/**'
+      - 'crates/gateway/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'tests/protocol/**'
+      - '.github/workflows/pii.yml'
+  pull_request:
+    paths:
+      - 'crates/security/**'
+      - 'crates/gateway/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'tests/protocol/**'
+      - '.github/workflows/pii.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  pii:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@efa25f7f19611383d5b0ccf2d1c8914531636bf9
+        with:
+          toolchain: '1.96'
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32
+        with:
+          key: pii
+      - name: Native component and feature-disabled configuration
+        run: |
+          cargo test --locked -p security-pii --no-default-features
+          cargo test --locked -p gateway-rag --no-default-features
+          cargo test --locked -p security-integration-runtime --no-default-features --lib pii::tests
+      - name: Analyzer contract and RAG content/audit invariants
+        run: |
+          cargo test --locked -p security-pii -p gateway-llm --all-features
+          cargo test --locked -p security-integration-runtime --features pii --lib pii::tests
+      - name: Build selected gateway
+        run: cargo build --locked -p ai-security-platform-app --no-default-features --features gateway-rag,gateway-llm,gateway-mcp,security-s1,security-pii-presidio,tls-aws-lc --bin ai-security-platform
+      - name: PII business, failure and lifecycle regressions
+        run: |
+          python3 tests/protocol/run_full_tcp.py --launcher sudo --profile pii --rounds 3 --binary target/debug/ai-security-platform --report target/pii-evidence/pii.json
+          python3 tests/protocol/run_full_tcp.py --launcher sudo --profile rag-llm --rounds 3 --binary target/debug/ai-security-platform --report target/pii-evidence/rag-llm.json
+      - name: Retain evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: pii-evidence
+          path: target/pii-evidence/
+          if-no-files-found: ignore

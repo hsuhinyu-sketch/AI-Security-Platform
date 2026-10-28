@@ -54,6 +54,8 @@ type LocalRemoteRateLimitPolicy =
 	LocalExplicitOrConditional<crate::http::remoteratelimit::RemoteRateLimit>;
 type LocalTransformationPolicy = LocalExplicitOrConditional<LocalTransformationConfig>;
 type LocalMcpGuardrails = crate::mcp::guardrails::McpGuardrails;
+#[path = "local/security.rs"]
+mod security_config;
 #[cfg(feature = "gateway-llm")]
 const DEFAULT_LLM_PORT: u16 = 4000;
 const DEFAULT_MCP_PORT: u16 = 3000;
@@ -446,12 +448,23 @@ type LocalRagGatewayConfig = serde_json::Value;
 #[cfg(feature = "gateway-rag")]
 #[apply(schema_de!)]
 pub struct LocalRagGatewayConfig {
+	// Reject the superseded input explicitly; an ignored guard setting is unsafe.
+	#[serde(default, rename = "pii", deserialize_with = "reject_rag_pii")]
+	#[cfg_attr(feature = "schema", schemars(skip))]
+	_removed_pii: (),
 	#[serde(flatten)]
 	#[cfg_attr(feature = "schema", schemars(with = "serde_json::Value"))]
 	gateway: gateway_rag::RagGatewayConfig,
 	/// Every RAG listener requires a signature-verifying JWT configuration. The listener derives
 	/// Subject / Tenant / Agent facts from its validated claims and never accepts them in JSON.
 	authentication: crate::http::jwt::LocalJwtConfig,
+}
+
+#[cfg(feature = "gateway-rag")]
+fn reject_rag_pii<'de, D: serde::Deserializer<'de>>(_: D) -> Result<(), D::Error> {
+	Err(serde::de::Error::custom(
+		"rag.pii was removed; configure security.pii at the model egress",
+	))
 }
 
 /// An owned RAG listener declaration extracted from one local AI-system configuration. It is the
@@ -1757,7 +1770,7 @@ impl LocalBackendPolicies {
 			pols.push(BackendTrafficPolicy::McpGuardrails(Arc::new(p)))
 		}
 		if let Some(p) = security_pipeline {
-			pols.push(BackendTrafficPolicy::SecurityPipeline(Arc::new(p)))
+			pols.push(BackendTrafficPolicy::SecurityPipeline(p.into()))
 		}
 		if let Some(p) = a2a {
 			pols.push(BackendTrafficPolicy::A2a(p))
@@ -2294,38 +2307,10 @@ async fn convert(
 		workloads,
 		services,
 	};
-	if let Some(policy) = &config.dependency_egress {
-		validate_nested_dependency_endpoints(&serde_json::to_value(&normalized)?, policy)?;
-	}
+	normalized
+		.prepare_security(config.dependency_egress.as_ref())
+		.await?;
 	Ok(normalized)
-}
-
-fn validate_nested_dependency_endpoints(
-	value: &serde_json::Value,
-	policy: &security_integration_runtime::dependency_egress::DependencyEgressConfig,
-) -> anyhow::Result<()> {
-	match value {
-		serde_json::Value::Object(fields) => {
-			for (key, value) in fields {
-				if key == "securityAudit" && value.is_object() {
-					let security: security_integration_runtime::SecurityConfig =
-						serde_json::from_value(value.clone())?;
-					security
-						.check_dependency_endpoints(policy)
-						.map_err(anyhow::Error::msg)?;
-				} else {
-					validate_nested_dependency_endpoints(value, policy)?;
-				}
-			}
-		},
-		serde_json::Value::Array(values) => {
-			for value in values {
-				validate_nested_dependency_endpoints(value, policy)?;
-			}
-		},
-		_ => {},
-	}
-	Ok(())
 }
 
 fn inherit_dependency_policy(
@@ -2399,6 +2384,9 @@ fn validate_gateway_capabilities_for_profile(
 			bail!("{prefix}.inference requires the LLM gateway");
 		}
 		if let Some(security) = &system.security {
+			if security_integration_runtime::pii::active(security.pii.as_ref()) && system.llm.is_none() {
+				bail!("{prefix}.security.pii requires the LLM gateway");
+			}
 			crate::capabilities::validate_security(security, profile).map_err(anyhow::Error::msg)?;
 			security
 				.validate_composition()
@@ -3209,7 +3197,7 @@ pub(crate) async fn split_policies(
 		backend_policies.push(BackendTrafficPolicy::McpGuardrails(Arc::new(p)))
 	}
 	if let Some(p) = security_pipeline {
-		backend_policies.push(BackendTrafficPolicy::SecurityPipeline(Arc::new(p)))
+		backend_policies.push(BackendTrafficPolicy::SecurityPipeline(p.into()))
 	}
 	if let Some(p) = mcp_authentication {
 		let authn: McpAuthentication = p.translate(resources).await?;

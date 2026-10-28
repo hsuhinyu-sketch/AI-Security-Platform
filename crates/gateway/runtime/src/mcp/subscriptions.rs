@@ -136,14 +136,10 @@ fn authorize_resource(access: &SessionAccess, server: &str, uri: &str) -> Result
 			security_types::ResourceType::McpResource,
 			security_pipeline::mcp_object_id(server, uri),
 		);
-		crate::security::evaluate(&access.config, &action)
+		access
+			.security()
+			.authorize(&action, None)
 			.map_err(|_| access.denial("resource-authorization"))?;
-		if let Some(config) = &access.legacy {
-			config
-				.build(crate::security_events::UiSecurityAuditSink)
-				.authorize(&action, None)
-				.map_err(|_| access.denial("resource-authorization"))?;
-		}
 		if let Some(egress) = &access.config.data_egress {
 			security_integration_runtime::check_data_egress(
 				egress,

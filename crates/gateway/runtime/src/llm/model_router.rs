@@ -208,6 +208,10 @@ enum RequestedModelLocation {
 }
 
 impl ModelRouter {
+	pub(crate) fn backend_policies(&self) -> impl Iterator<Item = &BackendTrafficPolicy> {
+		self.models.iter().flat_map(|model| &model.backend_policies)
+	}
+
 	pub fn new(
 		models: Vec<ModelRoute>,
 		virtual_models: Vec<VirtualModelRoute>,

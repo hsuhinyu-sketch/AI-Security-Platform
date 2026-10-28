@@ -276,7 +276,7 @@ export function PlaygroundPage() {
 	async function loadMcpTools(bearerToken: string) {
 		let sessionId = await initializeMcpSession(
 			derivedMcpBaseUrl,
-			'agentgateway-ui-llm-playground',
+			'ai-security-platform-ui-llm-playground',
 			mcpSessionId,
 			bearerToken
 		);
@@ -1092,7 +1092,12 @@ async function executeToolCalls(
 	const executions: ToolExecution[] = [];
 	let activeSessionId =
 		sessionId ||
-		(await initializeMcpSession(baseUrl, 'agentgateway-ui-llm-playground', sessionId, bearerToken));
+		(await initializeMcpSession(
+			baseUrl,
+			'ai-security-platform-ui-llm-playground',
+			sessionId,
+			bearerToken
+		));
 	setSessionId(activeSessionId);
 	for (const call of calls) {
 		const functionName = call.function?.name ?? '';

@@ -698,6 +698,23 @@ impl<T: Clone + Sync + Send + 'static> EndpointSet<T> {
 		ActiveEndpointsIter(self.best_bucket())
 	}
 
+	/// Configuration checks must include fallback and ejected providers, not only the selected bucket.
+	#[cfg(feature = "gateway-llm")]
+	pub(crate) fn all_endpoints(&self) -> Vec<Arc<T>> {
+		let mut endpoints = Vec::new();
+		for bucket in &self.buckets {
+			let group = bucket.load_full();
+			endpoints.extend(
+				group
+					.active
+					.values()
+					.chain(group.rejected.values())
+					.map(|e| e.endpoint.clone()),
+			);
+		}
+		endpoints
+	}
+
 	/// Request-local filtering before priority/P2C selection. Never evict a globally healthy
 	/// endpoint merely because this particular caller cannot use it.
 	pub fn eligible_active<F>(&self, mut permits: F) -> Vec<(Arc<T>, Arc<EndpointInfo>)>

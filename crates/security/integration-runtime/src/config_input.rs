@@ -1,5 +1,5 @@
 //! Strict input for the existing flattened security configuration; no runtime state is accepted.
-use super::{SecurityConfig, SecurityPipelineConfig};
+use super::{SecurityConfig, SecurityConfigData, SecurityPipelineConfig};
 use serde::de::{Error, MapAccess, Visitor};
 use std::collections::BTreeSet;
 
@@ -12,7 +12,7 @@ impl<'de> serde::Deserialize<'de> for SecurityConfig {
 				formatter.write_str("a security configuration object")
 			}
 			fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<Self::Value, A::Error> {
-				let mut config = SecurityConfig::default();
+				let mut config = SecurityConfigData::default();
 				let mut pipeline = serde_json::Map::new();
 				let mut seen = BTreeSet::new();
 				while let Some(key) = map.next_key::<String>()? {
@@ -22,6 +22,7 @@ impl<'de> serde::Deserialize<'de> for SecurityConfig {
 						)));
 					}
 					match key.as_str() {
+						"pii" => config.pii = map.next_value()?,
 						"requiredAudit" => config.required_audit = map.next_value()?,
 						"dependencyEgress" => config.dependency_egress = map.next_value()?,
 						"executionBudget" => config.execution_budget = map.next_value()?,
@@ -45,7 +46,7 @@ impl<'de> serde::Deserialize<'de> for SecurityConfig {
 					serde_json::Value::Object(pipeline),
 				)
 				.map_err(A::Error::custom)?;
-				Ok(config)
+				Ok(config.into())
 			}
 		}
 		deserializer.deserialize_map(Input)

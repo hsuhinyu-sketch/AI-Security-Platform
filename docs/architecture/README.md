@@ -20,6 +20,12 @@
 
 安全能力采用场景级组合，保证依赖完整，不要求每个控制任意单项裁剪。配置引用未编译的能力时明确拒绝；已要求的安全控制不得静默降级。详细语义见[统一执行约束](../protocol/execution-contract.md)。
 
+安全配置的静态校验、声明身份、PII 引擎、策略数据、参数/委托校验器和本地 Agent 注册表在配置所有者中复用；字段修改自动使静态结果失效，热更新候选准备成功后才能发布。每次执行仍绑定当前审计目标、远程 Provider、请求与 Capability，并检查身份有效期、审批、撤销、预算及配置 Lease。静态准备不新增授权结果缓存；动态 PDP 继续遵循显式配置的缓存和 Fail-Closed 规则，零 TTL 禁用缓存。
+
+Rust 嵌入方可反序列化为 `SecurityConfig`，或用 `SecurityConfigData { ... }.into()` 构造；原 `SecurityConfig { ... }` 字面量需迁移。字段读取和直接修改语法保留，消费声明用 `into_data()`。`PreparedPii::get` 返回就绪引擎的 `Arc`，准备句柄克隆共享未变的引擎但独立跟踪后续配置。YAML/JSON 结构和外部 HTTP API 不因此改变。
+
+MCP 的 `securityPipeline` 兼容声明在 Host 装配时归一成固定 Enforce 的共享配置所有者，序列化仍保留原形状。它与公共安全声明分别判断并取交集，通过统一的 MCP 执行入口调用原 Security Core；审批 Provider、观察模式和策略列表不在声明之间混用。Rust 嵌入方构造 `BackendTrafficPolicy::SecurityPipeline` 或 `BackendPolicies.security_pipeline` 时，用 `SecurityPipelineConfig::into()` 转为 `LegacySecurityPipeline`。
+
 ## 扩展方式
 
 新增协议在对应协议组件实现处理规则，通过 Host 装配和 Cargo 能力声明接入。跨协议执行使用受控契约，例如 MCP Sampling 通过模型执行契约调用模型，不绑定 LLM Runtime 内部实现。

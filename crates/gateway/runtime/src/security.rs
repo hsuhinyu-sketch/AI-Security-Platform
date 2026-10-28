@@ -11,6 +11,13 @@ pub(crate) fn digest(value: &str) -> String {
 	)
 }
 
+/// Legacy binding format shared by Context and workflow budgets; never a cached decision.
+pub(crate) fn configuration_fingerprint(config: &SecurityConfig) -> Result<String, String> {
+	config
+		.configuration_digest()
+		.map(|value| base64::Engine::encode(&base64::engine::general_purpose::URL_SAFE_NO_PAD, value))
+}
+
 /// Gateway-generated identity, independent of caller headers and URL query contents.
 /// Request extensions keep retries and authorization/egress checks on the same ID.
 pub(crate) fn request_id(extensions: &mut ::http::Extensions) -> String {
@@ -65,4 +72,32 @@ fn string_claim(
 			.and_then(serde_json::Value::as_str)
 			.map(ToOwned::to_owned)
 	})
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	#[test]
+	fn binding_digest_remains_compatible_and_changes_with_mutated_configuration() {
+		let mut config = SecurityConfig::default();
+		assert_eq!(
+			configuration_fingerprint(&config).unwrap(),
+			"gWqyOnvh8v7HlC-x1OoiKHAPC5ZEBezb4wIuUaXA6Z8"
+		);
+		config.mode = security_integration_runtime::SecurityMode::Enforce;
+		assert_eq!(
+			configuration_fingerprint(&config).unwrap(),
+			"xZKv8qHiSIruvMonQZmVnv3a6a3x7CT1vx9u9MVU9Yk"
+		);
+	}
+
+	#[test]
+	fn invalid_composition_cannot_produce_a_binding_fingerprint() {
+		let config: SecurityConfig = serde_json::from_value(serde_json::json!({
+			"mode":"audit","requiredAudit":{"actionTypes":["modelInvoke"]}
+		}))
+		.unwrap();
+		assert!(configuration_fingerprint(&config).is_err());
+	}
 }

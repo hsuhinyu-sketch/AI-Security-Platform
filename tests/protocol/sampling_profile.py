@@ -4,6 +4,7 @@ import argparse
 import collections
 import concurrent.futures
 import contextlib
+import copy
 import ctypes
 import http.client
 import http.server
@@ -367,6 +368,41 @@ class Sampling(unittest.TestCase):
         self.assert_denied(self.result(self.task()))
         self.assertEqual(self.server.calls['chat'], 0)
         self.assertEqual(len(self.server.answers), 0)
+
+    def separate_model_system(self):
+        parent = self.config['aiSystems'][0]
+        listeners = [self.gateway.role_ports.reservations.enter_context(socket.socket()) for _ in range(2)]
+        for listener in listeners:
+            listener.bind(('127.0.0.1', 0))
+        parent['security']['mcpSessions']['tasks']['sampling']['authority'] = f'127.0.0.1:{listeners[1].getsockname()[1]}'
+        # The common security declaration includes MCP session controls, so the second
+        # system also provides MCP. Original controls keep creating the parent's budget.
+        model = copy.deepcopy(parent)
+        model['name'] += '-model'
+        model['mcp']['port'] = listeners[0].getsockname()[1]
+        model['llm']['port'] = listeners[1].getsockname()[1]
+        self.config['aiSystems'].append(model)
+        return model
+
+    def test_equal_configuration_in_distinct_protocol_systems_allows_sampling(self):
+        self.separate_model_system()
+        self.start()
+        reply = self.result(self.task())
+        self.assertEqual(reply[0], 200, reply)
+        self.assertEqual(self.server.calls['chat'], 1)
+        self.assertEqual(len(self.server.answers), 1)
+
+    def test_different_allowing_model_configuration_never_dispatches_sampling(self):
+        model = self.separate_model_system()
+        # Both configurations authorize the model; differing declared constraints still cannot
+        # satisfy the originating protocol's exact model-route contract.
+        model['security']['policies'].append({
+            'id': 'another-allow-model', 'actionType': 'modelInvoke', 'effect': 'allow',
+            'enabled': True, 'tenantId': 'tenant-a'})
+        self.start()
+        self.assert_denied(self.result(self.task()))
+        self.assertEqual(self.server.calls['chat'], 0)
+        self.assertEqual(self.server.answers, [])
 
     def test_unregistered_local_port_never_becomes_a_network_destination(self):
         self.config['aiSystems'][0]['security']['mcpSessions']['tasks']['sampling']['authority'] = f'127.0.0.1:{self.server.server_port}'

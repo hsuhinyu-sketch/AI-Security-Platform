@@ -60,7 +60,7 @@ import {
 	uiLogAttributeExpressions
 } from '@/config';
 import { queryParam, useStickyQueryParam } from '@/drawerRouteState';
-import { useLlmConfigData, useUpdateConfig, useRuntimeInfo } from '@/hooks';
+import { useLlmConfigData, useRuntimeInfo, useUpdateConfig } from '@/hooks';
 import { llmModelOptions } from '@/llmModelOptions';
 import {
 	ANALYTICS_DIMENSIONS,
@@ -318,7 +318,12 @@ export function LogsPage() {
 				description="Inspect recent LLM calls and request/response payloads."
 				actions={
 					<div className="button-row">
-						<button className="button" type="button" disabled={readOnly} onClick={() => setSettings('logs')}>
+						<button
+							className="button"
+							type="button"
+							disabled={readOnly}
+							onClick={() => setSettings('logs')}
+						>
 							<Settings size={16} />
 							Settings
 						</button>
@@ -1011,7 +1016,7 @@ function downloadAnalyticsCsv(buckets: AnalyticsTimeBucket[], groupBy: Analytics
 	const url = URL.createObjectURL(blob);
 	const anchor = document.createElement('a');
 	anchor.href = url;
-	anchor.download = `agentgateway-analytics-${new Date().toISOString().slice(0, 10)}.csv`;
+	anchor.download = `ai-security-platform-analytics-${new Date().toISOString().slice(0, 10)}.csv`;
 	anchor.click();
 	URL.revokeObjectURL(url);
 }
@@ -1526,7 +1531,9 @@ function LogDetailView(props: {
 	onOpenSettings?: () => void;
 }) {
 	const messages = logConversation(props.entry);
-	const securityRequestId = stringValue(attributeValue(props.entry.attributes, 'security.request_id'));
+	const securityRequestId = stringValue(
+		attributeValue(props.entry.attributes, 'security.request_id')
+	);
 	const trajectory = trajectoryEvents(messages);
 	const conversationRef = useRef<HTMLDetailsElement>(null);
 	const usage = logUsageDetail(props.entry);
@@ -1564,7 +1571,18 @@ function LogDetailView(props: {
 
 	return (
 		<div className="log-detail-view">
-			{securityRequestId ? <div className="log-detail-id-row"><span>Security Request</span><code>{securityRequestId}</code><CopyButton value={securityRequestId} /><a href={`${routerBasePath() ?? ''}/security/events?requestId=${encodeURIComponent(securityRequestId)}`}>View security events</a></div> : null}
+			{securityRequestId ? (
+				<div className="log-detail-id-row">
+					<span>Security Request</span>
+					<code>{securityRequestId}</code>
+					<CopyButton value={securityRequestId} />
+					<a
+						href={`${routerBasePath() ?? ''}/security/events?requestId=${encodeURIComponent(securityRequestId)}`}
+					>
+						View security events
+					</a>
+				</div>
+			) : null}
 			<div className="log-detail-top">
 				<div className="log-detail-title">
 					<ProviderIcon provider={providerIconName(provider)} />
@@ -2709,7 +2727,7 @@ function downloadJson(value: unknown) {
 	const url = URL.createObjectURL(blob);
 	const anchor = document.createElement('a');
 	anchor.href = url;
-	anchor.download = 'agentgateway-log.json';
+	anchor.download = 'ai-security-platform-log.json';
 	anchor.click();
 	URL.revokeObjectURL(url);
 }

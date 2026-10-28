@@ -80,3 +80,17 @@ fn task_terminal_snapshot_cannot_regress_or_cross_session() {
 	assert!(route(&mut get, &mut no_session).is_err());
 	drop(ctx);
 }
+
+#[test]
+fn legacy_constraint_is_rechecked_for_the_original_task_business_and_arguments() {
+	let (mut access, _ctx, ticket, _rpc) = create();
+	accepted(&access, &ticket);
+	assert!(ticket.check(&access).is_ok());
+	let legacy: security_pipeline::SecurityPipelineConfig = serde_json::from_value(json!({
+			"policies":[{"id":"allow","effect":"allow","enabled":true}],
+			"requiredToolArguments":[{"toolName":"echo","requiredFields":["recordId"]}]
+	}))
+	.unwrap();
+	access.legacy = Some(legacy.into());
+	assert!(ticket.check(&access).is_err());
+}

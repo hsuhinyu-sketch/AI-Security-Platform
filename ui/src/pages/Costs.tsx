@@ -177,7 +177,7 @@ export function CostsPage() {
 				) : (
 					<EmptyState
 						title="No cost catalogs configured"
-						description="Refresh the base catalog with the latest pricing data from agentgateway."
+						description="Refresh the base catalog with the latest pricing data from the configured catalog source."
 					/>
 				)}
 			</Panel>

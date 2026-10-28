@@ -22,7 +22,7 @@ class Model(gateway_faults.Upstream):
         request = json.loads(self.rfile.read(int(self.headers['Content-Length'])))
         self.server.requests.append((self.path, request))
         mode = self.server.mode
-        text = 'safe answer' if mode == 'safe' else SECRET
+        text = {'safe': 'safe answer', 'email': 'alice@example.com'}.get(mode, SECRET)
         if self.path.endswith('/images/generations'):
             return self.reply(200, {'model': 'local', 'data': [{'url': 'https://example.test/result'}]})
         if request.get('stream'):
@@ -124,10 +124,10 @@ class SecurityContent(unittest.TestCase):
             guard['streaming'] = streaming
         self.config['aiSystems'][0]['llm']['models'][0]['guardrails'] = guard
 
-    def call(self, path='/v1/chat/completions', *, stream=False, tenant='tenant-a'):
-        body = {'model': 'local', 'stream': stream, 'messages': [{'role': 'user', 'content': 'question'}]}
+    def call(self, path='/v1/chat/completions', *, stream=False, tenant='tenant-a', content='question'):
+        body = {'model': 'local', 'stream': stream, 'messages': [{'role': 'user', 'content': content}]}
         if path == '/v1/responses':
-            body = {'model': 'local', 'input': 'question', 'stream': stream}
+            body = {'model': 'local', 'input': content, 'stream': stream}
         elif path == '/v1/messages':
             body['max_tokens'] = 100
         elif '/images/' in path:
@@ -362,6 +362,25 @@ class SecurityContent(unittest.TestCase):
         self.guard('request', pattern='question')
         self.start()
         self.assert_blocked(self.call(), 0, request=True)
+
+    def test_builtin_request_rejection_never_dispatches_sensitive_content(self):
+        self.config['aiSystems'][0]['llm']['models'][0]['guardrails'] = {
+            'request': [{'regex': {'action': 'reject', 'rules': [{'builtin': 'email'}]}}]}
+        self.start()
+        self.assertEqual(self.call()[0], 200)
+        self.assert_blocked(self.call(content='联系 alice@example.com'), 1, request=True)
+        self.evidence[self.id()] = {'upstreamCalls': len(self.server.requests), 'sensitiveDispatches': 0}
+
+    def test_builtin_response_mask_changes_delivered_content(self):
+        self.config['aiSystems'][0]['llm']['models'][0]['guardrails'] = {
+            'response': [{'regex': {'action': 'mask', 'rules': [{'builtin': 'email'}]}}]}
+        self.server.mode = 'email'
+        self.start()
+        status, body = self.call()
+        self.assertEqual(status, 200, body)
+        self.assertNotIn(b'alice@example.com', body)
+        self.assertEqual(json.loads(body)['choices'][0]['message']['content'], '<EMAIL_ADDRESS>')
+        self.assertEqual(len(self.server.requests), 1)
 
 
 if __name__ == '__main__':

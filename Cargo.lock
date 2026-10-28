@@ -169,6 +169,7 @@ dependencies = [
  "security-audit",
  "security-capability-broker",
  "security-integration-runtime",
+ "security-pii",
  "security-pipeline",
  "security-rag",
  "security-types",
@@ -6183,6 +6184,7 @@ dependencies = [
  "libc",
  "reqwest",
  "security-audit",
+ "security-pii",
  "security-pipeline",
  "security-rag",
  "security-types",
@@ -6206,6 +6208,20 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.11.1",
+]
+
+[[package]]
+name = "security-pii"
+version = "0.0.0"
+dependencies = [
+ "async-trait",
+ "phonenumber",
+ "regex",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+ "tokio",
 ]
 
 [[package]]

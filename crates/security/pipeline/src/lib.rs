@@ -21,10 +21,11 @@ pub use pipeline::{
 	DelegationRevocationError, DelegationRevocationProvider, DelegationRevocationRegistry,
 	DelegationScope, DynamicAuthorizationConfig, DynamicPdp, DynamicPdpError, DynamicPdpFailureMode,
 	DynamicPolicy, ExternalAgentIdentityCheck, GatewayError, LocalDynamicPdp, PolicyAuthorizer,
-	RegisteredAgentConfig, RemoteDynamicPdp, RemotePdpRequest, RemotePdpResponse, RemotePdpTransport,
-	RequiredIdentity, RequiredToolApproval, RequiredToolApprovalConfig, RequiredToolArguments,
-	RequiredToolArgumentsConfig, RuntimeSecurityControls, SecurityControl, SecurityPipeline,
-	SecurityPipelineConfig, StaticAndDynamicAuthorizer, StaticApproval, ToolApproval,
+	PreparedSecurityPipeline, RegisteredAgentConfig, RemoteDynamicPdp, RemotePdpRequest,
+	RemotePdpResponse, RemotePdpTransport, RequiredIdentity, RequiredToolApproval,
+	RequiredToolApprovalConfig, RequiredToolArguments, RequiredToolArgumentsConfig,
+	RuntimeSecurityControls, SecurityControl, SecurityPipeline, SecurityPipelineConfig,
+	StaticAndDynamicAuthorizer, StaticApproval, ToolApproval,
 };
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]

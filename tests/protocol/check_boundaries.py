@@ -476,3 +476,23 @@ for features in ("mcp-edge,tls-aws-lc", "gateway-a2a,security-s1,tls-aws-lc",
 for features in ("gateway-mcp,gateway-llm,security-s1,tls-aws-lc", "llm-edge,tls-aws-lc"):
     assert "protocol" in llm_features(features), features
 print("B4: non-LLM scenarios share only LLM values; protocol feature and OpenAI SDK absent; shared security retained")
+
+# PII is an optional security component, not another gateway or implicit protocol selector.
+for features in ((), ("--features", "presidio")):
+    tree = cargo("tree", "--offline", "-p", "security-pii", "--no-default-features", *features,
+                 "--edges", "normal", "--prefix", "none")
+    names = {line.split()[0] for line in tree.splitlines() if line.strip()}
+    assert not (hosts | protocols) & names, "PII depends on a gateway implementation"
+    assert ("reqwest" in names) == bool(features), "native PII unexpectedly selected HTTP backend"
+for features, expected in (
+    ("gateway-llm,security-s1,security-pii,tls-aws-lc", True),
+    ("gateway-rag,security-s1,tls-aws-lc", False),
+    ("gateway-rag,security-s1,security-pii,tls-aws-lc", True),
+):
+    tree = cargo("tree", "--offline", "-p", "ai-security-platform-app", "--no-default-features",
+                 "--features", features, "--edges", "normal", "--prefix", "none")
+    names = {line.split()[0] for line in tree.splitlines() if line.strip()}
+    assert ("security-pii" in names) == expected, features
+    if features.startswith("gateway-llm"):
+        assert "gateway-rag" not in names, "PII feature implicitly selected a protocol"
+print("PII: independent core; model egress selection; no implicit protocol or disabled component dependencies")

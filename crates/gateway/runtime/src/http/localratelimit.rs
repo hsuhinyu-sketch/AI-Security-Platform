@@ -170,7 +170,6 @@ mod ratelimit {
 	#[derive(Debug)]
 	pub struct Ratelimiter {
 		available: AtomicU64,
-		dropped: AtomicU64,
 		parameters: Parameters,
 		refill_at: AtomicInstant,
 	}
@@ -193,12 +192,6 @@ mod ratelimit {
 			self.parameters.capacity
 		}
 
-		/// Returns the number of tokens currently available.
-		#[allow(dead_code)]
-		pub fn available(&self) -> u64 {
-			self.available.load(Ordering::Relaxed)
-		}
-
 		/// Returns the number of tokens currently available. This will refill if needed;
 		pub fn available_refill(&self) -> u64 {
 			let _ = self.refill(Instant::now());
@@ -208,13 +201,6 @@ mod ratelimit {
 		/// Returns the time of the next refill.
 		pub fn next_refill(&self) -> Instant {
 			self.refill_at.load(Ordering::Relaxed)
-		}
-
-		/// Returns the number of tokens that have been dropped due to bucket
-		/// overflowing.
-		#[allow(dead_code)]
-		pub fn dropped(&self) -> u64 {
-			self.dropped.load(Ordering::Relaxed)
 		}
 
 		/// Remove tokens from the bucket after the fact. This is useful for true-up
@@ -286,9 +272,6 @@ mod ratelimit {
 				// we will fill the bucket up to the capacity
 				let to_add = parameters.capacity - available;
 				self.available.fetch_add(to_add, Ordering::Release);
-
-				// and increment the number of tokens dropped
-				self.dropped.fetch_add(amount - to_add, Ordering::Relaxed);
 			} else {
 				self.available.fetch_add(amount, Ordering::Release);
 			}
@@ -443,10 +426,54 @@ mod ratelimit {
 
 			Ok(Ratelimiter {
 				available,
-				dropped: AtomicU64::new(0),
 				parameters,
 				refill_at,
 			})
+		}
+	}
+
+	#[cfg(test)]
+	mod tests {
+		use super::*;
+
+		fn bucket() -> Ratelimiter {
+			Ratelimiter::builder(1, core::time::Duration::from_secs(3600))
+				.max_tokens(2)
+				.initial_available(2)
+				.build()
+				.unwrap()
+		}
+
+		#[test]
+		fn refill_caps_tokens_and_preserves_denial_after_consumption() {
+			let bucket = bucket();
+			bucket.try_wait_n(2).unwrap();
+			assert!(matches!(bucket.try_wait(), Err((2, 0, _))));
+			let refill_time = bucket.next_refill() + Duration::from_nanos(36_000_000_000_000);
+			bucket.refill(refill_time).unwrap();
+			bucket.try_wait_n(2).unwrap();
+			assert!(matches!(bucket.try_wait(), Err((2, 0, _))));
+		}
+
+		#[test]
+		fn concurrent_admission_cannot_exceed_available_tokens() {
+			let bucket = std::sync::Arc::new(bucket());
+			let barrier = std::sync::Arc::new(std::sync::Barrier::new(8));
+			let workers: Vec<_> = (0..8)
+				.map(|_| {
+					let bucket = bucket.clone();
+					let barrier = barrier.clone();
+					std::thread::spawn(move || {
+						barrier.wait();
+						bucket.try_wait().is_ok()
+					})
+				})
+				.collect();
+			let admitted = workers
+				.into_iter()
+				.map(|worker| usize::from(worker.join().unwrap()))
+				.sum::<usize>();
+			assert_eq!(admitted, 2);
 		}
 	}
 }

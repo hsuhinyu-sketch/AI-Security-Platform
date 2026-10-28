@@ -40,7 +40,7 @@ pub struct Relay {
 	upstreams: Arc<upstream::UpstreamGroup>,
 	pub policies: McpAuthorizationSet,
 	pub(crate) mcp_guardrails: Option<Arc<crate::mcp::guardrails::McpGuardrails>>,
-	pub(crate) security_pipeline: Option<Arc<security_pipeline::SecurityPipelineConfig>>,
+	pub(crate) security_pipeline: Option<crate::types::agent::LegacySecurityPipeline>,
 	pub(crate) security_audit: Option<Arc<security_integration_runtime::SecurityConfig>>,
 	pub(crate) policy_client: PolicyClient,
 }
@@ -49,7 +49,7 @@ pub struct RelayInputs {
 	pub backend: McpBackendGroup,
 	pub policies: McpAuthorizationSet,
 	pub mcp_guardrails: Option<Arc<crate::mcp::guardrails::McpGuardrails>>,
-	pub security_pipeline: Option<Arc<security_pipeline::SecurityPipelineConfig>>,
+	pub security_pipeline: Option<crate::types::agent::LegacySecurityPipeline>,
 	pub security_audit: Option<Arc<security_integration_runtime::SecurityConfig>>,
 	pub client: PolicyClient,
 }
@@ -102,26 +102,9 @@ impl Relay {
 			.expect("gateway just installed MCP context")
 			.action
 			.clone();
-		let enforce = security_integration_runtime::SecurityConfig {
-			mode: security_integration_runtime::SecurityMode::Enforce,
-			..Default::default()
-		};
-		for config in self
-			.security_audit
-			.as_deref()
-			.into_iter()
-			.chain(self.security_pipeline.as_ref().map(|_| &enforce))
-		{
-			security_integration_runtime::unsupported_operation_with_audit(
-				config,
-				&action,
-				"mcp",
-				&crate::security_events::UiSecurityAuditSink,
-			)
-			.map_err(|_| {
-				UpstreamError::InvalidRequest("security policy denied unsupported MCP notification".into())
-			})?;
-		}
+		self.security().unsupported(&action).map_err(|_| {
+			UpstreamError::InvalidRequest("security policy denied unsupported MCP notification".into())
+		})?;
 		Ok(())
 	}
 
@@ -247,28 +230,11 @@ impl Relay {
 		}))
 	}
 
-	fn enforce_security_pipeline(
-		&self,
-		r: &JsonRpcRequest<ClientRequest>,
-		ctx: &IncomingRequestContext,
-		server: &str,
-	) -> Result<(), UpstreamError> {
-		let Some(config) = self.security_pipeline.as_deref() else {
-			return Ok(());
-		};
-		crate::mcp::security::enforce_request(config, r, ctx, server)
-	}
-
-	fn audit_security_pipeline(
-		&self,
-		r: &JsonRpcRequest<ClientRequest>,
-		ctx: &mut IncomingRequestContext,
-		mcp_server_id: &str,
-	) -> Result<(), UpstreamError> {
-		if let Some(config) = self.security_audit.as_deref() {
-			crate::mcp::security::audit_request(config, r, ctx, mcp_server_id)?;
-		}
-		Ok(())
+	fn security(&self) -> super::security::McpSecurity<'_> {
+		super::security::McpSecurity::new(
+			self.security_audit.as_deref(),
+			self.security_pipeline.as_ref(),
+		)
 	}
 
 	fn apply_vehicle_response_guardrails<S>(&self, stream: S) -> Messages
@@ -501,16 +467,15 @@ impl Relay {
 								prompt.name.to_string(),
 							)),
 							&cel,
-						) && crate::mcp::security::visible_object(
-							security.as_deref(),
-							legacy.as_deref(),
-							&request_id,
-							&identity,
-							server_name,
-							security_types::ResourceType::McpPrompt,
-							&prompt.name,
-							"prompts/get",
-						)
+						) && super::security::McpSecurity::new(security.as_deref(), legacy.as_ref())
+							.visible_object(
+								&request_id,
+								&identity,
+								server_name,
+								security_types::ResourceType::McpPrompt,
+								&prompt.name,
+								"prompts/get",
+							)
 					},
 				))
 			})
@@ -539,16 +504,15 @@ impl Relay {
 								resource.uri.to_string(),
 							)),
 							&cel,
-						) && crate::mcp::security::visible_object(
-							security.as_deref(),
-							legacy.as_deref(),
-							&request_id,
-							&identity,
-							server_name,
-							security_types::ResourceType::McpResource,
-							&resource.uri,
-							"resources/read",
-						)
+						) && super::security::McpSecurity::new(security.as_deref(), legacy.as_ref())
+							.visible_object(
+								&request_id,
+								&identity,
+								server_name,
+								security_types::ResourceType::McpResource,
+								&resource.uri,
+								"resources/read",
+							)
 					},
 				))
 			})
@@ -577,16 +541,15 @@ impl Relay {
 								template.uri_template.to_string(),
 							)),
 							&cel,
-						) && crate::mcp::security::visible_object(
-							security.as_deref(),
-							legacy.as_deref(),
-							&request_id,
-							&identity,
-							server_name,
-							security_types::ResourceType::McpResource,
-							&template.uri_template,
-							"resources/read",
-						)
+						) && super::security::McpSecurity::new(security.as_deref(), legacy.as_ref())
+							.visible_object(
+								&request_id,
+								&identity,
+								server_name,
+								security_types::ResourceType::McpResource,
+								&template.uri_template,
+								"resources/read",
+							)
 					},
 				))
 			})
@@ -620,8 +583,9 @@ impl Relay {
 				self.mcp_guardrails.is_some(),
 			)?;
 		}
-		self.audit_security_pipeline(&r, &mut ctx, service_name)?;
-		self.enforce_security_pipeline(&r, &ctx, service_name)?;
+		self
+			.security()
+			.authorize_request(&r, &mut ctx, service_name)?;
 		// Stateless single-target bootstrap must obey the same server filter as fanout,
 		// including transports that never enter the HTTP egress hook (e.g. stdio).
 		if !self.permits_transport(service_name) {
@@ -823,8 +787,9 @@ impl Relay {
 			.as_ref()
 			.is_some_and(|c| c.cross_component.is_some());
 		if !object_list && !cross_component {
-			self.audit_security_pipeline(&r, &mut ctx, "mcp-gateway")?;
-			self.enforce_security_pipeline(&r, &ctx, "mcp-gateway")?;
+			self
+				.security()
+				.authorize_request(&r, &mut ctx, "mcp-gateway")?;
 		}
 		self.enforce_vehicle_tool_guardrails(&r).await?;
 		let id = r.id.clone();
@@ -855,8 +820,8 @@ impl Relay {
 			let mut last_denial = None;
 			selected_upstreams.retain(|(name, _)| {
 				match self
-					.audit_security_pipeline(&r, &mut ctx, name.as_str())
-					.and_then(|_| self.enforce_security_pipeline(&r, &ctx, name.as_str()))
+					.security()
+					.authorize_request(&r, &mut ctx, name.as_str())
 				{
 					Ok(()) => true,
 					Err(error) => {

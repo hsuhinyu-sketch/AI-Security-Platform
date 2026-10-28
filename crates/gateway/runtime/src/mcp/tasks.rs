@@ -348,19 +348,10 @@ impl Ticket {
 				.map_err(|_| access.denial("task-transport-authorization"))?;
 		}
 		if self.cleanup.is_none() {
-			security_integration_runtime::evaluate_with_audit(
-				&access.config,
-				&self.record.business,
-				Some(&self.record.arguments),
-				&crate::security_events::UiSecurityAuditSink,
-			)
-			.map_err(|_| access.denial("task-business-authorization"))?;
-			if let Some(legacy) = &access.legacy {
-				legacy
-					.build(crate::security_events::UiSecurityAuditSink)
-					.authorize(&self.record.business, Some(&self.record.arguments))
-					.map_err(|_| access.denial("task-business-authorization"))?;
-			}
+			access
+				.security()
+				.authorize(&self.record.business, Some(&self.record.arguments))
+				.map_err(|_| access.denial("task-business-authorization"))?;
 			let cel = super::super::rbac::CelExecWrapper::new((*access.authorization_request).clone());
 			if !access.policies.validate(
 				&super::super::rbac::ResourceType::Tool(super::super::rbac::ResourceId::new(

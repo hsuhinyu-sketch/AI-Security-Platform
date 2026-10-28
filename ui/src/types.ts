@@ -2,12 +2,10 @@ import type { StoresDump } from '@/gateway-admin';
 import type {
 	BackendAuth,
 	BackendAuthCompat,
-	Budget,
 	CorsSerde,
 	ExtAuthz,
 	ExtProc,
 	FileOrInline,
-	FilterOrPolicy,
 	CustomProvider as GeneratedCustomProvider,
 	LocalRateLimitPolicy as GeneratedLocalRateLimitPolicy,
 	McpPrefixMode as GeneratedMcpPrefixMode,
@@ -18,10 +16,7 @@ import type {
 	LocalAPIKeys,
 	LocalBind,
 	LocalConfig,
-	LocalGateway,
-	LocalGatewayListener,
 	LocalJwtConfig,
-	LocalListener,
 	LocalLLMConfig,
 	LocalLLMModels,
 	LocalLLMParams,
@@ -30,11 +25,7 @@ import type {
 	LocalLLMVirtualModel,
 	LocalMcpTarget,
 	LocalOidcConfig,
-	LocalRoute,
-	LocalRouteBackend,
 	LocalSimpleMcpConfig,
-	LocalTCPRoute,
-	LocalTCPRouteBackend,
 	LocalTransform,
 	LocalTransformationConfig,
 	PromptGuard
@@ -54,7 +45,6 @@ export type LlmModel = LocalLLMModels;
 export type LlmVirtualModel = LocalLLMVirtualModel;
 export type LlmProvider = LocalLLMProvider;
 export type LlmGuardrail = PromptGuard;
-export type VirtualApiKeyBudget = Budget;
 export type VirtualApiKey = LocalAPIKey;
 export type LlmApiKeyPolicy = LocalAPIKeys;
 export type LlmPolicy = LocalLLMPolicy;
@@ -70,14 +60,6 @@ export type ExtAuthzPolicy = ExtAuthz;
 export type ExtProcPolicy = ExtProc;
 export type OidcPolicy = Partial<LocalOidcConfig>;
 export type TrafficBind = LocalBind;
-export type TrafficGateway = LocalGateway;
-export type TrafficGatewayListener = LocalGatewayListener;
-export type TrafficListener = LocalListener;
-export type TrafficRoute = LocalRoute;
-export type TrafficRouteBackend = LocalRouteBackend;
-export type TrafficTcpRoute = LocalTCPRoute;
-export type TrafficTcpRouteBackend = LocalTCPRouteBackend;
-export type TrafficRoutePolicy = FilterOrPolicy;
 
 export type McpTargetKind = keyof Pick<LocalMcpTarget, 'sse' | 'mcp' | 'stdio' | 'openapi'>;
 export type McpStatefulMode = GeneratedMcpStatefulMode;

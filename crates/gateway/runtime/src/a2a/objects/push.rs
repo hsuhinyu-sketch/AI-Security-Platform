@@ -100,7 +100,7 @@ impl Channel {
 			&& self.proof.get().is_some_and(|p| {
 				p.scope == call.scope
 					&& call.permit.cleanup_key().is_ok_and(|k| k == p.generation)
-					&& serde_json::to_value(&p.config).ok() == serde_json::to_value(&call.config).ok()
+					&& p.config.same_configuration(&call.config).unwrap_or(false)
 			})
 	}
 }

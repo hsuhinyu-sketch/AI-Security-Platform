@@ -299,14 +299,10 @@ fn authorize_inner(
 		ResourceType::McpServer,
 		server,
 	);
-	crate::security::evaluate(&access.config, &action)
+	access
+		.security()
+		.authorize(&action, None)
 		.map_err(|_| access.denial("reverse-authorization"))?;
-	if let Some(legacy) = &access.legacy {
-		legacy
-			.build(crate::security_events::UiSecurityAuditSink)
-			.authorize(&action, None)
-			.map_err(|_| access.denial("reverse-legacy-authorization"))?;
-	}
 	if let Some(flow) = &access.flow {
 		flow.check(&action, server)?;
 	}
@@ -335,19 +331,10 @@ fn authorize_inner(
 
 fn check_business(access: &SessionAccess, parent: &Parent) -> Result<(), ProxyError> {
 	let (action, args) = parent.business.as_ref();
-	security_integration_runtime::evaluate_with_audit(
-		&access.config,
-		action,
-		args.as_ref(),
-		&crate::security_events::UiSecurityAuditSink,
-	)
-	.map_err(|_| access.denial("reverse-parent-business-authorization"))?;
-	if let Some(legacy) = &access.legacy {
-		legacy
-			.build(crate::security_events::UiSecurityAuditSink)
-			.authorize(action, args.as_ref())
-			.map_err(|_| access.denial("reverse-parent-business-authorization"))?;
-	}
+	access
+		.security()
+		.authorize(action, args.as_ref())
+		.map_err(|_| access.denial("reverse-parent-business-authorization"))?;
 	let cel = super::super::rbac::CelExecWrapper::new((*access.authorization_request).clone());
 	if !access.policies.validate(&parent.rbac, &cel) {
 		return Err(access.denial("reverse-parent-rbac"));

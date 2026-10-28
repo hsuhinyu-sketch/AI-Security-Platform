@@ -1,40 +1,121 @@
 import { Link } from '@tanstack/react-router';
 import { Bot, Database, GitBranch, Network, Play, Server, ShieldCheck } from 'lucide-react';
 
+import type { RuntimeCapabilities } from '@/api/runtimeApi';
 import { PageHeader, Panel } from '@/components/Primitives';
 import { useRuntimeInfo } from '@/hooks';
 
 const capabilities = [
-	{ title: 'LLM Gateway', description: '统一模型入口、参数治理、限流与 Guardrails。', icon: Bot },
-	{ title: 'Inference Routing', description: '多后端选择、熔断、Fallback 与端云协同。', icon: GitBranch },
-	{ title: 'A2A Gateway', description: 'Agent 调用、身份绑定、委托链与边界控制。', icon: Network },
-	{ title: 'MCP Gateway', description: 'Tool 发现、调用约束、审批与 Capability。', icon: Server },
-	{ title: 'RAG Gateway', description: '文档入库、检索过滤、上下文注入防护。', icon: Database }
-] as const;
+	{
+		key: 'llm',
+		title: 'LLM Gateway',
+		description: '统一模型入口、参数治理、限流与 Guardrails。',
+		icon: Bot
+	},
+	{
+		key: 'inferenceRouting',
+		title: 'Inference Routing',
+		description: '多后端选择、熔断、Fallback 与端云协同。',
+		icon: GitBranch
+	},
+	{
+		key: 'a2a',
+		title: 'A2A Gateway',
+		description: 'Agent 调用、身份绑定、委托链与边界控制。',
+		icon: Network
+	},
+	{
+		key: 'mcp',
+		title: 'MCP Gateway',
+		description: 'Tool 发现、调用约束、审批与 Capability。',
+		icon: Server
+	},
+	{
+		key: 'rag',
+		title: 'RAG Gateway',
+		description: '文档入库、检索过滤、上下文注入防护。',
+		icon: Database
+	}
+] as const satisfies ReadonlyArray<{
+	key: keyof RuntimeCapabilities;
+	title: string;
+	description: string;
+	icon: typeof Bot;
+}>;
 
 export function PlatformHomePage() {
 	const runtime = useRuntimeInfo();
-	if (runtime.data?.ui.managementMode === 'diagnostic') return <div className="page-stack">
-		<PageHeader title="Local diagnostics" description="查看本机请求日志与安全事件。配置编辑和调用测试由部署模式限制。" />
-		<Panel><div className="button-row"><Link className="button" to="/security/events">Security Events</Link><Link className="button" to="/llm/logs">Request Logs</Link></div></Panel>
-	</div>;
+	const compiled = runtime.data?.ui.capabilities;
+	if (runtime.data?.ui.managementMode === 'diagnostic')
+		return (
+			<div className="page-stack">
+				<PageHeader
+					title="Local diagnostics"
+					description="查看本机请求日志与安全事件。配置编辑和调用测试由部署模式限制。"
+				/>
+				<Panel>
+					<div className="button-row">
+						<Link className="button" to="/security/events">
+							Security Events
+						</Link>
+						<Link className="button" to="/llm/logs">
+							Request Logs
+						</Link>
+					</div>
+				</Panel>
+			</div>
+		);
 	return (
 		<div className="page-stack">
 			<PageHeader
 				title="AI Security Platform"
 				description="按需组合网关能力，并在统一 Runtime Security Pipeline 中执行身份、授权、审批、Guardrails 与审计。"
 				actions={
-				<div className="button-row">
-					<Link className="button" to="/gateway-workbench">Gateway Workbench</Link>
-					<Link className="button primary" to="/llm/playground"><Play size={16} aria-hidden="true" /> Open Playground</Link>
-				</div>
-			}
+					<div className="button-row">
+						<Link className="button" to="/gateway-workbench">
+							Gateway Workbench
+						</Link>
+						{compiled?.llm ? (
+							<Link className="button primary" to="/llm/playground">
+								<Play size={16} aria-hidden="true" /> Open Playground
+							</Link>
+						) : null}
+					</div>
+				}
 			/>
-			<section className="platform-capability-grid" aria-label="Gateway capabilities">
+			<Panel className="platform-runtime-strip">
+				<div>
+					<span className="eyebrow">Build</span>
+					<strong>
+						{runtime.data?.build.version ?? 'Loading…'} ·{' '}
+						{runtime.data?.build.buildProfile ?? 'profile pending'}
+					</strong>
+				</div>
+				<div>
+					<span className="eyebrow">Compiled capabilities</span>
+					<strong>
+						{compiled
+							? capabilities
+									.filter(capability => compiled[capability.key])
+									.map(capability => capability.title)
+									.join(' · ') || 'Security core only'
+							: 'Loading…'}
+					</strong>
+				</div>
+				<div>
+					<span className="eyebrow">Security execution</span>
+					<strong>Enforce / Audit configuration is applied per AI system</strong>
+				</div>
+			</Panel>
+			<section className="platform-capability-grid" aria-label="Compiled gateway capabilities">
 				{capabilities.map(capability => {
 					const Icon = capability.icon;
+					const available = compiled?.[capability.key];
 					return (
-						<Panel key={capability.title} className="platform-capability-card">
+						<Panel key={capability.key} className="platform-capability-card">
+							<span className={`module-status ${available ? 'ready' : 'pending'}`}>
+								{available ? 'Compiled' : compiled ? 'Not compiled' : 'Loading'}
+							</span>
 							<Icon size={22} aria-hidden="true" />
 							<h3>{capability.title}</h3>
 							<p>{capability.description}</p>
@@ -46,7 +127,10 @@ export function PlatformHomePage() {
 				<div>
 					<span className="eyebrow">Runtime Security Pipeline</span>
 					<h3>Subject → Action → Resource → Decision → Audit</h3>
-					<p>每种协议先映射为统一安全上下文；按配置叠加身份、最小权限、动态 PDP、审批、能力凭据和内容安全积木。</p>
+					<p>
+						每种协议先映射为统一安全上下文；按配置叠加身份、最小权限、动态
+						PDP、审批、能力凭据和内容安全积木。
+					</p>
 				</div>
 				<ShieldCheck size={42} aria-hidden="true" />
 			</Panel>

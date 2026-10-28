@@ -8,12 +8,18 @@ import type {
 	OidcPolicy,
 	RemoteRateLimitPolicy,
 	SimpleLocalRateLimitPolicy,
-	TrafficRoutePolicy,
 	TransformationPolicy,
 	TransformPolicy
 } from '@/types';
 
-export type PolicyKey = (keyof LlmPolicy | keyof TrafficRoutePolicy) & string;
+export type PolicyKey = (
+	| keyof LlmPolicy
+	| 'backendAuth'
+	| 'mcpAuthentication'
+	| 'mcpAuthorization'
+	| 'mcpGuardrails'
+) &
+	string;
 
 export type JwtPolicy = GeneratedJwtPolicy;
 export type LocalRateLimitConfig = LocalRateLimitPolicy;

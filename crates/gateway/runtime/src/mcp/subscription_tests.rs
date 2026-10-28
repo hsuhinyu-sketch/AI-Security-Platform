@@ -69,3 +69,16 @@ fn failed_or_abandoned_subscribe_releases_capacity() {
 			.is_empty()
 	);
 }
+
+#[test]
+fn legacy_constraint_is_rechecked_before_subscription_commit_and_update() {
+	let mut access = super::super::tests::access();
+	let ticket = prepare(&access, true).unwrap();
+	let legacy: security_pipeline::SecurityPipelineConfig = serde_json::from_value(
+		json!({"policies":[{"id":"deny","effect":"deny","enabled":true,"resourceType":"mcpResource"}]}),
+	)
+	.unwrap();
+	access.legacy = Some(legacy.into());
+	assert!(ticket.commit(&access).is_err());
+	assert!(notification(&access, "docs", &update()).is_err());
+}

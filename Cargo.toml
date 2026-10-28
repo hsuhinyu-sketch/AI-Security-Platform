@@ -16,6 +16,7 @@ members = [
     "crates/security/capability-broker",
     "crates/security/rag",
     "crates/security/integrity",
+    "crates/security/pii",
     # First-party AI Gateway Platform
     "crates/gateway/llm",
     "crates/gateway/contracts",

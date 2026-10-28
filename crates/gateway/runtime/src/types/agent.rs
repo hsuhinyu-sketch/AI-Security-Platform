@@ -2501,6 +2501,37 @@ pub enum TrafficPolicy {
 	CORS(RequestPolicy<http::cors::Cors>),
 }
 
+/// Compatibility declaration normalized once into the shared configuration owner.
+/// Its mode cannot be changed; serialization retains the original securityPipeline shape.
+#[derive(Debug, Clone)]
+pub struct LegacySecurityPipeline(Arc<security_integration_runtime::SecurityConfig>);
+
+impl From<security_pipeline::SecurityPipelineConfig> for LegacySecurityPipeline {
+	fn from(pipeline: security_pipeline::SecurityPipelineConfig) -> Self {
+		Self(Arc::new(
+			security_integration_runtime::SecurityConfig::from(
+				security_integration_runtime::SecurityConfigData {
+					mode: security_integration_runtime::SecurityMode::Enforce,
+					pipeline,
+					..Default::default()
+				},
+			),
+		))
+	}
+}
+
+impl LegacySecurityPipeline {
+	pub fn configuration(&self) -> &Arc<security_integration_runtime::SecurityConfig> {
+		&self.0
+	}
+}
+
+impl serde::Serialize for LegacySecurityPipeline {
+	fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+		self.0.pipeline.serialize(serializer)
+	}
+}
+
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum BackendTrafficPolicy {
@@ -2508,7 +2539,7 @@ pub enum BackendTrafficPolicy {
 	McpAuthorization(McpAuthorization),
 	McpAuthentication(McpAuthentication),
 	McpGuardrails(Arc<crate::mcp::guardrails::McpGuardrails>),
-	SecurityPipeline(Arc<security_pipeline::SecurityPipelineConfig>),
+	SecurityPipeline(LegacySecurityPipeline),
 	SecurityAudit(Arc<security_integration_runtime::SecurityConfig>),
 	A2a(A2aPolicy),
 	#[serde(rename = "http")]

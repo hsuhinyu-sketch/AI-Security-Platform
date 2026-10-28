@@ -4,7 +4,6 @@ import { useMemo, useState } from 'react';
 import type { McpSettingsResource } from '@/api/configResourcesApi';
 import { ConfigDiffSaveActions } from '@/components/ConfigDiffDrawer';
 import { EnumSelector } from '@/components/EnumSelector';
-import { GatewayBindingEditor, type GatewayBindingValue } from '@/components/GatewayBindingEditor';
 import { MiniMonacoEditor } from '@/components/MiniMonacoEditor';
 import {
 	ConfirmDialog,
@@ -42,10 +41,7 @@ import type {
 
 const targetKinds: McpTargetKind[] = ['mcp', 'sse', 'stdio', 'openapi'];
 
-type McpSettingsPatch = Partial<Omit<McpConfig, 'gateways' | 'port'>> & {
-	gateways?: McpConfig['gateways'] | null;
-	port?: number | null;
-};
+type McpSettingsPatch = Partial<Omit<McpConfig, 'targets' | 'policies'>>;
 
 export function McpServersPage() {
 	const mcpData = useMcpConfigData();
@@ -332,10 +328,6 @@ function McpSettings(props: {
 	saving: boolean;
 	onSave: (settings: McpSettingsPatch) => void;
 }) {
-	const [binding, setBinding] = useState<GatewayBindingValue>({
-		gateways: props.mcp?.gateways ?? null,
-		port: props.mcp?.port ?? null
-	});
 	const [statefulMode, setStatefulMode] = useState<McpStatefulMode>(
 		props.mcp?.statefulMode ?? 'stateless'
 	);
@@ -346,15 +338,13 @@ function McpSettings(props: {
 		props.mcp?.failureMode ?? 'failClosed'
 	);
 	const patch: McpSettingsPatch = {
-		gateways: binding.gateways ?? [],
-		port: binding.gateways != null && binding.gateways.length > 0 ? null : binding.port,
+		port: props.mcp?.port ?? null,
 		statefulMode,
 		prefixMode: prefixMode === 'none' ? null : prefixMode,
 		failureMode
 	};
 	const originalResourceValue = Object.fromEntries(
 		Object.entries({
-			gateways: props.mcp?.gateways,
 			port: props.mcp?.port,
 			statefulMode: props.mcp?.statefulMode,
 			prefixMode: props.mcp?.prefixMode,
@@ -369,10 +359,6 @@ function McpSettings(props: {
 	const writablePatch = Object.fromEntries(
 		Object.entries(patch).filter(([field]) => !props.readOnlyFields?.has(field))
 	) as McpSettingsPatch;
-	const bindingReadOnly = Boolean(
-		props.readOnlyFields?.has('gateways') || props.readOnlyFields?.has('port')
-	);
-
 	return (
 		<form
 			className="policy-editor-stack"
@@ -387,28 +373,6 @@ function McpSettings(props: {
 					saved to the database.
 				</StatusBanner>
 			) : null}
-			<PolicySection
-				icon={<Server size={17} />}
-				title="Gateway binding"
-				description="Choose how MCP is exposed."
-			>
-				<div className="form-grid">
-					<GatewayBindingEditor
-						config={props.config}
-						value={binding}
-						defaultPort={3000}
-						portLabel="Port"
-						portPlaceholder="3000"
-						portTooltip={props.help.field<McpConfig>(
-							'LocalSimpleMcpConfig',
-							'port',
-							'Gateway port for MCP traffic.'
-						)}
-						disabled={bindingReadOnly}
-						onChange={setBinding}
-					/>
-				</div>
-			</PolicySection>
 			<PolicySection
 				icon={<SlidersHorizontal size={17} />}
 				title="MCP behavior"
@@ -489,7 +453,7 @@ function McpSettings(props: {
 								'prefixMode'
 							])}
 							disabled={props.readOnlyFields?.has('prefixMode')}
-							onChange={setPrefixMode}
+							onChange={value => setPrefixMode(value as McpPrefixMode | 'none')}
 						/>
 					</FieldGroup>
 					<FieldGroup

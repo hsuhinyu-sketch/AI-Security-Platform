@@ -1,44 +1,31 @@
 import { Link, Outlet, useNavigate, useRouterState } from '@tanstack/react-router';
 import {
-	BarChart3,
 	Bolt,
 	Bot,
 	Boxes,
-	Braces,
-	Cable,
 	ChevronDown,
-	Coins,
 	FileCode2,
 	GitFork,
 	Globe,
 	Home,
-	KeyRound,
 	LogOut,
 	Menu,
 	Moon,
-	Network,
 	Play,
 	Route,
 	ScrollText,
 	Server,
 	Shield,
 	ShieldCheck,
-	SlidersHorizontal,
 	Sun,
 	UserRound
 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
 import { apiBase } from '@/api/base';
-import type { RuntimeUser } from '@/api/runtimeApi';
+import type { RuntimeCapabilities, RuntimeUser } from '@/api/runtimeApi';
 import { StatusBanner, Tooltip, useDismissiblePopover } from '@/components/Primitives';
-import {
-	useConfigDumpMode,
-	useEffectiveGatewayConfig,
-	useMcpConfigData,
-	useRuntimeInfo,
-	useTrafficConfigData
-} from '@/hooks';
+import { useRuntimeInfo } from '@/hooks';
 
 type NavItemConfig = {
 	to: string;
@@ -66,18 +53,9 @@ export function Shell() {
 	const router = useRouterState();
 	const runtime = useRuntimeInfo();
 	const diagnostic = runtime.data?.ui.managementMode === 'diagnostic';
-	const diagnosticPathAllowed = ['/', '/security/events', '/llm/logs'].includes(router.location.pathname);
-	const mode = useConfigDumpMode();
-	const dumpMode = mode.data?.mode === 'dump';
-	const config = useEffectiveGatewayConfig({
-		enabled: Boolean(runtime.data && !diagnostic && mode.data && mode.data.mode !== 'dump')
-	});
-	const mcpData = useMcpConfigData({
-		enabled: Boolean(runtime.data && !diagnostic && mode.data && mode.data.mode !== 'dump')
-	});
-	const trafficData = useTrafficConfigData({
-		enabled: Boolean(runtime.data && !diagnostic && mode.data && mode.data.mode !== 'dump')
-	});
+	const diagnosticPathAllowed = ['/', '/security/events', '/llm/logs'].includes(
+		router.location.pathname
+	);
 	const [theme, setTheme] = useState(
 		() =>
 			localStorage.getItem('theme') ??
@@ -87,24 +65,9 @@ export function Shell() {
 	const mobileNavRef = useDismissiblePopover<HTMLDivElement>(mobileNavOpen, () =>
 		setMobileNavOpen(false)
 	);
-	const hasLlm = dumpMode ? false : config.data ? Boolean(config.data.llm) : true;
-	const hasMcp = dumpMode ? false : mcpData.data ? Boolean(mcpData.data.mcp) : true;
-	const hasTraffic = dumpMode
-		? true
-		: trafficData.data
-			? Boolean(trafficData.data.binds?.length) ||
-				'gateways' in trafficData.data ||
-				'routes' in trafficData.data ||
-				'tcpRoutes' in trafficData.data
-			: true;
-	const hasBinds = dumpMode ? true : config.data ? Boolean(config.data.binds?.length) : false;
 	const navGroups = navigationGroups({
 		diagnostic,
-		hasLlm,
-		hasMcp,
-		hasTraffic,
-		hasBinds,
-		dumpMode
+		capabilities: runtime.data?.ui.capabilities
 	});
 	const nav = navGroups.flatMap(group => group.items);
 	const currentNav =
@@ -126,7 +89,11 @@ export function Shell() {
 		<div className="app-shell">
 			<aside className="sidebar">
 				<Link to="/" className="brand" aria-label="AI Security Platform home">
-					<span className="platform-wordmark">AI Security<br />Platform</span>
+					<span className="platform-wordmark">
+						AI Security
+						<br />
+						Platform
+					</span>
 				</Link>
 				<nav className="nav-list" aria-label="Primary">
 					{navGroups.map(group => (
@@ -210,9 +177,13 @@ export function Shell() {
 							The UI is configured as read-only. Editing is disabled.
 						</StatusBanner>
 					)}
-					{diagnostic && !diagnosticPathAllowed ? <StatusBanner state="info" title="Local diagnostics">
-						此部署只开放日志和安全事件查看。请通过左侧菜单访问诊断页面。
-					</StatusBanner> : <Outlet />}
+					{diagnostic && !diagnosticPathAllowed ? (
+						<StatusBanner state="info" title="Local diagnostics">
+							此部署只开放日志和安全事件查看。请通过左侧菜单访问诊断页面。
+						</StatusBanner>
+					) : (
+						<Outlet />
+					)}
 				</main>
 			</div>
 		</div>
@@ -279,20 +250,25 @@ function UserMenu({ user }: { user: RuntimeUser }) {
 
 function navigationGroups(options: {
 	diagnostic: boolean;
-	hasBinds: boolean;
-	hasLlm: boolean;
-	hasMcp: boolean;
-	hasTraffic: boolean;
-	dumpMode: boolean;
+	capabilities?: RuntimeCapabilities;
 }): ReadonlyArray<{ title: string; items: readonly NavItemConfig[] }> {
-	if (options.diagnostic) return [{ title: 'Local diagnostics', items: [
-		{ to: '/', label: 'Home', icon: Home },
-		{ to: '/security/events', label: 'Security Events', icon: Shield },
-		{ to: '/llm/logs', label: 'Request Logs', icon: ScrollText }
-	] }];
-	// Platform navigation is intentionally capability-first rather than configuration-first.
-	// A missing bind must surface as an in-page setup state, never make an available module vanish.
-	void options;
+	if (options.diagnostic) {
+		return [
+			{
+				title: 'Local diagnostics',
+				items: [
+					{ to: '/', label: 'Home', icon: Home },
+					{ to: '/security/events', label: 'Security Events', icon: Shield },
+					{ to: '/llm/logs', label: 'Request Logs', icon: ScrollText }
+				]
+			}
+		];
+	}
+
+	const hasLlm = options.capabilities?.llm === true;
+	const hasMcp = options.capabilities?.mcp === true;
+	const hasInference = options.capabilities?.inferenceRouting === true;
+
 	return [
 		{
 			title: 'Gateway',
@@ -301,54 +277,48 @@ function navigationGroups(options: {
 				{ to: '/gateway-workbench', label: 'Gateway Workbench', icon: Boxes }
 			]
 		},
-		{
-			title: 'LLM',
-			items: [
-				{ to: '/llm/models', label: 'Models', icon: Bot },
-				{ to: '/llm/providers', label: 'Providers', icon: Boxes },
-				{ to: '/llm/policies', label: 'Policies', icon: Bolt, groupStart: true },
-				{ to: '/llm/guardrails', label: 'Guardrails', icon: Shield },
-				{ to: '/llm/keys', label: 'Virtual API Keys', icon: KeyRound },
-				{ to: '/llm/costs', label: 'Costs', icon: Coins },
-				{ to: '/llm/analytics', label: 'Analytics', icon: BarChart3, groupStart: true },
-				{ to: '/llm/logs', label: 'Logs', icon: ScrollText },
-				{ to: '/llm/client-setup', label: 'Client Setup', icon: Cable, groupStart: true }
-			]
-		},
-		{
-			title: 'MCP',
-			items: [
-				{ to: '/mcp/servers', label: 'Servers', icon: Server },
-				{ to: '/mcp/policies', label: 'Policies', icon: ShieldCheck }
-			]
-		},
-		{
-			title: 'Inference Routing',
-			items: [
-				{ to: '/traffic/gateways', label: 'Gateways', icon: Network },
-				{ to: '/traffic/listeners', label: 'Listeners', icon: Network },
-				{ to: '/traffic/routes', label: 'Routes', icon: Route },
-				{ to: '/traffic/policies', label: 'Policies', icon: ShieldCheck }
-			]
-		},
+		...(hasLlm
+			? [
+					{
+						title: 'LLM',
+						items: [
+							{ to: '/llm/models', label: 'Models', icon: Bot },
+							{ to: '/llm/providers', label: 'Providers', icon: Boxes },
+							{ to: '/llm/policies', label: 'Policies', icon: Bolt, groupStart: true },
+							{ to: '/llm/guardrails', label: 'Guardrails', icon: Shield },
+							{ to: '/llm/logs', label: 'Logs', icon: ScrollText },
+							{ to: '/llm/playground', label: 'Chat Playground', icon: Play }
+						]
+					}
+				]
+			: []),
+		...(hasMcp
+			? [
+					{
+						title: 'MCP',
+						items: [
+							{ to: '/mcp/servers', label: 'Servers', icon: Server },
+							{ to: '/mcp/policies', label: 'Policies', icon: ShieldCheck },
+							{ to: '/mcp/playground', label: 'Tool Playground', icon: Play }
+						]
+					}
+				]
+			: []),
+		...(hasInference
+			? [
+					{
+						title: 'Inference Routing',
+						items: [{ to: '/raw-config', label: 'Routing Config', icon: Route, exact: true }]
+					}
+				]
+			: []),
 		{
 			title: 'Security',
 			items: [{ to: '/security/events', label: 'Security Events', icon: Shield }]
 		},
 		{
-			title: 'Validation',
-			items: [
-				{ to: '/llm/playground', label: 'Chat Playground', icon: Play },
-				{ to: '/mcp/playground', label: 'Tool Playground', icon: Play },
-				{ to: '/cel', label: 'CEL Playground', icon: Braces }
-			]
-		},
-		{
 			title: 'Platform',
-			items: [
-				{ to: '/raw-config', label: 'Raw Configuration', icon: FileCode2, exact: true },
-				{ to: '/settings', label: 'Settings', icon: SlidersHorizontal }
-			]
+			items: [{ to: '/raw-config', label: 'Raw Configuration', icon: FileCode2, exact: true }]
 		}
 	];
 }

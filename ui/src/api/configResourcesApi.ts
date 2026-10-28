@@ -1,5 +1,4 @@
 import { requestJson } from '@/api/base';
-import type { LocalAttachedRoute, LocalAttachedTCPRoute } from '@/gateway-config';
 import type {
 	LlmConfig,
 	LlmModel,
@@ -7,7 +6,6 @@ import type {
 	LlmVirtualModel,
 	McpConfig,
 	McpTarget,
-	TrafficGateway,
 	VirtualApiKey
 } from '@/types';
 
@@ -29,11 +27,11 @@ export type ConfigResourceKind =
 
 export type PolicyResourceKind = Extract<ConfigResourceKind, `${string}.policy`>;
 
-export type LlmSettingsResource = Pick<LlmConfig, 'gateways' | 'port' | 'tls'>;
+export type LlmSettingsResource = Pick<LlmConfig, 'port' | 'tls'>;
 export type McpSettingsResource = Partial<Omit<McpConfig, 'targets' | 'policies'>>;
-export type TrafficGatewayResource = TrafficGateway & { name: string };
-export type TrafficRouteResource = LocalAttachedRoute & { name: string };
-export type TrafficTcpRouteResource = LocalAttachedTCPRoute & { name: string };
+export type TrafficGatewayResource = unknown;
+export type TrafficRouteResource = unknown;
+export type TrafficTcpRouteResource = unknown;
 
 export type ConfigResourceValue<K extends ConfigResourceKind> = K extends 'modelCatalog'
 	? { base?: unknown; custom?: unknown }

@@ -238,7 +238,7 @@ pub struct BackendPolicies {
 	pub mcp_authorization: Option<McpAuthorizationSet>,
 	pub mcp_authentication: Option<McpAuthentication>,
 	pub mcp_guardrails: Option<Arc<crate::mcp::guardrails::McpGuardrails>>,
-	pub security_pipeline: Option<Arc<security_pipeline::SecurityPipelineConfig>>,
+	pub security_pipeline: Option<types::agent::LegacySecurityPipeline>,
 	pub security_audit: Option<Arc<security_integration_runtime::SecurityConfig>>,
 
 	pub http: Option<types::backend::HTTP>,

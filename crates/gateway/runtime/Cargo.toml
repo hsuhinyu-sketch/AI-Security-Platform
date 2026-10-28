@@ -33,6 +33,8 @@ gateway-mcp = ["gateway-composition/gateway-mcp", "dep:gateway-mcp", "dep:rmcp"]
 inference-routing = ["gateway-composition/inference-routing", "gateway-llm"]
 security-s1 = ["gateway-composition/security-s1"]
 gateway-rag = ["gateway-composition/gateway-rag", "dep:gateway-rag", "dep:security-rag"]
+security-pii = ["dep:security-pii", "security-integration-runtime/pii"]
+security-pii-presidio = ["security-pii", "security-pii/presidio"]
 gateway-full = [
 	"gateway-llm",
 	"gateway-a2a",
@@ -73,6 +75,7 @@ schema = ["schemars", "gateway-llm/schema"]
 assert_size_runtime = ["platform-core/assert_size_runtime"]
 
 [dependencies]
+security-pii = { path = "../../security/pii", optional = true }
 gateway-contracts = { path = "../contracts" }
 gateway-llm = { path = "../llm", default-features = false }
 gateway-protocol-core = { path = "../protocol-core" }

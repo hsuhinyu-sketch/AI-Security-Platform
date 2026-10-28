@@ -61,6 +61,8 @@ jobs:
         run: python3 tests/protocol/run_full_tcp.py --launcher sudo --profile sampling --rounds 3 --binary target/debug/ai-security-platform --report /tmp/aisp-sampling-acceptance.json
       - name: MCP wire and version compatibility acceptance
         run: python3 tests/protocol/run_full_tcp.py --launcher sudo --profile mcp-wire --rounds 3 --binary target/debug/ai-security-platform --report /tmp/aisp-mcp-wire-acceptance.json
+      - name: MCP common and legacy constraint compatibility
+        run: python3 tests/protocol/run_full_tcp.py --launcher sudo --profile mcp-security --rounds 3 --binary target/debug/ai-security-platform --report /tmp/aisp-mcp-security-acceptance.json
       - name: RAG authentication, tenant isolation and live configuration acceptance
         run: python3 tests/protocol/run_full_tcp.py --launcher sudo --profile rag --rounds 3 --binary target/debug/ai-security-platform --report /tmp/aisp-rag-acceptance.json
       - name: Strict security configuration and content delivery regressions
@@ -81,7 +83,7 @@ jobs:
           python3 - <<'PYTHON'
           import json
           from pathlib import Path
-          for location in ['/tmp/aisp-protocol-acceptance.json', '/tmp/aisp-routing-acceptance.json', '/tmp/aisp-sampling-acceptance.json', '/tmp/aisp-mcp-wire-acceptance.json', '/tmp/aisp-a2a-acceptance.json', '/tmp/aisp-a2a-durable-acceptance.json', '/tmp/aisp-rag-acceptance.json', '/tmp/aisp-rag-llm-acceptance.json', '/tmp/aisp-security-content-acceptance.json', '/tmp/aisp-workflow-acceptance.json', '/tmp/aisp-workflow-durable-acceptance.json']:
+          for location in ['/tmp/aisp-protocol-acceptance.json', '/tmp/aisp-routing-acceptance.json', '/tmp/aisp-sampling-acceptance.json', '/tmp/aisp-mcp-wire-acceptance.json', '/tmp/aisp-mcp-security-acceptance.json', '/tmp/aisp-a2a-acceptance.json', '/tmp/aisp-a2a-durable-acceptance.json', '/tmp/aisp-rag-acceptance.json', '/tmp/aisp-rag-llm-acceptance.json', '/tmp/aisp-security-content-acceptance.json', '/tmp/aisp-workflow-acceptance.json', '/tmp/aisp-workflow-durable-acceptance.json']:
               path = Path(location)
               if path.exists():
                   data = json.loads(path.read_text())
@@ -139,6 +141,9 @@ jobs:
       - name: MCP edge wire and version compatibility acceptance
         if: matrix.profile == 'mcp'
         run: python3 tests/protocol/run_full_tcp.py --launcher sudo --profile mcp-wire --rounds 3 --binary 'target/debug/${{ matrix.binary }}' --report /tmp/aisp-mcp-wire-acceptance.json
+      - name: MCP edge common and legacy constraint compatibility
+        if: matrix.profile == 'mcp'
+        run: python3 tests/protocol/run_full_tcp.py --launcher sudo --profile mcp-security --rounds 3 --binary 'target/debug/${{ matrix.binary }}' --report /tmp/aisp-mcp-security-acceptance.json
       - name: A2A edge durable inbox and recovery acceptance
         if: matrix.profile == 'a2a'
         run: python3 tests/protocol/run_full_tcp.py --launcher sudo --profile a2a-durable --rounds 3 --binary 'target/debug/${{ matrix.binary }}' --report /tmp/aisp-a2a-durable-acceptance.json
@@ -148,13 +153,14 @@ jobs:
           TCP_REPORT: /tmp/aisp-${{ matrix.profile }}-acceptance.json
           ROUTING_REPORT: /tmp/aisp-${{ matrix.profile }}-routing.json
           WIRE_REPORT: /tmp/aisp-mcp-wire-acceptance.json
+          MCP_SECURITY_REPORT: /tmp/aisp-mcp-security-acceptance.json
           A2A_DURABLE_REPORT: /tmp/aisp-a2a-durable-acceptance.json
           SECURITY_CONTENT_REPORT: /tmp/aisp-llm-security-content.json
         run: |
           python3 - <<'PYTHON'
           import json, os
           from pathlib import Path
-          for location in [os.environ['TCP_REPORT'], os.environ['ROUTING_REPORT'], os.environ['WIRE_REPORT'], os.environ['A2A_DURABLE_REPORT'], os.environ['SECURITY_CONTENT_REPORT']]:
+          for location in [os.environ['TCP_REPORT'], os.environ['ROUTING_REPORT'], os.environ['WIRE_REPORT'], os.environ['MCP_SECURITY_REPORT'], os.environ['A2A_DURABLE_REPORT'], os.environ['SECURITY_CONTENT_REPORT']]:
               path = Path(location)
               if path.exists():
                   data = json.loads(path.read_text())
@@ -164,6 +170,37 @@ jobs:
                                                 "faultTypes": [e["type"] for e in r["errors"]]}
                                                for r in data.get("rounds", [])]}))
           PYTHON
+
+
+  frontend:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24.17.0'
+      - name: Enable the pinned pnpm version
+        run: |
+          corepack enable
+          corepack prepare pnpm@11.20.0 --activate
+      - name: Install frontend dependencies
+        working-directory: ui
+        run: pnpm install --frozen-lockfile
+      - name: Strict TypeScript check
+        working-directory: ui
+        run: pnpm typecheck
+      - name: Biome lint and format check
+        working-directory: ui
+        run: pnpm lint
+      - name: Production frontend build
+        working-directory: ui
+        run: pnpm build
+      - name: Verify committed UI artifacts are current
+        run: |
+          git diff --exit-code -- ui/out
+          test -z "$(git status --porcelain -- ui/out)"
 
   composition-boundaries:
     runs-on: ubuntu-24.04

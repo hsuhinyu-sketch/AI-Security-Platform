@@ -1246,14 +1246,14 @@ impl Policy {
 		for r in &rgx.rules {
 			match r {
 				RegexRule::Builtin { builtin } => {
-					let rec = match builtin {
+					let rec: &dyn pii::Recognizer = match builtin {
 						Builtin::Ssn => &*pii::SSN,
 						Builtin::CreditCard => &*pii::CC,
-						Builtin::PhoneNumber => &*pii::PHONE,
+						Builtin::PhoneNumber => &pii::PHONE,
 						Builtin::Email => &*pii::EMAIL,
 						Builtin::CaSin => &*pii::CA_SIN,
 					};
-					let results = pii::recognizer(rec, working.as_deref().unwrap_or(original_content));
+					let results = rec.recognize(working.as_deref().unwrap_or(original_content));
 					if results.is_empty() {
 						continue;
 					}

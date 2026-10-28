@@ -33,6 +33,8 @@ cargo build --locked --release -p ai-security-platform-app \
 
 **编译安全能力不等于开启强制执行。** `SecurityMode` 默认 `Audit`；安全场景需明确配置 Enforce、可信认证及专项要求。普通请求日志与 Required Audit 是不同边界，关闭前者不能绕过后者。RAG Listener 拓扑变更需要重启；已发出的外部副作用无法撤回。
 
+可选的 `security-pii` 提供原生 PII 检测与统一模型请求出口脱敏，`security-pii-presidio` 增加本地 Presidio Analyzer Adapter。配置、模式及覆盖边界见[PII V0.1 使用说明](reference/configuration-guide.md#pii-security-component-v01)。
+
 ## 文档
 
 - [架构与扩展边界](architecture/README.md)

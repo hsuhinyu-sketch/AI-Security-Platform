@@ -60,10 +60,10 @@ async fn unsupported_binding_method_and_media_type_are_not_calls() {
 async fn invalid_operation_cannot_be_allowed_by_broad_policy() {
 	use security_audit::InMemoryAuditSink;
 	use security_integration_runtime::{SecurityConfig, SecurityMode};
-	let mut config = SecurityConfig {
+	let mut config = SecurityConfig::from(security_integration_runtime::SecurityConfigData {
 		mode: SecurityMode::Enforce,
 		..Default::default()
-	};
+	});
 	config.pipeline.policies = serde_json::from_value(serde_json::json!([
 		{"id":"broad","enabled":true,"effect":"allow"}
 	]))

@@ -694,7 +694,7 @@ function ModelEditor(props: {
 				<summary>Help</summary>
 				<div className="model-help-copy">
 					<p>
-						Agentgateway routes requests by matching an incoming model name, and then sending it to
+						The gateway routes requests by matching an incoming model name, and then sending it to
 						the configured model. The outgoing model can be passed through from the incoming model,
 						be transformed, or be a static model.
 					</p>
@@ -1899,7 +1899,7 @@ function applyUpstreamMode(
 	return next;
 }
 
-function expressionMap(value: LlmModel['transformation']): Record<string, string> {
+function expressionMap(value: unknown): Record<string, string> {
 	if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
 	return Object.fromEntries(
 		Object.entries(value).filter((entry): entry is [string, string] => typeof entry[1] === 'string')

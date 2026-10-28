@@ -10,6 +10,7 @@ use security_types::{ActionRequest, Decision, DecisionEffect, SecurityEvent};
 
 pub mod a2a_objects;
 mod blocking_client_cache;
+mod config_identity;
 mod config_input;
 pub mod context_store;
 pub mod cross_component;
@@ -18,6 +19,8 @@ pub mod dependency_egress;
 pub mod execution_budget;
 pub mod identity_binding;
 pub mod mcp_sessions;
+pub mod pii;
+mod prepared;
 pub mod required_audit;
 pub mod task_cleanup;
 pub use data_egress::{DataEgressConfig, check_data_egress};
@@ -51,10 +54,28 @@ pub enum SecurityMode {
 	Enforce,
 }
 
-/// System-level common security configuration. Protocol-specific controls remain separate.
+/// Owns a declaration and its reusable static results. Mutable access invalidates those results.
+#[derive(Clone, Default, serde::Serialize)]
+#[serde(transparent)]
+pub struct SecurityConfig {
+	data: SecurityConfigData,
+	#[serde(skip)]
+	validated: std::sync::OnceLock<()>,
+	#[serde(skip)]
+	identity: std::sync::OnceLock<Arc<config_identity::ConfigurationIdentity>>,
+	#[serde(skip)]
+	prepared: std::sync::OnceLock<Arc<prepared::PreparedSecurity>>,
+}
+
+/// System-level common security declaration. Protocol-specific controls remain separate.
 #[derive(Debug, Clone, Default, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct SecurityConfig {
+pub struct SecurityConfigData {
+	#[serde(default, skip_serializing_if = "Option::is_none")]
+	pub pii: Option<pii::PiiConfiguration>,
+	#[cfg(feature = "pii")]
+	#[serde(skip)]
+	pub pii_runtime: pii::PreparedPii,
 	#[serde(default, skip_serializing_if = "Option::is_none")]
 	pub required_audit: Option<required_audit::RequiredAuditConfig>,
 	#[serde(default, skip_serializing_if = "Option::is_none")]
@@ -112,6 +133,19 @@ impl SecurityConfig {
 		egress: &dependency_egress::DependencyEgressConfig,
 	) -> Result<(), String> {
 		use dependency_egress::DependencyKind as D;
+		#[cfg(feature = "pii")]
+		if let Some(pii) = &self.pii
+			&& pii.active()
+			&& pii.backend == security_pii::DetectorBackend::Presidio
+		{
+			egress.check_url(
+				D::Guardrail,
+				pii
+					.presidio_endpoint
+					.as_deref()
+					.ok_or("PII endpoint is required")?,
+			)?;
+		}
 		for (kind, endpoint) in [
 			(
 				D::Pdp,
@@ -156,18 +190,20 @@ impl SecurityConfig {
 	/// Initialize all configured security stores; the older name remains an embedding alias.
 	pub fn prepare_runtime_stores(&mut self) -> Result<(), String> {
 		self.validate_composition()?;
-		if let Some(budget) = &mut self.execution_budget {
+		// Only skipped runtime handles change here; the declaration and its identity stay intact.
+		let data = &mut self.data;
+		if let Some(budget) = &mut data.execution_budget {
 			budget.prepare_store()?;
 		}
-		if let Some(flow) = &mut self.cross_component {
+		if let Some(flow) = &mut data.cross_component {
 			flow.prepare_store()?;
 		}
-		if let Some(objects) = &mut self.a2a_objects {
-			self.a2a_task_store = a2a_objects::TaskStoreHandle::from_config(objects)?;
+		if let Some(objects) = &mut data.a2a_objects {
+			data.a2a_task_store = a2a_objects::TaskStoreHandle::from_config(objects)?;
 			if let Some(events) = &mut objects.event_recovery {
 				events.prepare_store()?;
 			}
-			self
+			data
 				.a2a_task_store
 				.drain_push(objects)
 				.map_err(|e| format!("Push outbox recovery refused: {}", e.rule()))?;
@@ -177,6 +213,13 @@ impl SecurityConfig {
 	/// Reject combinations that cannot enforce the declared security controls.
 	/// An approval gate without a provider remains valid: it intentionally denies by default.
 	pub fn validate_composition(&self) -> Result<(), String> {
+		if self.validated.get().is_some() {
+			return Ok(());
+		}
+		#[cfg(feature = "pii")]
+		self.pii_runtime.validate(self.pii.as_ref())?;
+		#[cfg(not(feature = "pii"))]
+		pii::validate(self.pii.as_ref())?;
 		if self
 			.mcp_sessions
 			.as_ref()
@@ -302,6 +345,7 @@ impl SecurityConfig {
 				return Err("capabilityBroker requires a trusted approval provider".into());
 			}
 		}
+		let _ = self.validated.set(());
 		Ok(())
 	}
 }
@@ -407,8 +451,7 @@ pub fn prefilter_with_audit(
 	action: &ActionRequest,
 	audit: &dyn AuditSink,
 ) -> Result<(), GatewayError> {
-	let mut decision =
-		security_pipeline::PolicyAuthorizer::new(config.pipeline.policies.clone()).decide(action);
+	let mut decision = config.pipeline.prefilter(action);
 	decision.policy_id = Some(format!(
 		"prefilter:{}",
 		decision.policy_id.as_deref().unwrap_or("default-deny")
@@ -507,25 +550,29 @@ fn evaluate_with_audit_inner(
 	arguments: Option<&serde_json::Value>,
 	audit: &dyn AuditSink,
 ) -> Result<(), GatewayError> {
-	let decision = match runtime_security_controls(config) {
-		Err(reason) => Err(configuration_denial(action, reason, audit)),
-		Ok(controls) => match &config.remote_pdp {
-			Some(remote_pdp) => remote_pdp
-				.transport()
-				.map_err(|error| configuration_denial(action, error.reason, audit))
-				.and_then(|transport| {
-					config
-						.pipeline
-						.build_with_remote_pdp_and_runtime_controls(audit, transport, controls)
-						.map_err(|error| configuration_denial(action, error.reason, audit))
-				})
-				.and_then(|pipeline| pipeline.authorize(action, arguments)),
-			None => config
+	let decision = (|| {
+		let controls = runtime_security_controls(config)
+			.map_err(|reason| configuration_denial(action, reason, audit))?;
+		let prepared = config
+			.prepared_security()
+			.map_err(|reason| configuration_denial(action, reason, audit))?;
+		match &config.remote_pdp {
+			Some(remote_pdp) => {
+				let transport = remote_pdp
+					.transport()
+					.map_err(|error| configuration_denial(action, error.reason, audit))?;
+				prepared
+					.pipeline
+					.build_with_remote_pdp_and_runtime_controls(audit, transport, controls)
+					.map_err(|error| configuration_denial(action, error.reason, audit))?
+					.authorize(action, arguments)
+			},
+			None => prepared
 				.pipeline
 				.build_with_runtime_controls(audit, controls)
 				.authorize(action, arguments),
-		},
-	};
+		}
+	})();
 	match decision {
 		Ok(decision) => {
 			if let Some(required) = &config.required_audit {
@@ -636,9 +683,8 @@ fn runtime_security_controls(config: &SecurityConfig) -> Result<RuntimeSecurityC
 	if config.agent_identity.is_some() && config.remote_agent_identity.is_some() {
 		return Err("configure either agentIdentity or remoteAgentIdentity, not both".into());
 	}
-	if let Some(agent_identity) = &config.agent_identity {
-		let registry = AgentIdentityRegistry::from_config(agent_identity.clone())?;
-		controls = controls.add_identity_control(registry);
+	if let Some(registry) = &config.prepared_security()?.registry {
+		controls = controls.add_identity_control(registry.clone());
 	}
 	if let Some(remote_agent_identity) = &config.remote_agent_identity {
 		let provider = remote_agent_identity

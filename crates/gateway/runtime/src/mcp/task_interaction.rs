@@ -133,13 +133,8 @@ impl Link {
 				_ => false,
 			});
 		if access
-			.config
-			.pipeline
+			.security()
 			.requires_tool_approval(&self.ticket.record.business)
-			|| access
-				.legacy
-				.as_ref()
-				.is_some_and(|p| p.requires_tool_approval(&self.ticket.record.business))
 		{
 			return Err(access.denial("task-interaction-approval-rebinding-unadapted"));
 		}

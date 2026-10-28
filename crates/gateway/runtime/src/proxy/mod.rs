@@ -7,7 +7,11 @@ mod policy_client;
 pub mod proxy_protocol;
 pub mod request_builder;
 mod routing_security;
-#[cfg(any(feature = "gateway-mcp", feature = "gateway-a2a"))]
+#[cfg(any(
+	feature = "gateway-mcp",
+	feature = "gateway-a2a",
+	feature = "security-pii"
+))]
 pub(crate) use routing_security::Guards as RoutingGuards;
 pub mod tcpproxy;
 

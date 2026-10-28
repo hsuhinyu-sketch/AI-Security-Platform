@@ -56,6 +56,7 @@ pub enum SecurityEventKind {
 	RagIngestion,
 	RagRetrieval,
 	RagContextAssembly,
+	PiiInspection,
 }
 
 /// A sanitized event suitable for an authenticated administrative UI and SSE clients.
@@ -234,6 +235,10 @@ impl SecurityEventStore {
 	}
 	pub fn record_authorization_required(&self, event: SecurityEvent) -> Result<(), String> {
 		self.record_checked(Self::authorization_event(event), true)
+	}
+	#[cfg(feature = "security-pii")]
+	pub(crate) fn record_content_required(&self, event: SecurityTimelineEvent) -> Result<(), String> {
+		self.record_checked(event, true)
 	}
 	fn authorization_event(event: SecurityEvent) -> SecurityTimelineEvent {
 		SecurityTimelineEvent {

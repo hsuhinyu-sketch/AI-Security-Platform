@@ -97,7 +97,7 @@ export function McpPlaygroundPage() {
 						protocolVersion: '2025-03-26',
 						capabilities: {},
 						clientInfo: {
-							name: 'agentgateway-ui',
+							name: 'ai-security-platform-ui',
 							version: '0.1.0'
 						}
 					}

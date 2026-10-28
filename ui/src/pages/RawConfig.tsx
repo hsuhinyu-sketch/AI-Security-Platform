@@ -377,7 +377,7 @@ function downloadConfig(value: string) {
 	const url = URL.createObjectURL(blob);
 	const anchor = document.createElement('a');
 	anchor.href = url;
-	anchor.download = 'agentgateway-config.yaml';
+	anchor.download = 'ai-security-platform-config.yaml';
 	anchor.click();
 	URL.revokeObjectURL(url);
 }

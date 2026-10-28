@@ -288,6 +288,10 @@ pub(crate) struct Guard {
 	attempt: usize,
 }
 impl Guard {
+	#[cfg(feature = "security-pii")]
+	pub(crate) fn pii_config(&self) -> &Arc<SecurityConfig> {
+		&self.config
+	}
 	pub fn new(
 		policies: &BackendPolicies,
 		request: &Request,

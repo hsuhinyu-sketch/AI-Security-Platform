@@ -1,6 +1,8 @@
 //! Bounded, address-preserving content views for non-streaming response guards.
 use crate::provider::InputFormat;
 use serde_json::Value;
+mod request;
+pub use request::project_request;
 
 #[derive(Clone, Copy)]
 enum Kind {

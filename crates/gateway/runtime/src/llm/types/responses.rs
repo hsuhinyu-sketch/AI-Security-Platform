@@ -89,6 +89,16 @@ impl RequestExt for Request {
 }
 
 impl RequestType for Request {
+	#[cfg(feature = "security-pii")]
+	fn pii_body(&self) -> Result<serde_json::Value, AIError> {
+		serde_json::to_value(self).map_err(|_| AIError::PiiInspection)
+	}
+	#[cfg(feature = "security-pii")]
+	fn replace_pii_body(&mut self, body: serde_json::Value) -> Result<(), AIError> {
+		*self = serde_json::from_value(body).map_err(|_| AIError::PiiInspection)?;
+		Ok(())
+	}
+
 	fn model(&mut self) -> &mut Option<String> {
 		&mut self.model
 	}

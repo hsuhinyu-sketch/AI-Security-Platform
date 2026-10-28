@@ -2879,6 +2879,8 @@ async fn make_backend_call(
 				.map(|policy| policy.resolve_route(req.uri().path()))
 				.unwrap_or(llm::RouteType::Completions);
 			trace!("llm: route {} to {route_type:?}", req.uri().path());
+			#[cfg(feature = "security-pii")]
+			crate::llm::pii::install(&mut req, &backend_call.backend_policies, route_type)?;
 			#[cfg(feature = "gateway-mcp")]
 			if crate::mcp::dispatch::is_model_call(&req) && route_type != RouteType::Completions {
 				return Err(ProxyError::AuthorizationFailed.into());
@@ -2897,10 +2899,12 @@ async fn make_backend_call(
 					egress_identity.clone(),
 					"realtime",
 				);
-				let enforce = security_integration_runtime::SecurityConfig {
-					mode: security_integration_runtime::SecurityMode::Enforce,
-					..Default::default()
-				};
+				let enforce = security_integration_runtime::SecurityConfig::from(
+					security_integration_runtime::SecurityConfigData {
+						mode: security_integration_runtime::SecurityMode::Enforce,
+						..Default::default()
+					},
+				);
 				security_integration_runtime::unsupported_operation_with_audit(
 					&enforce,
 					&action,
@@ -2923,10 +2927,12 @@ async fn make_backend_call(
 					egress_identity.clone(),
 					llm.name.to_string(),
 				);
-				let enforce = security_integration_runtime::SecurityConfig {
-					mode: security_integration_runtime::SecurityMode::Enforce,
-					..Default::default()
-				};
+				let enforce = security_integration_runtime::SecurityConfig::from(
+					security_integration_runtime::SecurityConfigData {
+						mode: security_integration_runtime::SecurityMode::Enforce,
+						..Default::default()
+					},
+				);
 				security_integration_runtime::unsupported_operation_with_audit(
 					&enforce,
 					&action,

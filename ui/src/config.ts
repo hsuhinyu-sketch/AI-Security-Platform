@@ -36,13 +36,7 @@ function hasLegacyUiPromptCompletionMappings(add: Record<string, string> | undef
 	);
 }
 
-export const mcpSettingsFields = [
-	'gateways',
-	'port',
-	'statefulMode',
-	'prefixMode',
-	'failureMode'
-] as const;
+export const mcpSettingsFields = ['port', 'statefulMode', 'prefixMode', 'failureMode'] as const;
 
 export const providerNames: ProviderName[] = [
 	'openai',
@@ -170,42 +164,6 @@ export function ensureMcp(config: GatewayConfig): McpConfig {
 	return config.mcp;
 }
 
-export function startupGatewayRefs(config: GatewayConfig | undefined): string | string[] {
-	const gateways = config?.ui?.gateways;
-	if (gateways && (!Array.isArray(gateways) || gateways.length > 0)) return gateways;
-	if (config?.gateways?.default) return 'default';
-	return Object.keys(config?.gateways ?? {})[0] ?? 'default';
-}
-
-function ensureStartupGateway(config: GatewayConfig, gateways: string | string[]) {
-	if (Object.keys(config.gateways ?? {}).length) return;
-	const occupiedPorts = new Set([
-		...(config.binds ?? []).map(bind => bind.port),
-		config.llm ? (config.llm.port ?? 4000) : undefined,
-		config.mcp ? (config.mcp.port ?? 3000) : undefined
-	]);
-	let port = 4000;
-	while (occupiedPorts.has(port)) port++;
-	const name = (Array.isArray(gateways) ? gateways[0] : gateways).split('/')[0];
-	config.gateways = { [name]: { port } };
-}
-
-export function startupLlmConfig(
-	config: GatewayConfig,
-	gateways = startupGatewayRefs(config)
-): LlmConfig {
-	ensureStartupGateway(config, gateways);
-	return { gateways };
-}
-
-export function startupMcpConfig(
-	config: GatewayConfig,
-	gateways = startupGatewayRefs(config)
-): McpConfig {
-	ensureStartupGateway(config, gateways);
-	return { gateways };
-}
-
 export function upsertModel(config: GatewayConfig, model: LlmModel, previousId?: string) {
 	const llm = ensureLlm(config);
 	llm.models ??= [];
@@ -220,7 +178,7 @@ export function upsertModel(config: GatewayConfig, model: LlmModel, previousId?:
 }
 
 export function modelIdentity(model: LlmModel): string {
-	return model.id || model.name;
+	return typeof model.id === 'string' && model.id ? model.id : model.name;
 }
 
 export function upsertVirtualModel(
@@ -493,10 +451,4 @@ export function makeEmptyMcpTarget(): McpTarget {
 			path: '/mcp'
 		}
 	};
-}
-
-export function enableTrafficConfig(config: GatewayConfig, port = 8080) {
-	if (!('gateways' in config)) {
-		config.gateways = { public: { port } };
-	}
 }

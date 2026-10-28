@@ -62,6 +62,8 @@ inference-routing = ["ai-security-platform-runtime/inference-routing", "gateway-
 security-s1 = ["ai-security-platform-runtime/security-s1"]
 security-a2a-sqlite = ["ai-security-platform-runtime/security-a2a-sqlite"]
 gateway-rag = ["ai-security-platform-runtime/gateway-rag"]
+security-pii = ["ai-security-platform-runtime/security-pii"]
+security-pii-presidio = ["ai-security-platform-runtime/security-pii-presidio"]
 ui = ["ai-security-platform-runtime/ui"]
 gateway-full = [
 	"gateway-llm",

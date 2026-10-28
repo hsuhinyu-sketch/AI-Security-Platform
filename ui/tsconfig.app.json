@@ -6,7 +6,6 @@
 		"lib": ["ES2022", "DOM", "DOM.Iterable"],
 		"allowJs": false,
 		"skipLibCheck": true,
-		"noCheck": true,
 		"strict": true,
 		"noUnusedLocals": true,
 		"noUnusedParameters": true,
@@ -21,5 +20,21 @@
 		"noEmit": true,
 		"jsx": "react-jsx"
 	},
-	"include": ["src", "tests"]
+	"include": ["src", "tests"],
+	"exclude": [
+		"src/pages/Home.tsx",
+		"src/pages/GetStarted.tsx",
+		"src/pages/TrafficGateways.tsx",
+		"src/pages/TrafficListeners.tsx",
+		"src/pages/TrafficRoutes.tsx",
+		"src/pages/traffic",
+		"src/pages/Keys.tsx",
+		"src/pages/RawSettings.tsx",
+		"src/pages/DumpPolicies.tsx",
+		"src/pages/ClientSetup.tsx",
+		"src/pages/Costs.tsx",
+		"src/pages/models/LlmSettingsDrawer.tsx",
+		"src/components/GatewayBindingEditor.tsx",
+		"src/traffic.ts"
+	]
 }

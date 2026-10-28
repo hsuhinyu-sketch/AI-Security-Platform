@@ -17,6 +17,7 @@ use tokio_stream::wrappers::ReceiverStream;
 use tower::ServiceExt;
 use tower_serve_static::ServeDir;
 
+use crate::capabilities::{GatewayCapability, compiled_profile};
 use crate::cel::{self, ExecutorSerde};
 #[cfg(feature = "gateway-llm")]
 use crate::llm::cost::CatalogAdmin;
@@ -126,6 +127,18 @@ struct RuntimeUiInfo {
 	gateway_mode: GatewayRuntimeMode,
 	management_mode: crate::management::access::Mode,
 	config_store_mode: &'static str,
+	capabilities: RuntimeCapabilities,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RuntimeCapabilities {
+	llm: bool,
+	a2a: bool,
+	mcp: bool,
+	rag: bool,
+	inference_routing: bool,
+	security_s1: bool,
 }
 
 #[derive(Serialize)]
@@ -136,6 +149,7 @@ enum GatewayRuntimeMode {
 
 async fn get_runtime(State(app): State<App>) -> Json<RuntimeInfo> {
 	let build = BuildInfo::new();
+	let profile = compiled_profile();
 	Json(RuntimeInfo {
 		build: RuntimeBuildInfo {
 			version: build.version,
@@ -153,6 +167,14 @@ async fn get_runtime(State(app): State<App>) -> Json<RuntimeInfo> {
 				"file"
 			} else {
 				"readOnly"
+			},
+			capabilities: RuntimeCapabilities {
+				llm: profile.supports(GatewayCapability::Llm),
+				a2a: profile.supports(GatewayCapability::A2a),
+				mcp: profile.supports(GatewayCapability::Mcp),
+				rag: profile.supports(GatewayCapability::Rag),
+				inference_routing: profile.supports(GatewayCapability::InferenceRouting),
+				security_s1: profile.supports(GatewayCapability::SecurityS1),
 			},
 		},
 	})
@@ -529,4 +551,33 @@ async fn tail_logs(
 	});
 
 	Ok(Sse::new(ReceiverStream::new(rx)))
+}
+
+#[cfg(test)]
+mod runtime_tests {
+	use super::*;
+
+	#[test]
+	fn runtime_capabilities_serialize_with_the_ui_contract() {
+		let value = serde_json::to_value(RuntimeCapabilities {
+			llm: true,
+			a2a: false,
+			mcp: true,
+			rag: false,
+			inference_routing: true,
+			security_s1: true,
+		})
+		.unwrap();
+		assert_eq!(
+			value,
+			serde_json::json!({
+				"llm": true,
+				"a2a": false,
+				"mcp": true,
+				"rag": false,
+				"inferenceRouting": true,
+				"securityS1": true
+			})
+		);
+	}
 }

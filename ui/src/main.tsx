@@ -6,27 +6,18 @@ import { createRoot } from 'react-dom/client';
 import { routerBasePath } from '@/basePath';
 import { Shell } from '@/components/Shell';
 import { CelPage } from '@/pages/Cel';
-import { ClientSetupPage } from '@/pages/ClientSetup';
-import { CostsPage } from '@/pages/Costs';
-import { DumpPoliciesPage } from '@/pages/DumpPolicies';
 import { GatewayWorkbenchPage } from '@/pages/GatewayWorkbench';
-import { LlmGetStartedPage, McpGetStartedPage, TrafficGetStartedPage } from '@/pages/GetStarted';
 import { GuardrailsPage } from '@/pages/Guardrails';
-import { KeysPage } from '@/pages/Keys';
 import { LoginPage } from '@/pages/Login';
-import { AnalyticsPage, LogsPage } from '@/pages/Logs';
+import { LogsPage } from '@/pages/Logs';
 import { McpPlaygroundPage } from '@/pages/McpPlayground';
 import { McpServersPage } from '@/pages/McpServers';
 import { ModelsPage } from '@/pages/Models';
+import { PlatformHomePage } from '@/pages/PlatformHome';
 import { PlaygroundPage } from '@/pages/Playground';
 import { McpPoliciesPage, PoliciesPage } from '@/pages/Policies';
 import { ProvidersPage } from '@/pages/Providers';
-import { RawSettingsPage } from '@/pages/RawSettings';
-import { PlatformHomePage } from '@/pages/PlatformHome';
 import { SecurityEventsPage } from '@/pages/SecurityEvents';
-import { TrafficGatewaysPage } from '@/pages/TrafficGateways';
-import { TrafficListenersPage } from '@/pages/TrafficListeners';
-import { TrafficRoutesPage } from '@/pages/TrafficRoutes';
 import '@fontsource/geist-sans/latin-400.css';
 import '@fontsource/geist-sans/latin-500.css';
 import '@fontsource/geist-sans/latin-600.css';
@@ -73,22 +64,10 @@ const gatewayWorkbenchRoute = createRoute({
 	component: GatewayWorkbenchPage
 });
 
-const dumpPoliciesRoute = createRoute({
-	getParentRoute: () => appRoute,
-	path: '/traffic/policies',
-	component: DumpPoliciesPage
-});
-
 const modelsRoute = createRoute({
 	getParentRoute: () => appRoute,
 	path: '/llm/models',
 	component: ModelsPage
-});
-
-const llmGetStartedRoute = createRoute({
-	getParentRoute: () => appRoute,
-	path: '/llm/get-started',
-	component: LlmGetStartedPage
 });
 
 const providersRoute = createRoute({
@@ -103,12 +82,6 @@ const logsRoute = createRoute({
 	component: LogsPage
 });
 
-const analyticsRoute = createRoute({
-	getParentRoute: () => appRoute,
-	path: '/llm/analytics',
-	component: AnalyticsPage
-});
-
 const policiesRoute = createRoute({
 	getParentRoute: () => appRoute,
 	path: '/llm/policies',
@@ -121,28 +94,10 @@ const guardrailsRoute = createRoute({
 	component: GuardrailsPage
 });
 
-const costsRoute = createRoute({
-	getParentRoute: () => appRoute,
-	path: '/llm/costs',
-	component: CostsPage
-});
-
-const keysRoute = createRoute({
-	getParentRoute: () => appRoute,
-	path: '/llm/keys',
-	component: KeysPage
-});
-
 const playgroundRoute = createRoute({
 	getParentRoute: () => appRoute,
 	path: '/llm/playground',
 	component: PlaygroundPage
-});
-
-const clientSetupRoute = createRoute({
-	getParentRoute: () => appRoute,
-	path: '/llm/client-setup',
-	component: ClientSetupPage
 });
 
 const mcpServersRoute = createRoute({
@@ -157,40 +112,10 @@ const mcpPoliciesRoute = createRoute({
 	component: McpPoliciesPage
 });
 
-const mcpGetStartedRoute = createRoute({
-	getParentRoute: () => appRoute,
-	path: '/mcp/get-started',
-	component: McpGetStartedPage
-});
-
 const mcpPlaygroundRoute = createRoute({
 	getParentRoute: () => appRoute,
 	path: '/mcp/playground',
 	component: McpPlaygroundPage
-});
-
-const trafficListenersRoute = createRoute({
-	getParentRoute: () => appRoute,
-	path: '/traffic/listeners',
-	component: TrafficListenersPage
-});
-
-const trafficGatewaysRoute = createRoute({
-	getParentRoute: () => appRoute,
-	path: '/traffic/gateways',
-	component: TrafficGatewaysPage
-});
-
-const trafficGetStartedRoute = createRoute({
-	getParentRoute: () => appRoute,
-	path: '/traffic/get-started',
-	component: TrafficGetStartedPage
-});
-
-const trafficRoutesRoute = createRoute({
-	getParentRoute: () => appRoute,
-	path: '/traffic/routes',
-	component: TrafficRoutesPage
 });
 
 const celRoute = createRoute({
@@ -203,12 +128,6 @@ const rawConfigRoute = createRoute({
 	getParentRoute: () => appRoute,
 	path: '/raw-config',
 	component: RawConfigRoute
-});
-
-const rawSettingsRoute = createRoute({
-	getParentRoute: () => appRoute,
-	path: '/settings',
-	component: RawSettingsPage
 });
 
 function RawConfigRoute() {
@@ -233,28 +152,16 @@ const router = createRouter({
 			indexRoute,
 			securityEventsRoute,
 			gatewayWorkbenchRoute,
-			dumpPoliciesRoute,
-			llmGetStartedRoute,
 			modelsRoute,
 			providersRoute,
 			policiesRoute,
 			guardrailsRoute,
-			costsRoute,
 			logsRoute,
-			analyticsRoute,
-			keysRoute,
 			playgroundRoute,
-			clientSetupRoute,
-			mcpGetStartedRoute,
 			mcpServersRoute,
 			mcpPoliciesRoute,
 			mcpPlaygroundRoute,
-			trafficGetStartedRoute,
-			trafficGatewaysRoute,
-			trafficListenersRoute,
-			trafficRoutesRoute,
 			celRoute,
-			rawSettingsRoute,
 			rawConfigRoute
 		])
 	])
