@@ -232,7 +232,7 @@ impl Relay {
 
 	fn security(&self) -> super::security::McpSecurity<'_> {
 		super::security::McpSecurity::new(
-			self.security_audit.as_deref(),
+			self.security_audit.as_ref(),
 			self.security_pipeline.as_ref(),
 		)
 	}
@@ -467,7 +467,7 @@ impl Relay {
 								prompt.name.to_string(),
 							)),
 							&cel,
-						) && super::security::McpSecurity::new(security.as_deref(), legacy.as_ref())
+						) && super::security::McpSecurity::new(security.as_ref(), legacy.as_ref())
 							.visible_object(
 								&request_id,
 								&identity,
@@ -504,7 +504,7 @@ impl Relay {
 								resource.uri.to_string(),
 							)),
 							&cel,
-						) && super::security::McpSecurity::new(security.as_deref(), legacy.as_ref())
+						) && super::security::McpSecurity::new(security.as_ref(), legacy.as_ref())
 							.visible_object(
 								&request_id,
 								&identity,
@@ -541,7 +541,7 @@ impl Relay {
 								template.uri_template.to_string(),
 							)),
 							&cel,
-						) && super::security::McpSecurity::new(security.as_deref(), legacy.as_ref())
+						) && super::security::McpSecurity::new(security.as_ref(), legacy.as_ref())
 							.visible_object(
 								&request_id,
 								&identity,
@@ -575,17 +575,20 @@ impl Relay {
 	) -> Result<Messages, UpstreamError> {
 		// The opt-in security contract must not change a transparent gateway's
 		// request handling when no platform security has been installed.
-		if self.security_audit.is_some() {
+		let task_admission = if self.security_audit.is_some() {
 			super::session_security::tasks::prepare(
 				&r,
 				&mut ctx,
 				service_name,
 				self.mcp_guardrails.is_some(),
-			)?;
-		}
+			)?
+		} else {
+			None
+		};
 		self
 			.security()
-			.authorize_request(&r, &mut ctx, service_name)?;
+			.authorize_request(&r, &mut ctx, service_name)
+			.await?;
 		// Stateless single-target bootstrap must obey the same server filter as fanout,
 		// including transports that never enter the HTTP egress hook (e.g. stdio).
 		if !self.permits_transport(service_name) {
@@ -596,7 +599,7 @@ impl Relay {
 		self.enforce_vehicle_tool_guardrails(&r).await?;
 		crate::mcp::security::mark_egress(Some(&r), service_name, "", &mut ctx);
 		crate::execution_budget::bind_mcp_invocation(&r, &mut ctx, service_name)?;
-		let task_admission = super::session_security::tasks::bind_budget(&ctx)?;
+		super::session_security::tasks::bind_budget(&ctx)?;
 		let id = r.id.clone();
 		let Ok(us) = self.upstreams.get(service_name) else {
 			return Err(UpstreamError::InvalidRequest(format!(
@@ -789,7 +792,8 @@ impl Relay {
 		if !object_list && !cross_component {
 			self
 				.security()
-				.authorize_request(&r, &mut ctx, "mcp-gateway")?;
+				.authorize_request(&r, &mut ctx, "mcp-gateway")
+				.await?;
 		}
 		self.enforce_vehicle_tool_guardrails(&r).await?;
 		let id = r.id.clone();
@@ -818,18 +822,18 @@ impl Relay {
 		}
 		if object_list || cross_component {
 			let mut last_denial = None;
-			selected_upstreams.retain(|(name, _)| {
+			let mut accepted = Vec::with_capacity(selected_upstreams.len());
+			for (name, upstream) in selected_upstreams {
 				match self
 					.security()
 					.authorize_request(&r, &mut ctx, name.as_str())
+					.await
 				{
-					Ok(()) => true,
-					Err(error) => {
-						last_denial = Some(error);
-						false
-					},
+					Ok(()) => accepted.push((name, upstream)),
+					Err(error) => last_denial = Some(error),
 				}
-			});
+			}
+			selected_upstreams = accepted;
 			if selected_upstreams.is_empty() {
 				return Err(last_denial.expect("nonempty selection rejected before dispatch"));
 			}

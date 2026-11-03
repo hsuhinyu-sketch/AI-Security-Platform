@@ -62,6 +62,19 @@ pub(crate) fn evaluate(
 	)
 }
 
+pub(crate) async fn evaluate_async(
+	config: &std::sync::Arc<SecurityConfig>,
+	action: &ActionRequest,
+) -> Result<(), GatewayError> {
+	security_integration_runtime::evaluate_with_audit_async(
+		config.clone(),
+		action.clone(),
+		None,
+		std::sync::Arc::new(crate::security_events::UiSecurityAuditSink),
+	)
+	.await
+}
+
 fn string_claim(
 	claims: &serde_json::Map<String, serde_json::Value>,
 	names: &[&str],

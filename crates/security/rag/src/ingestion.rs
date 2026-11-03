@@ -11,6 +11,7 @@ use security_audit::AuditSink;
 use security_pipeline::{
 	Authorizer, GatewayError, GatewayIdentity, SecurityPipeline, knowledge_ingest_for_identity,
 };
+use security_types::Subject;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
@@ -202,6 +203,8 @@ pub struct TrustedChunkAccess {
 }
 
 impl IndexedDocument {
+	/// Derive a stable, tenant/corpus/document-scoped UUID from a document-local chunk key.
+	/// Lifecycle keys keep their persisted authority/version identity across this transition.
 	pub fn to_chunk(
 		&self,
 		chunk_id: impl Into<String>,
@@ -210,11 +213,11 @@ impl IndexedDocument {
 		access: TrustedChunkAccess,
 	) -> KnowledgeChunk {
 		let chunk_id = chunk_id.into();
-		let chunk_id = if let SourceOrigin::Lifecycle {
+		let bytes = if let SourceOrigin::Lifecycle {
 			authority, version, ..
 		} = &self.source_origin
 		{
-			let bytes = serde_json::to_vec(&(
+			serde_json::to_vec(&(
 				&self.tenant_id,
 				&self.corpus_id,
 				&self.document_id,
@@ -222,19 +225,24 @@ impl IndexedDocument {
 				version,
 				&chunk_id,
 			))
-			.expect("strings serialize");
-			let hash = hex::encode(Sha256::digest(bytes));
-			format!(
-				"{}-{}-{}-{}-{}",
-				&hash[..8],
-				&hash[8..12],
-				&hash[12..16],
-				&hash[16..20],
-				&hash[20..32]
-			)
 		} else {
-			chunk_id
-		};
+			serde_json::to_vec(&(
+				&self.tenant_id,
+				&self.corpus_id,
+				&self.document_id,
+				&chunk_id,
+			))
+		}
+		.expect("strings serialize");
+		let hash = hex::encode(Sha256::digest(bytes));
+		let chunk_id = format!(
+			"{}-{}-{}-{}-{}",
+			&hash[..8],
+			&hash[8..12],
+			&hash[12..16],
+			&hash[16..20],
+			&hash[20..32]
+		);
 		KnowledgeChunk {
 			id: chunk_id,
 			document_id: self.document_id.clone(),
@@ -314,7 +322,7 @@ pub struct IngestionAuditEvent {
 	pub request_id: String,
 	pub corpus_id: String,
 	pub document_id: String,
-	pub tenant_id: Option<String>,
+	pub subject: Subject,
 	pub source_scheme: Option<String>,
 	pub source_hash: Option<String>,
 	pub source_origin: SourceOrigin,
@@ -388,6 +396,10 @@ where
 	S: AuditSink,
 	IS: IngestionAuditSink,
 {
+	pub fn max_document_bytes(&self) -> usize {
+		self.config.max_document_bytes
+	}
+
 	/// Preflight authorization prevents an unauthorised caller from triggering an outbound source
 	/// fetch. The full content-bound authorization still runs after the trusted fetch.
 	pub fn authorize_import(
@@ -398,20 +410,58 @@ where
 		document_id: &str,
 		source_id: &str,
 	) -> Result<(), IngestionError> {
+		let (action, arguments) = Self::import_action(
+			request_id.into(),
+			identity,
+			corpus_id,
+			document_id,
+			source_id,
+		)?;
+		self
+			.pipeline
+			.authorize(&action, Some(&arguments))
+			.map(|_| ())
+			.map_err(IngestionError::GatewayDenied)
+	}
+
+	pub async fn authorize_import_async(
+		&self,
+		request_id: impl Into<String>,
+		identity: GatewayIdentity,
+		corpus_id: &str,
+		document_id: &str,
+		source_id: &str,
+	) -> Result<(), IngestionError> {
+		let (action, arguments) = Self::import_action(
+			request_id.into(),
+			identity,
+			corpus_id,
+			document_id,
+			source_id,
+		)?;
+		self
+			.pipeline
+			.authorize_async(&action, Some(&arguments))
+			.await
+			.map(|_| ())
+			.map_err(IngestionError::GatewayDenied)
+	}
+
+	fn import_action(
+		request_id: String,
+		identity: GatewayIdentity,
+		corpus_id: &str,
+		document_id: &str,
+		source_id: &str,
+	) -> Result<(security_types::ActionRequest, serde_json::Value), IngestionError> {
 		let action = knowledge_ingest_for_identity(request_id, identity, document_id);
 		if action.subject.tenant_id.is_none() {
 			return Err(IngestionError::MissingTenant);
 		}
-		self
-			.pipeline
-			.authorize(
-				&action,
-				Some(&serde_json::json!({
-					"corpusId": corpus_id, "sourceId": source_id, "phase": "source-fetch"
-				})),
-			)
-			.map(|_| ())
-			.map_err(IngestionError::GatewayDenied)
+		Ok((
+			action,
+			serde_json::json!({"corpusId": corpus_id, "sourceId": source_id, "phase": "source-fetch"}),
+		))
 	}
 
 	/// Records an authorized source fetch that failed before an ingest request could be created.
@@ -597,7 +647,11 @@ where
 			"sourceHash": source_hash,
 			"contentBytes": content_bytes,
 		});
-		if let Err(error) = self.pipeline.authorize(&action, Some(&arguments)) {
+		if let Err(error) = self
+			.pipeline
+			.authorize_async(&action, Some(&arguments))
+			.await
+		{
 			return self.deny(
 				&action,
 				&request,
@@ -626,11 +680,23 @@ where
 			classification_source: classification_source.clone(),
 		};
 		if findings.is_empty() {
-			self
-				.backend
-				.index(document.clone())
-				.await
-				.map_err(IngestionError::Backend)?;
+			if let Err(error) = self.backend.index(document.clone()).await {
+				self.record(
+					&action,
+					&request.corpus_id,
+					Some(source_scheme),
+					Some(source_hash),
+					content_bytes,
+					labels,
+					classification,
+					classification_source,
+					request.origin.clone(),
+					Vec::new(),
+					IngestionAuditOutcome::Denied,
+					Some("index-backend-failed".into()),
+				);
+				return Err(IngestionError::Backend(error));
+			}
 			self.record(
 				&action,
 				&request.corpus_id,
@@ -648,11 +714,23 @@ where
 			Ok(IngestionResult::Indexed(document))
 		} else {
 			let quarantined = QuarantinedDocument { document, findings };
-			self
-				.backend
-				.quarantine(quarantined.clone())
-				.await
-				.map_err(IngestionError::Backend)?;
+			if let Err(error) = self.backend.quarantine(quarantined.clone()).await {
+				self.record(
+					&action,
+					&request.corpus_id,
+					Some(source_scheme),
+					Some(source_hash),
+					content_bytes,
+					labels,
+					classification,
+					classification_source,
+					request.origin.clone(),
+					quarantined.findings.clone(),
+					IngestionAuditOutcome::Denied,
+					Some("quarantine-backend-failed".into()),
+				);
+				return Err(IngestionError::Backend(error));
+			}
 			self.record(
 				&action,
 				&request.corpus_id,
@@ -760,7 +838,7 @@ where
 			request_id: action.request_id.clone(),
 			corpus_id: corpus_id.to_string(),
 			document_id: action.resource.id.clone(),
-			tenant_id: action.subject.tenant_id.clone(),
+			subject: action.subject.clone(),
 			source_scheme,
 			source_hash,
 			content_bytes,

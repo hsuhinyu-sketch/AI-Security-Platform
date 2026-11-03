@@ -10,6 +10,7 @@ publish.workspace = true
 default = []
 pii = ["dep:security-pii"]
 a2a-sqlite = ["dep:sqlx"]
+rag-sqlite = ["dep:sqlx", "dep:security-rag"]
 
 [dependencies]
 security-pii = { path = "../pii", optional = true }
@@ -25,9 +26,11 @@ chrono.workspace = true
 tokio.workspace = true
 tokio-util.workspace = true
 uuid.workspace = true
-sqlx = { workspace = true, optional = true }
+sqlx = { version = "0.9", default-features = false, features = ["runtime-tokio", "sqlite"], optional = true }
+security-rag = { path = "../rag", optional = true }
 sha2.workspace = true
 
 [dev-dependencies]
 security-rag = { path = "../rag" }
 libc.workspace = true
+sqlx = { version = "0.9", default-features = false, features = ["runtime-tokio", "sqlite"] }

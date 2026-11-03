@@ -549,6 +549,8 @@ impl schemars::JsonSchema for StringBoolFloat {
 #[derive(serde::Serialize, Clone, Debug)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Config {
+	#[serde(skip)]
+	pub(crate) startup_config: config::StartupConfig,
 	pub ipv6_enabled: bool,
 	pub network: Strng,
 	/// How the gateway discovers its own workload for locality-aware load balancing.

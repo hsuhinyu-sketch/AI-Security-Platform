@@ -1,6 +1,8 @@
 pub(crate) mod dtrace;
 mod gateway;
 pub mod httpproxy;
+#[cfg(feature = "gateway-llm")]
+mod llm_request;
 #[cfg(all(feature = "gateway-mcp", feature = "gateway-llm"))]
 pub(crate) mod model_execution;
 mod policy_client;
@@ -13,6 +15,8 @@ mod routing_security;
 	feature = "security-pii"
 ))]
 pub(crate) use routing_security::Guards as RoutingGuards;
+#[cfg(feature = "gateway-mcp")]
+pub(crate) use routing_security::InheritedConfigs;
 pub mod tcpproxy;
 
 use std::sync::Arc;

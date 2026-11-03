@@ -1,6 +1,14 @@
 //! Pure provider request descriptions. Outputs carry no execution authority.
 
 #[cfg(feature = "protocol")]
+const MODEL_PATH_SEGMENT: &percent_encoding::AsciiSet = &percent_encoding::CONTROLS
+	.add(b' ')
+	.add(b'/')
+	.add(b'%')
+	.add(b'?')
+	.add(b'#');
+
+#[cfg(feature = "protocol")]
 pub mod anthropic;
 #[cfg(feature = "protocol")]
 pub mod azure;
@@ -115,6 +123,14 @@ pub enum RouteType {
 }
 
 impl RouteType {
+	/// Whether this route has the bounded text adapter used by content controls.
+	/// This describes protocol support, not authorization to invoke a model.
+	pub fn supports_content_controls(self) -> bool {
+		self
+			.provider_format()
+			.is_some_and(|format| format.input_format().supports_prompt_guard())
+	}
+
 	pub fn provider_format(self) -> Option<ProviderFormat> {
 		use ProviderFormat as F;
 		match self {
@@ -190,6 +206,77 @@ impl Default for PromptCachingConfig {
 			cache_tools: false,
 			min_tokens: Some(1024),
 			cache_message_offset: 0,
+		}
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use super::RouteType;
+
+	#[cfg(feature = "protocol")]
+	#[test]
+	fn provider_model_names_cannot_change_path_or_query() {
+		use super::{ProviderFormat, azure, bedrock, vertex};
+		let azure = azure::Endpoint {
+			model: None,
+			resource_name: "example",
+			resource_type: &azure::AzureResourceType::OpenAI,
+			api_version: Some("2024-10-21"),
+			project_name: None,
+		};
+		let vertex = vertex::Endpoint {
+			model: None,
+			region: None,
+			project_id: "project",
+		};
+		let bedrock = bedrock::Endpoint {
+			model: None,
+			region: "us-east-1",
+		};
+		for model in ["a/b", "a?x=1", "a#x", "a%2fb", "a b"] {
+			let azure_path = azure.get_path_for_model(Some(ProviderFormat::Completions), model);
+			let uri: http::Uri = azure_path.as_str().parse().unwrap();
+			assert_eq!(uri.query(), Some("api-version=2024-10-21"));
+			assert!(uri.path().ends_with("/chat/completions"));
+			assert_eq!(uri.path().split('/').count(), 6);
+			let vertex_path =
+				vertex.get_path_for_model(Some(ProviderFormat::Embeddings), Some(model), false);
+			let uri: http::Uri = vertex_path.as_str().parse().unwrap();
+			assert!(uri.query().is_none());
+			assert!(uri.path().ends_with(":predict"));
+			let bedrock_path = bedrock.get_path_for_route(None, false, model);
+			let uri: http::Uri = bedrock_path.as_str().parse().unwrap();
+			assert!(uri.query().is_none());
+			assert!(uri.path().ends_with("/converse"));
+		}
+		assert_eq!(
+			azure.get_path_for_model(None, "gpt-4.1"),
+			"/openai/deployments/gpt-4.1/chat/completions?api-version=2024-10-21"
+		);
+		assert!(
+			vertex
+				.get_path_for_model(None, Some("anthropic/claude-3-20240307"), false)
+				.contains("claude-3@20240307:rawPredict")
+		);
+	}
+
+	#[test]
+	fn content_controls_require_a_supported_text_adapter() {
+		use RouteType::*;
+		for (route, supported) in [
+			(Completions, true),
+			(Messages, true),
+			(Responses, true),
+			(Models, false),
+			(Passthrough, false),
+			(Detect, false),
+			(Embeddings, false),
+			(Realtime, false),
+			(AnthropicTokenCount, false),
+			(Rerank, false),
+		] {
+			assert_eq!(route.supports_content_controls(), supported, "{route:?}");
 		}
 	}
 }

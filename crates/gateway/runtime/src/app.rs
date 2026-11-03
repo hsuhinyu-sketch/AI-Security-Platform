@@ -93,8 +93,12 @@ pub async fn run(config: Arc<Config>) -> anyhow::Result<Bound> {
 		Some(metrics_handle.clone()),
 	);
 
-	let state_mgr =
-		runtime::state_manager::StateManager::new(config.clone(), control_client.clone()).await?;
+	let state_mgr = runtime::state_manager::StateManager::new(
+		config.clone(),
+		control_client.clone(),
+		metrics_handle.clone(),
+	)
+	.await?;
 	let stores = state_mgr.stores();
 	let resource_manager = state_mgr.resource_manager();
 	#[cfg(feature = "gateway-rag")]
@@ -150,16 +154,17 @@ pub async fn run(config: Arc<Config>) -> anyhow::Result<Bound> {
 
 	let gw = proxy::Gateway::with_services(Arc::new(pi), services, drain_rx.clone());
 
+	let gateway_ready = ready.clone();
 	// Run the agentgateway in the data plane worker pool.
 	data_plane_pool.send(DataPlaneTask {
 		block_shutdown: true,
 		fut: Box::pin(async move {
-			gw.run().in_current_span().await;
+			gw.run_with_readiness(gateway_ready, proxy_task)
+				.in_current_span()
+				.await;
 			Ok(())
 		}),
 	})?;
-
-	drop(proxy_task);
 
 	// Run the admin server in the current tokio worker pool.
 	admin_server.spawn();
@@ -175,6 +180,7 @@ pub async fn run(config: Arc<Config>) -> anyhow::Result<Bound> {
 	// Run the metrics sever in the current tokio worker pool.
 	metrics_server.spawn();
 	Ok(Bound {
+		_state_manager: state_mgr,
 		drain_tx,
 		shutdown,
 		stores,
@@ -183,6 +189,7 @@ pub async fn run(config: Arc<Config>) -> anyhow::Result<Bound> {
 }
 
 pub struct Bound {
+	_state_manager: runtime::state_manager::StateManager,
 	pub shutdown: signal::Shutdown,
 	drain_tx: drain::DrainTrigger,
 	ready: readiness::Ready,
@@ -198,9 +205,11 @@ impl Bound {
 		self.stores.binds.read().bind_addresses()
 	}
 
-	pub async fn wait_termination(self) -> anyhow::Result<()> {
+	pub async fn wait_termination(mut self) -> anyhow::Result<()> {
 		// Wait for a signal to shutdown from explicit admin shutdown or signal
 		self.shutdown.wait().await;
+		// Stop configuration publication before draining listeners.
+		self._state_manager.stop().await;
 
 		let sdp = {
 			let b = self.stores.binds.read();

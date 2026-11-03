@@ -111,6 +111,8 @@ pub struct Resource {
 #[serde(rename_all = "camelCase")]
 pub struct AuthorizationContext {
 	#[serde(default, skip_serializing_if = "Option::is_none")]
+	pub approval: Option<ApprovalGrant>,
+	#[serde(default, skip_serializing_if = "Option::is_none")]
 	pub session_id: Option<String>,
 	#[serde(default, skip_serializing_if = "Option::is_none")]
 	pub client_id: Option<String>,
@@ -134,9 +136,19 @@ pub enum DecisionEffect {
 	Deny,
 }
 
+/// Trusted approval receipt bound to the normalized request and its exact arguments.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ApprovalGrant {
+	pub approval_id: String,
+	pub expires_at: DateTime<Utc>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct Decision {
+	#[serde(default, skip_serializing_if = "Option::is_none")]
+	pub approval: Option<ApprovalGrant>,
 	pub request_id: String,
 	pub effect: DecisionEffect,
 	pub policy_id: Option<String>,

@@ -751,7 +751,7 @@
     },
     "model": "claude-3-7",
     "expected": {
-      "path": "/openai/deployments/deployment /%/chat/completions?api-version=2024-10-21",
+      "path": "/openai/deployments/deployment%20%2F%25/chat/completions?api-version=2024-10-21",
       "host": "r /%资源.openai.azure.com",
       "anthropic": false,
       "noRequest": false
@@ -769,7 +769,7 @@
     },
     "model": "claude-3-7",
     "expected": {
-      "path": "/openai/deployments/deployment /%/chat/completions?api-version=2024-10-21",
+      "path": "/openai/deployments/deployment%20%2F%25/chat/completions?api-version=2024-10-21",
       "host": "r /%资源.openai.azure.com",
       "anthropic": false,
       "noRequest": false
@@ -787,7 +787,7 @@
     },
     "model": "claude-3-7",
     "expected": {
-      "path": "/openai/deployments/deployment /%/chat/completions?api-version=2024-10-21",
+      "path": "/openai/deployments/deployment%20%2F%25/chat/completions?api-version=2024-10-21",
       "host": "r /%资源.openai.azure.com",
       "anthropic": false,
       "noRequest": false
@@ -805,7 +805,7 @@
     },
     "model": "claude-3-7",
     "expected": {
-      "path": "/openai/deployments/deployment /%/chat/completions?api-version=2024-10-21",
+      "path": "/openai/deployments/deployment%20%2F%25/chat/completions?api-version=2024-10-21",
       "host": "r /%资源.openai.azure.com",
       "anthropic": false,
       "noRequest": false
@@ -823,7 +823,7 @@
     },
     "model": "claude-3-7",
     "expected": {
-      "path": "/openai/deployments/deployment /%/chat/completions?api-version=2024-10-21",
+      "path": "/openai/deployments/deployment%20%2F%25/chat/completions?api-version=2024-10-21",
       "host": "r /%资源.openai.azure.com",
       "anthropic": false,
       "noRequest": false
@@ -841,7 +841,7 @@
     },
     "model": "claude-3-7",
     "expected": {
-      "path": "/openai/deployments/deployment /%/responses?api-version=2024-10-21",
+      "path": "/openai/deployments/deployment%20%2F%25/responses?api-version=2024-10-21",
       "host": "r /%资源.openai.azure.com",
       "anthropic": false,
       "noRequest": false
@@ -859,7 +859,7 @@
     },
     "model": "claude-3-7",
     "expected": {
-      "path": "/openai/deployments/deployment /%/embeddings?api-version=2024-10-21",
+      "path": "/openai/deployments/deployment%20%2F%25/embeddings?api-version=2024-10-21",
       "host": "r /%资源.openai.azure.com",
       "anthropic": false,
       "noRequest": false
@@ -877,7 +877,7 @@
     },
     "model": "claude-3-7",
     "expected": {
-      "path": "/openai/deployments/deployment /%/chat/completions?api-version=2024-10-21",
+      "path": "/openai/deployments/deployment%20%2F%25/chat/completions?api-version=2024-10-21",
       "host": "r /%资源.openai.azure.com",
       "anthropic": false,
       "noRequest": false
@@ -895,7 +895,7 @@
     },
     "model": "claude-3-7",
     "expected": {
-      "path": "/openai/deployments/deployment /%/chat/completions?api-version=2024-10-21",
+      "path": "/openai/deployments/deployment%20%2F%25/chat/completions?api-version=2024-10-21",
       "host": "r /%资源.openai.azure.com",
       "anthropic": false,
       "noRequest": false
@@ -913,7 +913,7 @@
     },
     "model": "claude-3-7",
     "expected": {
-      "path": "/openai/deployments/deployment /%/chat/completions?api-version=2024-10-21",
+      "path": "/openai/deployments/deployment%20%2F%25/chat/completions?api-version=2024-10-21",
       "host": "r /%资源.openai.azure.com",
       "anthropic": false,
       "noRequest": false
@@ -931,7 +931,7 @@
     },
     "model": "claude-3-7",
     "expected": {
-      "path": "/openai/deployments/deployment /%/chat/completions?api-version=",
+      "path": "/openai/deployments/deployment%20%2F%25/chat/completions?api-version=",
       "host": "r /%资源.openai.azure.com",
       "anthropic": false,
       "noRequest": false
@@ -949,7 +949,7 @@
     },
     "model": "claude-3-7",
     "expected": {
-      "path": "/openai/deployments/deployment /%/chat/completions?api-version=",
+      "path": "/openai/deployments/deployment%20%2F%25/chat/completions?api-version=",
       "host": "r /%资源.openai.azure.com",
       "anthropic": false,
       "noRequest": false
@@ -967,7 +967,7 @@
     },
     "model": "claude-3-7",
     "expected": {
-      "path": "/openai/deployments/deployment /%/chat/completions?api-version=",
+      "path": "/openai/deployments/deployment%20%2F%25/chat/completions?api-version=",
       "host": "r /%资源.openai.azure.com",
       "anthropic": false,
       "noRequest": false
@@ -985,7 +985,7 @@
     },
     "model": "claude-3-7",
     "expected": {
-      "path": "/openai/deployments/deployment /%/chat/completions?api-version=",
+      "path": "/openai/deployments/deployment%20%2F%25/chat/completions?api-version=",
       "host": "r /%资源.openai.azure.com",
       "anthropic": false,
       "noRequest": false
@@ -1003,7 +1003,7 @@
     },
     "model": "claude-3-7",
     "expected": {
-      "path": "/openai/deployments/deployment /%/chat/completions?api-version=",
+      "path": "/openai/deployments/deployment%20%2F%25/chat/completions?api-version=",
       "host": "r /%资源.openai.azure.com",
       "anthropic": false,
       "noRequest": false
@@ -1021,7 +1021,7 @@
     },
     "model": "claude-3-7",
     "expected": {
-      "path": "/openai/deployments/deployment /%/responses?api-version=",
+      "path": "/openai/deployments/deployment%20%2F%25/responses?api-version=",
       "host": "r /%资源.openai.azure.com",
       "anthropic": false,
       "noRequest": false
@@ -1039,7 +1039,7 @@
     },
     "model": "claude-3-7",
     "expected": {
-      "path": "/openai/deployments/deployment /%/embeddings?api-version=",
+      "path": "/openai/deployments/deployment%20%2F%25/embeddings?api-version=",
       "host": "r /%资源.openai.azure.com",
       "anthropic": false,
       "noRequest": false
@@ -1057,7 +1057,7 @@
     },
     "model": "claude-3-7",
     "expected": {
-      "path": "/openai/deployments/deployment /%/chat/completions?api-version=",
+      "path": "/openai/deployments/deployment%20%2F%25/chat/completions?api-version=",
       "host": "r /%资源.openai.azure.com",
       "anthropic": false,
       "noRequest": false
@@ -1075,7 +1075,7 @@
     },
     "model": "claude-3-7",
     "expected": {
-      "path": "/openai/deployments/deployment /%/chat/completions?api-version=",
+      "path": "/openai/deployments/deployment%20%2F%25/chat/completions?api-version=",
       "host": "r /%资源.openai.azure.com",
       "anthropic": false,
       "noRequest": false
@@ -1093,7 +1093,7 @@
     },
     "model": "claude-3-7",
     "expected": {
-      "path": "/openai/deployments/deployment /%/chat/completions?api-version=",
+      "path": "/openai/deployments/deployment%20%2F%25/chat/completions?api-version=",
       "host": "r /%资源.openai.azure.com",
       "anthropic": false,
       "noRequest": false
@@ -1111,7 +1111,7 @@
     },
     "model": "claude-3-7",
     "expected": {
-      "path": "/openai/deployments/deployment /%/chat/completions?api-version=a?&版本",
+      "path": "/openai/deployments/deployment%20%2F%25/chat/completions?api-version=a?&版本",
       "host": "r /%资源.openai.azure.com",
       "anthropic": false,
       "noRequest": false
@@ -1129,7 +1129,7 @@
     },
     "model": "claude-3-7",
     "expected": {
-      "path": "/openai/deployments/deployment /%/chat/completions?api-version=a?&版本",
+      "path": "/openai/deployments/deployment%20%2F%25/chat/completions?api-version=a?&版本",
       "host": "r /%资源.openai.azure.com",
       "anthropic": false,
       "noRequest": false
@@ -1147,7 +1147,7 @@
     },
     "model": "claude-3-7",
     "expected": {
-      "path": "/openai/deployments/deployment /%/chat/completions?api-version=a?&版本",
+      "path": "/openai/deployments/deployment%20%2F%25/chat/completions?api-version=a?&版本",
       "host": "r /%资源.openai.azure.com",
       "anthropic": false,
       "noRequest": false
@@ -1165,7 +1165,7 @@
     },
     "model": "claude-3-7",
     "expected": {
-      "path": "/openai/deployments/deployment /%/chat/completions?api-version=a?&版本",
+      "path": "/openai/deployments/deployment%20%2F%25/chat/completions?api-version=a?&版本",
       "host": "r /%资源.openai.azure.com",
       "anthropic": false,
       "noRequest": false
@@ -1183,7 +1183,7 @@
     },
     "model": "claude-3-7",
     "expected": {
-      "path": "/openai/deployments/deployment /%/chat/completions?api-version=a?&版本",
+      "path": "/openai/deployments/deployment%20%2F%25/chat/completions?api-version=a?&版本",
       "host": "r /%资源.openai.azure.com",
       "anthropic": false,
       "noRequest": false
@@ -1201,7 +1201,7 @@
     },
     "model": "claude-3-7",
     "expected": {
-      "path": "/openai/deployments/deployment /%/responses?api-version=a?&版本",
+      "path": "/openai/deployments/deployment%20%2F%25/responses?api-version=a?&版本",
       "host": "r /%资源.openai.azure.com",
       "anthropic": false,
       "noRequest": false
@@ -1219,7 +1219,7 @@
     },
     "model": "claude-3-7",
     "expected": {
-      "path": "/openai/deployments/deployment /%/embeddings?api-version=a?&版本",
+      "path": "/openai/deployments/deployment%20%2F%25/embeddings?api-version=a?&版本",
       "host": "r /%资源.openai.azure.com",
       "anthropic": false,
       "noRequest": false
@@ -1237,7 +1237,7 @@
     },
     "model": "claude-3-7",
     "expected": {
-      "path": "/openai/deployments/deployment /%/chat/completions?api-version=a?&版本",
+      "path": "/openai/deployments/deployment%20%2F%25/chat/completions?api-version=a?&版本",
       "host": "r /%资源.openai.azure.com",
       "anthropic": false,
       "noRequest": false
@@ -1255,7 +1255,7 @@
     },
     "model": "claude-3-7",
     "expected": {
-      "path": "/openai/deployments/deployment /%/chat/completions?api-version=a?&版本",
+      "path": "/openai/deployments/deployment%20%2F%25/chat/completions?api-version=a?&版本",
       "host": "r /%资源.openai.azure.com",
       "anthropic": false,
       "noRequest": false
@@ -1273,7 +1273,7 @@
     },
     "model": "claude-3-7",
     "expected": {
-      "path": "/openai/deployments/deployment /%/chat/completions?api-version=a?&版本",
+      "path": "/openai/deployments/deployment%20%2F%25/chat/completions?api-version=a?&版本",
       "host": "r /%资源.openai.azure.com",
       "anthropic": false,
       "noRequest": false

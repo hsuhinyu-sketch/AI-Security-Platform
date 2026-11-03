@@ -13,6 +13,7 @@
 		"generate-schema": "node scripts/generate-schema.mjs",
 		"lint": "pnpm typecheck && pnpm check",
 		"preview": "pnpm build && vite preview",
+		"test:schema": "pnpm generate-schema && node scripts/test-schema.mjs",
 		"typecheck": "pnpm generate-schema && tsc -b"
 	},
 	"dependencies": {

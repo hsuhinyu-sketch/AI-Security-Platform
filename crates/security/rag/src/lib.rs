@@ -326,7 +326,11 @@ where
 			"queryHash": query.query_hash(),
 			"requestedLimit": query.limit(),
 		});
-		if let Err(error) = self.pipeline.authorize(&action, Some(&arguments)) {
+		if let Err(error) = self
+			.pipeline
+			.authorize_async(&action, Some(&arguments))
+			.await
+		{
 			return self.deny(
 				&action,
 				query.query_hash(),

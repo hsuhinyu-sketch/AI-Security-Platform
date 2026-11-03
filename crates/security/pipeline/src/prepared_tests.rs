@@ -90,8 +90,12 @@ impl SecurityControl for RuntimeControl {
 	fn id(&self) -> &str {
 		"runtime"
 	}
-	fn check(&self, _: &ActionRequest, _: Option<&serde_json::Value>) -> Result<(), ControlDenial> {
-		Ok(())
+	fn check(
+		&self,
+		_: &ActionRequest,
+		_: Option<&serde_json::Value>,
+	) -> Result<Option<security_types::ApprovalGrant>, ControlDenial> {
+		Ok(None)
 	}
 }
 #[test]
@@ -286,11 +290,108 @@ fn explicitly_cached_decision_uses_the_current_request_id_without_renewing_expir
 	assert_eq!(calls.load(Ordering::SeqCst), 1);
 }
 
+#[test]
+fn fail_closed_does_not_read_or_populate_an_enabled_cache() {
+	let cache = DecisionCache::default();
+	let calls = Arc::new(AtomicUsize::new(0));
+	let pdp = CachedDynamicPdp::new(
+		RemoteDynamicPdp::new(ChangingPdp(calls.clone()), Some("v1".into())),
+		cache.clone(),
+		"v1",
+		Duration::seconds(60),
+		DynamicPdpFailureMode::FailClosed,
+	);
+	let decision = pdp.decide(&action()).unwrap();
+	assert!(cache.entries.lock().unwrap().is_empty());
+	// An Allow left by a previously enabled cache is also ignored in FailClosed mode.
+	cache.insert(pdp.cache_key(&action()), decision, Duration::seconds(60));
+	assert!(pdp.decide(&action()).is_err());
+	assert_eq!(calls.load(Ordering::SeqCst), 2);
+}
+
+#[test]
+fn cache_capacity_misses_consult_pdp_and_expiry_reclaims_space() {
+	let cache = DecisionCache::default();
+	let decision = Decision {
+		approval: None,
+		request_id: "cached".into(),
+		effect: DecisionEffect::Allow,
+		policy_id: Some("allow".into()),
+		policy_version: Some("v1".into()),
+		expires_at: None,
+	};
+	for index in 0..DecisionCache::MAX_ENTRIES {
+		cache.insert(index.to_string(), decision.clone(), Duration::minutes(1));
+	}
+	// Saturation is a cache miss, never an implicit Allow or a PDP failure fallback.
+	let calls = Arc::new(AtomicUsize::new(0));
+	let pdp = CachedDynamicPdp::new(
+		RemoteDynamicPdp::new(ChangingPdp(calls.clone()), Some("v1".into())),
+		cache.clone(),
+		"v1",
+		Duration::seconds(60),
+		DynamicPdpFailureMode::UseCachedDecision,
+	);
+	assert!(pdp.decide(&action()).is_ok());
+	assert!(pdp.decide(&action()).is_err());
+	assert_eq!(calls.load(Ordering::SeqCst), 2);
+	assert_eq!(
+		cache.entries.lock().unwrap().len(),
+		DecisionCache::MAX_ENTRIES
+	);
+	// Exercise concurrent insertion with distinct attacker-controlled keys.
+	std::thread::scope(|scope| {
+		for worker in 0..4 {
+			let cache = &cache;
+			let decision = &decision;
+			scope.spawn(move || {
+				for index in 0..32 {
+					cache.insert(
+						format!("extra-{worker}-{index}"),
+						decision.clone(),
+						Duration::minutes(1),
+					);
+				}
+			});
+		}
+	});
+	assert_eq!(
+		cache.entries.lock().unwrap().len(),
+		DecisionCache::MAX_ENTRIES
+	);
+	cache
+		.entries
+		.lock()
+		.unwrap()
+		.get_mut("0")
+		.unwrap()
+		.expires_at = Utc::now() - Duration::seconds(1);
+	cache.insert("replacement".into(), decision, Duration::minutes(1));
+	assert!(cache.get("0", Utc::now()).is_none());
+	assert!(cache.get("replacement", Utc::now()).is_some());
+	assert_eq!(
+		cache.entries.lock().unwrap().len(),
+		DecisionCache::MAX_ENTRIES
+	);
+}
+
 struct LiveApproval(Arc<std::sync::atomic::AtomicBool>, Arc<AtomicUsize>);
 impl ApprovalProvider for LiveApproval {
-	fn approved(&self, _: &ActionRequest, _: &serde_json::Value) -> Result<bool, ApprovalError> {
+	fn approved(
+		&self,
+		_: &ActionRequest,
+		_: &serde_json::Value,
+	) -> Result<Option<security_types::ApprovalGrant>, ApprovalError> {
 		self.1.fetch_add(1, Ordering::SeqCst);
-		Ok(self.0.load(Ordering::SeqCst))
+		Ok(
+			self
+				.0
+				.load(Ordering::SeqCst)
+				.then(|| security_types::ApprovalGrant {
+					approval_id: "live".into(),
+					expires_at: Utc::now() + Duration::seconds(30),
+				}),
+		)
 	}
 }
 #[test]
@@ -342,4 +443,199 @@ fn prepared_local_rules_recheck_expiry_at_execution_time() {
 	assert!(invoke().is_ok());
 	std::thread::sleep(std::time::Duration::from_millis(1100));
 	assert!(invoke().is_err());
+}
+
+#[test]
+fn awaited_pipeline_preserves_control_order_arguments_and_one_audit_outcome() {
+	struct Control {
+		stage: &'static str,
+		log: Arc<Mutex<Vec<&'static str>>>,
+		deny: bool,
+	}
+	impl SecurityControl for Control {
+		fn id(&self) -> &str {
+			self.stage
+		}
+		fn check(
+			&self,
+			_: &ActionRequest,
+			arguments: Option<&serde_json::Value>,
+		) -> Result<Option<security_types::ApprovalGrant>, ControlDenial> {
+			assert_eq!(arguments.unwrap()["query"], "safe");
+			self.log.lock().unwrap().push(self.stage);
+			if self.deny {
+				Err(ControlDenial {
+					control_id: self.stage.into(),
+					reason: "refused".into(),
+				})
+			} else {
+				Ok(None)
+			}
+		}
+	}
+	struct Awaited {
+		log: Arc<Mutex<Vec<&'static str>>>,
+		deny: bool,
+	}
+	impl Authorizer for Awaited {
+		fn decide(&self, _: &ActionRequest) -> Decision {
+			panic!("awaited path must use the asynchronous provider")
+		}
+		fn decide_async<'a>(
+			&'a self,
+			request: &'a ActionRequest,
+		) -> std::pin::Pin<Box<dyn std::future::Future<Output = Decision> + Send + 'a>> {
+			let mut yielded = false;
+			Box::pin(std::future::poll_fn(move |cx| {
+				if !yielded {
+					yielded = true;
+					cx.waker().wake_by_ref();
+					return std::task::Poll::Pending;
+				}
+				self.log.lock().unwrap().push("provider");
+				std::task::Poll::Ready(Decision {
+					approval: None,
+					request_id: request.request_id.clone(),
+					effect: if self.deny {
+						DecisionEffect::Deny
+					} else {
+						DecisionEffect::Allow
+					},
+					policy_id: Some("awaited".into()),
+					policy_version: None,
+					expires_at: None,
+				})
+			}))
+		}
+	}
+	use std::{
+		future::Future,
+		task::{Context, Poll, Waker},
+	};
+	for rejected in [None, Some("identity"), Some("provider"), Some("action")] {
+		let log = Arc::new(Mutex::new(Vec::new()));
+		let audit = InMemoryAuditSink::default();
+		let pipeline = SecurityPipeline::new(
+			Awaited {
+				log: log.clone(),
+				deny: rejected == Some("provider"),
+			},
+			&audit,
+		)
+		.add_identity_control(Control {
+			stage: "identity",
+			log: log.clone(),
+			deny: rejected == Some("identity"),
+		})
+		.add_action_control(Control {
+			stage: "action",
+			log: log.clone(),
+			deny: rejected == Some("action"),
+		});
+		let request = action();
+		let args = json!({"query":"safe"});
+		let mut future = Box::pin(pipeline.authorize_async(&request, Some(&args)));
+		let mut cx = Context::from_waker(Waker::noop());
+		let result = if rejected == Some("identity") {
+			future.as_mut().poll(&mut cx)
+		} else {
+			assert!(future.as_mut().poll(&mut cx).is_pending());
+			assert_eq!(*log.lock().unwrap(), ["identity"]);
+			assert!(audit.events().is_empty());
+			future.as_mut().poll(&mut cx)
+		};
+		let Poll::Ready(result) = result else {
+			panic!("provider should be ready on the next poll")
+		};
+		assert_eq!(result.is_ok(), rejected.is_none());
+		assert_eq!(
+			*log.lock().unwrap(),
+			match rejected {
+				Some("identity") => vec!["identity"],
+				Some("provider") => vec!["identity", "provider"],
+				_ => vec!["identity", "provider", "action"],
+			}
+		);
+		assert_eq!(audit.events().len(), 1);
+		assert_eq!(
+			audit.events()[0].decision,
+			if rejected.is_none() {
+				DecisionEffect::Allow
+			} else {
+				DecisionEffect::Deny
+			}
+		);
+	}
+}
+
+#[test]
+fn local_authorizers_keep_sync_and_object_safe_awaited_compatibility() {
+	use std::task::{Context, Poll, Waker};
+	let local = PolicyAuthorizer::new(config().policies);
+	let object: &dyn Authorizer = &local;
+	let request = action();
+	let expected = object.decide(&request);
+	let mut future = object.decide_async(&request);
+	assert!(
+		matches!(future.as_mut().poll(&mut Context::from_waker(Waker::noop())), Poll::Ready(actual) if actual==expected)
+	);
+}
+
+#[test]
+fn approval_receipt_survives_authorization_and_bounds_local_capability() {
+	let receipt = security_types::ApprovalGrant {
+		approval_id: "approval-42".into(),
+		expires_at: Utc::now() + Duration::seconds(2),
+	};
+	struct Provider(security_types::ApprovalGrant);
+	impl ApprovalProvider for Provider {
+		fn approved(
+			&self,
+			_: &ActionRequest,
+			_: &serde_json::Value,
+		) -> Result<Option<security_types::ApprovalGrant>, ApprovalError> {
+			Ok(Some(self.0.clone()))
+		}
+	}
+	let sink = InMemoryAuditSink::default();
+	let pipeline = SecurityPipeline::new(PolicyAuthorizer::new(config().policies), &sink)
+		.add_action_control(ToolApproval::new("echo", Provider(receipt.clone())))
+		.with_capability_broker();
+	let args = json!({"query":"safe"});
+	let decision = pipeline.authorize(&action(), Some(&args)).unwrap();
+	assert_eq!(decision.approval.as_ref(), Some(&receipt));
+	assert_eq!(decision.expires_at, Some(receipt.expires_at));
+	assert_eq!(
+		sink.events()[0].authorization_context.approval.as_ref(),
+		Some(&receipt)
+	);
+	let capability = pipeline
+		.authorize_tool(&action(), &args, Duration::seconds(30))
+		.unwrap();
+	assert!(capability.expires_at <= receipt.expires_at);
+}
+
+#[test]
+fn approval_expiring_during_later_control_cannot_authorize() {
+	struct Expire;
+	impl SecurityControl for Expire {
+		fn id(&self) -> &str {
+			"expiry"
+		}
+		fn check(
+			&self,
+			_: &ActionRequest,
+			_: Option<&serde_json::Value>,
+		) -> Result<Option<security_types::ApprovalGrant>, ControlDenial> {
+			Ok(Some(security_types::ApprovalGrant {
+				approval_id: "expired".into(),
+				expires_at: Utc::now() - Duration::seconds(1),
+			}))
+		}
+	}
+	let sink = InMemoryAuditSink::default();
+	let pipeline = SecurityPipeline::new(PolicyAuthorizer::new(config().policies), &sink)
+		.add_action_control(Expire);
+	assert!(pipeline.authorize(&action(), Some(&json!({}))).is_err());
+	assert_eq!(sink.events().last().unwrap().decision, DecisionEffect::Deny);
 }

@@ -89,6 +89,7 @@ pub fn check_data_egress(
 ) -> Result<(), GatewayError> {
 	let allowed = config.permits(action, destination);
 	let decision = Decision {
+		approval: None,
 		request_id: action.request_id.clone(),
 		effect: if allowed {
 			DecisionEffect::Allow

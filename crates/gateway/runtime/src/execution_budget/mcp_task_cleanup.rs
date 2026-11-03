@@ -134,7 +134,9 @@ impl Scope {
 		)
 	}
 	pub(crate) fn matches(&self, execution: &ExecutionScope, task: &str) -> bool {
-		self.binding() == execution.binding() && task == self.task
+		self.fingerprint == execution.fingerprint
+			&& self.handle.id() == execution.handle.id()
+			&& task == self.task
 	}
 	pub(crate) fn check(&self) -> Result<(), ProxyError> {
 		if Instant::now() >= self.deadline

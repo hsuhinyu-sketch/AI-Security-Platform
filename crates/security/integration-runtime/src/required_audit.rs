@@ -33,6 +33,7 @@ pub(crate) fn acknowledge(
 		return Ok(());
 	}
 	let denied = Decision {
+		approval: None,
 		request_id: action.request_id.clone(),
 		effect: DecisionEffect::Deny,
 		policy_id: Some("security:required-audit-unavailable".into()),

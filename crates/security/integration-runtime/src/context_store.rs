@@ -77,18 +77,18 @@ pub trait SecurityContextStore: Send + Sync {
 }
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct Snapshot {
+pub(crate) struct Snapshot {
 	#[serde(default)]
-	document_authority: Option<String>,
+	pub(crate) document_authority: Option<String>,
 	#[serde(default)]
-	documents: Vec<DocumentVersion>,
-	id: String,
-	binding: ContextBinding,
-	created_ms: i64,
-	expires_ms: i64,
-	ttl_seconds: u64,
-	classification: DataClassification,
-	revoked: bool,
+	pub(crate) documents: Vec<DocumentVersion>,
+	pub(crate) id: String,
+	pub(crate) binding: ContextBinding,
+	pub(crate) created_ms: i64,
+	pub(crate) expires_ms: i64,
+	pub(crate) ttl_seconds: u64,
+	pub(crate) classification: DataClassification,
+	pub(crate) revoked: bool,
 }
 struct Record {
 	snapshot: Snapshot,
@@ -349,13 +349,13 @@ impl LocalSecurityContextStore {
 		Ok(store)
 	}
 }
-fn validate_namespace(namespace: &str) -> Result<(), String> {
+pub(crate) fn validate_namespace(namespace: &str) -> Result<(), String> {
 	if namespace.is_empty() || namespace.trim() != namespace || namespace.len() > 128 {
 		return Err("invalid context namespace".into());
 	}
 	Ok(())
 }
-fn validate_binding(binding: &ContextBinding) -> Result<(), String> {
+pub(crate) fn validate_binding(binding: &ContextBinding) -> Result<(), String> {
 	validate_namespace(&binding.namespace)?;
 	// Entry-count bounds alone do not bound heap usage: verified claims can still be large.
 	// Bound individual identifiers and the combined raw payload before cloning the identity.
@@ -390,7 +390,7 @@ fn validate_binding(binding: &ContextBinding) -> Result<(), String> {
 	}
 	Ok(())
 }
-fn validate_snapshot(snapshot: &Snapshot, namespace: &str) -> Result<(), String> {
+pub(crate) fn validate_snapshot(snapshot: &Snapshot, namespace: &str) -> Result<(), String> {
 	if snapshot
 		.document_authority
 		.as_ref()
@@ -598,7 +598,7 @@ impl SecurityContextStore for LocalSecurityContextStore {
 	}
 }
 
-fn validate_references(documents: &[DocumentVersion]) -> Result<(), ContextError> {
+pub(crate) fn validate_references(documents: &[DocumentVersion]) -> Result<(), ContextError> {
 	if documents.len() > 64
 		|| documents.iter().any(|d| {
 			d.revision == 0 || uuid::Uuid::parse_str(&d.authority).is_err() || d.key.validate().is_err()

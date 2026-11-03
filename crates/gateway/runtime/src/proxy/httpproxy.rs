@@ -27,18 +27,14 @@ use crate::http::buffer::Buffer;
 use crate::http::ext_proc::{ExtProcRequest, InferenceRoutingDestinationMode};
 use crate::http::filters::{AutoHostname, BackendRequestTimeout};
 use crate::http::transformation_cel::Transformation;
-#[cfg(feature = "gateway-llm")]
-use crate::http::x_headers::TRACEPARENT;
 use crate::http::{
 	Authority, HeaderName, HeaderValue, Request, Response, Scheme, StatusCode, Uri, auth, filters,
 	merge_in_headers, retry,
 };
 #[cfg(feature = "gateway-llm")]
-use crate::llm::LLMRequest;
-#[cfg(feature = "gateway-llm")]
 use crate::llm::{InputFormat, LLMInfo, LLMResponse};
 #[cfg(feature = "gateway-llm")]
-use crate::llm::{RequestResult, RouteType, model_router};
+use crate::llm::{RouteType, model_router};
 use crate::proxy::tcpproxy::TCPProxy;
 use crate::proxy::{
 	ProxyError, ProxyResponse, ProxyResponseReason, WaypointService, dtrace, resolve_simple_backend,
@@ -80,6 +76,7 @@ fn check_dependency_target(
 	action.action.name = format!("{kind:?}");
 	action.resource.resource_type = security_types::ResourceType::DependencyEndpoint;
 	let decision = security_types::Decision {
+		approval: None,
 		request_id: action.request_id.clone(),
 		effect: if result.is_ok() {
 			security_types::DecisionEffect::Allow
@@ -450,7 +447,7 @@ async fn apply_backend_policies(
 			.is_some_and(|guards| guards.covers(security));
 		#[cfg(feature = "gateway-llm")]
 		if let Some(llm) = llm_provider.as_ref().filter(|_| !guarded) {
-			crate::security::evaluate(
+			crate::security::evaluate_async(
 				security,
 				&security_pipeline::model_invoke_for_identity(
 					request_id.clone(),
@@ -458,6 +455,7 @@ async fn apply_backend_policies(
 					llm.name.to_string(),
 				),
 			)
+			.await
 			.map_err(|error| {
 				tracing::warn!(?error, "security policy denied LLM request");
 				ProxyResponse::from(ProxyError::AuthorizationFailed)
@@ -465,7 +463,7 @@ async fn apply_backend_policies(
 		}
 		#[cfg(feature = "gateway-a2a")]
 		if let a2a::RequestType::Call(method) = &rp.a2a_type {
-			crate::security::evaluate(
+			crate::security::evaluate_async(
 				security,
 				&security_pipeline::agent_action_for_identity(
 					request_id.clone(),
@@ -474,13 +472,14 @@ async fn apply_backend_policies(
 					method.to_string(),
 				),
 			)
+			.await
 			.map_err(|error| {
 				tracing::warn!(?error, "security policy denied A2A request");
 				ProxyResponse::from(ProxyError::AuthorizationFailed)
 			})?;
 		}
 		if inference_routing.is_some() && !guarded {
-			crate::security::evaluate(
+			crate::security::evaluate_async(
 				security,
 				&security_pipeline::inference_route_for_identity(
 					request_id,
@@ -488,6 +487,7 @@ async fn apply_backend_policies(
 					backend_call.target.to_string(),
 				),
 			)
+			.await
 			.map_err(|error| {
 				tracing::warn!(?error, "security policy denied inference routing request");
 				ProxyResponse::from(ProxyError::AuthorizationFailed)
@@ -578,63 +578,6 @@ async fn apply_gateway_policies(
 		.await?;
 
 	Ok(())
-}
-
-#[cfg(feature = "gateway-llm")]
-async fn apply_llm_request_policies(
-	policies: &store::LLMRequestPolicies,
-	client: PolicyClient,
-	req: &mut Request,
-	llm_req: &LLMRequest,
-	response_headers: &mut HeaderMap,
-) -> Result<store::LLMResponsePolicies, ProxyResponse> {
-	let local_rate_limit = policies
-		.local_rate_limit
-		.as_deref()
-		.into_iter()
-		.flatten()
-		.filter(|rate_limit| rate_limit.spec.limit_type == http::localratelimit::RateLimitType::Tokens)
-		.cloned()
-		.collect::<Vec<_>>();
-	if llm_req.streaming
-		&& policies
-			.llm
-			.as_ref()
-			.and_then(|p| p.prompt_guard.as_ref())
-			.is_some_and(|g| !g.response.is_empty() && !g.streaming.is_enabled())
-	{
-		return Err(ProxyError::AuthorizationFailed.into());
-	}
-	for lrl in &local_rate_limit {
-		lrl.check_llm_request(llm_req)?;
-	}
-	let (rl_resp, response) = if let Some(rrl) = &policies.remote_rate_limit {
-		// For the LLM request side, request either the count of the input tokens (if tokenization was done)
-		// or 0.
-		// Either way, we will 'true up' on the response side.
-		rrl
-			.check_llm(client, req, llm_req.input_tokens.unwrap_or_default())
-			.await?
-	} else {
-		(http::PolicyResponse::default(), None)
-	};
-	rl_resp.apply(response_headers)?;
-	let prompt_guard = policies
-		.llm
-		.as_deref()
-		.and_then(|llm| llm.prompt_guard.as_ref());
-	Ok(store::LLMResponsePolicies {
-		streaming_limits: policies
-			.llm
-			.as_deref()
-			.and_then(|llm| llm.streaming_limits)
-			.unwrap_or_default(),
-		local_rate_limit,
-		remote_rate_limit: response,
-		request_traceparent: req.headers().get(TRACEPARENT).cloned(),
-		prompt_guard: prompt_guard.map(|g| g.response.clone()).unwrap_or_default(),
-		streaming_prompt_guard_enabled: prompt_guard.is_some_and(|g| g.streaming.is_enabled()),
-	})
 }
 
 #[derive(Clone)]
@@ -885,11 +828,7 @@ impl HTTPProxy {
 			if req.method() == ::http::Method::CONNECT && req.uri().path().is_empty() {
 				"/".to_string()
 			} else {
-				req
-					.uri()
-					.path_and_query()
-					.map(|pq| pq.to_string())
-					.unwrap_or_else(|| req.uri().path().to_string())
+				req.uri().path().to_string()
 			},
 		);
 		log.version = Some(req.version());
@@ -1225,10 +1164,12 @@ impl HTTPProxy {
 					|| security.execution_budget.is_some()
 			}) && (route_request_mirrors.is_some() || !backend_policies.request_mirror.is_empty())
 		{
-			return Err(ProxyResponse::from(ProxyError::ProcessingString(
-				"data egress policy does not permit request mirroring".into(),
-			)))
-			.snapshot_on_err(log, &mut req);
+			tracing::warn!(
+				code = "SECURITY_MIRROR_DENIED",
+				"security policy does not permit request mirroring"
+			);
+			return Err(ProxyResponse::from(ProxyError::AuthorizationFailed))
+				.snapshot_on_err(log, &mut req);
 		}
 		#[cfg(feature = "gateway-mcp")]
 		if (req
@@ -1472,10 +1413,11 @@ impl HTTPProxy {
 					|| security.cross_component.is_some()
 					|| security.execution_budget.is_some()
 			}) {
-			return Err(
-				ProxyError::ProcessingString("data egress policy does not permit CONNECT tunnels".into())
-					.into(),
+			tracing::warn!(
+				code = "SECURITY_CONNECT_DENIED",
+				"security policy does not permit CONNECT tunnels"
 			);
+			return Err(ProxyError::AuthorizationFailed.into());
 		}
 		log.endpoint = Some(backend_call.target.clone());
 		set_backend_cel_context(req, Some(&log));
@@ -2488,24 +2430,37 @@ async fn make_backend_call(
 	// In some cases, we want to treat this as a normal backend, so we swap it out.
 	let (backend, policies) = match backend {
 		#[cfg(feature = "gateway-mcp")]
-		Backend::MCP(_, mcp_backend) => {
-			if let Some(be) = req
+		Backend::MCP(name, mcp_backend) => {
+			let service = req
 				.extensions()
 				.get::<crate::mcp::ServiceHandle>()
-				.ok_or(ProxyError::AuthorizationFailed)?
-				.should_passthrough(&base_policies, mcp_backend, &req)?
-			{
+				.ok_or(ProxyError::AuthorizationFailed)?;
+			if let Some(be) = service.should_passthrough(&base_policies, mcp_backend, &req)? {
 				let target = super::resolve_simple_backend_with_policies(&be, inputs.as_ref())?;
 				let tgt = target.backend.target();
-				let policies = inputs
-					.stores
-					.read_binds()
-					.sub_backend_policies(tgt, Some(&target.inline_policies));
-
-				(
-					&Backend::from(target.backend),
-					Arc::new(base_policies.as_ref().clone().merge(policies)),
-				)
+				let policies = {
+					let binds = inputs.stores.read_binds();
+					let section = BackendTargetRef::Backend {
+						name: &name.name,
+						namespace: &name.namespace,
+						section: Some(&mcp_backend.targets[0].name),
+					};
+					base_policies
+						.as_ref()
+						.clone()
+						.merge(binds.sub_backend_policies(section, Some(&target.inline_policies)))
+						.merge(binds.sub_backend_policies(tgt, Some(&target.inline_policies)))
+				};
+				// Target-local declarations are resolved only here. They must also be kept
+				// on the MCP path instead of becoming inert policies on a plain HTTP backend.
+				if service
+					.should_passthrough(&policies, mcp_backend, &req)?
+					.is_some()
+				{
+					(&Backend::from(target.backend), Arc::new(policies))
+				} else {
+					(backend, base_policies)
+				}
 			} else {
 				(backend, base_policies)
 			}
@@ -2525,6 +2480,7 @@ async fn make_backend_call(
 		Backend::AI(n, ai) => {
 			let (provider, handle, guards) = {
 				let mut accepted = std::collections::HashMap::new();
+				let mut rejected_candidate = None;
 				let mut denied = None;
 				let selected = ai.select_provider_where(|candidate| {
 					let result = super::routing_security::provider(
@@ -2537,7 +2493,10 @@ async fn make_backend_call(
 					)
 					.and_then(|(guards, target)| {
 						for guard in &guards {
-							guard.prefilter(target.as_ref())?;
+							if let Err(denial) = guard.prefilter(target.as_ref()) {
+								rejected_candidate = Some((guard.clone(), denial));
+								return Err(ProxyError::AuthorizationFailed);
+							}
 						}
 						Ok(guards)
 					});
@@ -2552,8 +2511,12 @@ async fn make_backend_call(
 						},
 					}
 				});
-				let (provider, handle) =
-					selected.ok_or_else(|| denied.unwrap_or(ProxyError::NoHealthyEndpoints))?;
+				let (provider, handle) = selected.ok_or_else(|| {
+					if let Some((guard, denial)) = rejected_candidate {
+						return guard.reject_candidate(denial);
+					}
+					denied.unwrap_or(ProxyError::NoHealthyEndpoints)
+				})?;
 				let guards = accepted.remove(&provider.name).unwrap_or_default();
 				(provider, handle, guards)
 			};
@@ -2872,7 +2835,7 @@ async fn make_backend_call(
 	let (mut req, llm_response_policies, llm_request) =
 		if let Some(llm) = &backend_call.backend_policies.llm_provider {
 			// LLM requires CEL execution after the snapshot so we do not clear extensions
-			let mut req = req.take_and_snapshot_without_clearing_extensions(log.as_mut())?;
+			let req = req.take_and_snapshot_without_clearing_extensions(log.as_mut())?;
 			let route_type = llm_request_policies
 				.llm
 				.as_ref()
@@ -2880,247 +2843,40 @@ async fn make_backend_call(
 				.unwrap_or(llm::RouteType::Completions);
 			trace!("llm: route {} to {route_type:?}", req.uri().path());
 			#[cfg(feature = "security-pii")]
+			let mut req = req;
+			#[cfg(feature = "security-pii")]
 			crate::llm::pii::install(&mut req, &backend_call.backend_policies, route_type)?;
 			#[cfg(feature = "gateway-mcp")]
 			if crate::mcp::dispatch::is_model_call(&req) && route_type != RouteType::Completions {
 				return Err(ProxyError::AuthorizationFailed.into());
 			}
-			if route_type == RouteType::Realtime
-				&& (backend_call.backend_policies.security_audit.is_some()
-					|| backend_call.backend_policies.security_pipeline.is_some()
-					|| llm_request_policies.requires_structured_adapter()
-					|| inputs.guardrails.is_some())
+			super::llm_request::check_controls(
+				route_type,
+				llm,
+				&backend_call.backend_policies,
+				&llm_request_policies,
+				inputs.guardrails.is_some(),
+				&egress_request_id,
+				&egress_identity,
+			)?;
+			match Box::pin(super::llm_request::prepare(
+				route_type,
+				llm,
+				&llm_request_policies,
+				&backend_info,
+				policy_client.clone(),
+				req,
+				&mut log,
+				&mut response_policies.response_headers,
+			))
+			.await?
 			{
-				// The HTTP handshake does not authorize future messages, model/session
-				// changes, concurrent responses, audio or function calls. Until a bounded
-				// duplex adapter enforces those operations, never silently tunnel them.
-				let action = security_pipeline::model_invoke_for_identity(
-					egress_request_id.clone(),
-					egress_identity.clone(),
-					"realtime",
-				);
-				let enforce = security_integration_runtime::SecurityConfig::from(
-					security_integration_runtime::SecurityConfigData {
-						mode: security_integration_runtime::SecurityMode::Enforce,
-						..Default::default()
-					},
-				);
-				security_integration_runtime::unsupported_operation_with_audit(
-					&enforce,
-					&action,
-					"llm-realtime",
-					&crate::security_events::UiSecurityAuditSink,
-				)
-				.map_err(|_| ProxyResponse::from(ProxyError::AuthorizationFailed))?;
-			}
-			if (matches!(route_type, RouteType::Passthrough | RouteType::Detect)
-				&& llm_request_policies.requires_structured_adapter())
-				|| (!matches!(
-					route_type,
-					RouteType::Completions | RouteType::Messages | RouteType::Responses
-				) && (llm_request_policies.requires_content_adapter() || inputs.guardrails.is_some()))
-			{
-				// LLM body controls have their own enforcement contract, independent of the optional
-				// common authorization mode. An opaque route must not silently skip those controls.
-				let action = security_pipeline::model_invoke_for_identity(
-					egress_request_id.clone(),
-					egress_identity.clone(),
-					llm.name.to_string(),
-				);
-				let enforce = security_integration_runtime::SecurityConfig::from(
-					security_integration_runtime::SecurityConfigData {
-						mode: security_integration_runtime::SecurityMode::Enforce,
-						..Default::default()
-					},
-				);
-				security_integration_runtime::unsupported_operation_with_audit(
-					&enforce,
-					&action,
-					"llm-unsupported-controls",
-					&crate::security_events::UiSecurityAuditSink,
-				)
-				.map_err(|_| ProxyResponse::from(ProxyError::AuthorizationFailed))?;
-			}
-			let llm_provider = llm.provider.provider().to_string();
-			dtrace::trace(|trace| {
-				trace.llm_route_resolved(llm_provider.clone(), format!("{route_type:?}"))
-			});
-			// First, we process the incoming request. This entails translating to the relevant provider,
-			// and parsing the request to build the LLMRequest for logging/etc, and applying LLM policies like
-			// prompt enrichment, prompt guard, etc.
-			match route_type {
-				RouteType::Completions
-				| RouteType::Messages
-				| RouteType::Responses
-				| RouteType::AnthropicTokenCount
-				| RouteType::Embeddings
-				| RouteType::Rerank
-				| RouteType::Detect => {
-					let request_body_limit = crate::http::buffer_limit(&req);
-					let req = req.map(|b| {
-						dtrace::TracingBody::maybe_wrap("llm request before translation", b, request_body_limit)
-					});
-					let r = match route_type {
-						RouteType::Completions => Box::pin(llm.provider.process_completions_request(
-							&backend_info,
-							llm_request_policies.llm.as_deref(),
-							req,
-							llm.tokenize,
-							&mut log,
-						))
-						.await
-						.map_err(|e| ProxyError::Processing(e.into()))?,
-						RouteType::Messages => Box::pin(llm.provider.process_messages_request(
-							&backend_info,
-							llm_request_policies.llm.as_deref(),
-							req,
-							llm.tokenize,
-							&mut log,
-						))
-						.await
-						.map_err(|e| ProxyError::Processing(e.into()))?,
-						RouteType::Responses => Box::pin(llm.provider.process_responses_request(
-							&backend_info,
-							llm_request_policies.llm.as_deref(),
-							req,
-							llm.tokenize,
-							&mut log,
-						))
-						.await
-						.map_err(|e| ProxyError::Processing(e.into()))?,
-						RouteType::Embeddings => Box::pin(llm.provider.process_embeddings_request(
-							&backend_info,
-							llm_request_policies.llm.as_deref(),
-							req,
-							llm.tokenize,
-							&mut log,
-						))
-						.await
-						.map_err(|e| ProxyError::Processing(e.into()))?,
-						RouteType::Rerank => Box::pin(llm.provider.process_rerank_request(
-							&backend_info,
-							llm_request_policies.llm.as_deref(),
-							req,
-							llm.tokenize,
-							&mut log,
-						))
-						.await
-						.map_err(|e| ProxyError::Processing(e.into()))?,
-						RouteType::AnthropicTokenCount => Box::pin(llm.provider.process_count_tokens_request(
-							&backend_info,
-							req,
-							llm_request_policies.llm.as_deref(),
-							&mut log,
-						))
-						.await
-						.map_err(|e| ProxyError::Processing(e.into()))?,
-						RouteType::Detect => Box::pin(llm.provider.process_detect_request(
-							&backend_info,
-							llm_request_policies.llm.as_deref(),
-							req,
-							&mut log,
-						))
-						.await
-						.map_err(|e| ProxyError::Processing(e.into()))?,
-						_ => unreachable!(),
-					};
-					let (mut req, llm_request) = match r {
-						RequestResult::Success(r, lr) => (r, lr),
-						RequestResult::Rejected(dr) => return Err(ProxyResponse::DirectResponse(Box::new(dr))),
-					};
-					dtrace::trace(|trace| {
-						trace.llm_request_detected(
-							llm_provider.clone(),
-							format!("{:?}", llm_request.input_format),
-							llm_request.native_format.map(|f| format!("{f:?}")),
-							llm_request.request_model.to_string(),
-							llm_request.streaming,
-						);
-					});
-					// If a user doesn't configure explicit overrides for connecting to a provider, setup default
-					// paths, TLS, etc.
-					llm
-						.provider
-						.setup_request(
-							&mut req,
-							route_type,
-							Some(&llm_request),
-							llm.path_override.as_deref(),
-							llm.path_prefix.as_deref(),
-							llm.host_override.is_some(),
-						)
-						.map_err(ProxyError::Processing)?;
-
-					// Apply all policies (rate limits, prompt guards, enrichment)
-					// count_tokens skips policies (no tokens generated, no prompts to manipulate)
-					let response_policies = if route_type == RouteType::AnthropicTokenCount {
-						LLMResponsePolicies::default()
-					} else {
-						Box::pin(
-							apply_llm_request_policies(
-								&llm_request_policies,
-								policy_client.clone(),
-								&mut req,
-								&llm_request,
-								&mut response_policies.response_headers,
-							)
-							.assert_size::<{ 3 * 1024 }>(),
-						)
-						.await?
-					};
-					log.add(|l| l.llm_request = Some(llm_request.clone()));
-					(req, response_policies, Some(llm_request))
-				},
-				RouteType::Models => {
-					return Ok(
-						::http::Response::builder()
-							.status(::http::StatusCode::NOT_IMPLEMENTED)
-							.header(::http::header::CONTENT_TYPE, "application/json")
-							.body(http::Body::from(format!(
-								"{{\"error\":\"Route '{route_type:?}' not implemented\"}}"
-							)))
-							.expect("Failed to build response"),
-					);
-				},
-				RouteType::Passthrough | RouteType::Realtime => {
-					// For passthrough, we only need to setup the response so we get default TLS, hostname, etc set.
-					// We do not need LLM policies nor token-based rate limits, etc.
-					// For realtime we do the same and handle everything in the Websocket handler
-					llm
-						.provider
-						.setup_request(
-							&mut req,
-							route_type,
-							None,
-							llm.path_override.as_deref(),
-							llm.path_prefix.as_deref(),
-							llm.host_override.is_some(),
-						)
-						.map_err(ProxyError::Processing)?;
-					if route_type == RouteType::Realtime {
-						let request_model = http::as_url(req.uri())
-							.map_err(ProxyError::Processing)?
-							.query_pairs()
-							.find(|(k, _v)| k == "model")
-							.map(|(_, v)| strng::new(v))
-							.unwrap_or_default();
-						log.add(|l| {
-							l.llm_request = Some(LLMRequest {
-								input_format: InputFormat::Realtime,
-								native_format: Some(llm::custom::ProviderFormat::Realtime),
-								cache_convention: llm::CacheTokenConvention::pending(),
-								request_model,
-								streaming: true,
-								provider: llm.provider.provider(),
-								input_tokens: None,
-								params: Default::default(),
-								prompt: Default::default(),
-								provider_state: None,
-							})
-						});
-					}
-					(req, LLMResponsePolicies::default(), None)
-				},
+				super::llm_request::PreparedRequest::Forward {
+					request,
+					response_policies,
+					llm_request,
+				} => (request, response_policies, llm_request),
+				super::llm_request::PreparedRequest::Response(response) => return Ok(response),
 			}
 		} else {
 			(
@@ -3200,7 +2956,10 @@ async fn make_backend_call(
 	}
 	// This runs per outbound attempt, after dynamic target rewriting and provider setup.
 	for guard in routing_guards.iter().flat_map(|guards| guards.0.iter()) {
-		guard.dispatch(&backend_call.target)?;
+		Box::pin(guard.dispatch(&backend_call.target)).await?;
+	}
+	for guard in routing_guards.iter().flat_map(|guards| guards.0.iter()) {
+		guard.check_response_current(&backend_call.target)?;
 	}
 	if let Some(flow) = &flow {
 		let destination = backend_call.target.to_string();
@@ -3270,31 +3029,35 @@ async fn make_backend_call(
 	if backend_call.target.to_string() != authorized_target {
 		if let Some(security) = &backend_call.backend_policies.security_audit {
 			let destination = backend_call.target.to_string();
-			let authorize = |action: security_types::ActionRequest| {
-				crate::security::evaluate(security, &action).map_err(|error| {
-					tracing::warn!(?error, "security policy refused rewritten outbound target");
-					ProxyResponse::from(ProxyError::AuthorizationFailed)
-				})
+			let authorize = |action: security_types::ActionRequest| async move {
+				crate::security::evaluate_async(security, &action)
+					.await
+					.map_err(|error| {
+						tracing::warn!(?error, "security policy refused rewritten outbound target");
+						ProxyResponse::from(ProxyError::AuthorizationFailed)
+					})
 			};
 			#[cfg(feature = "gateway-a2a")]
 			if let a2a::RequestType::Call(method) = &response_policies.a2a_type {
-				authorize(security_pipeline::agent_action_for_identity(
+				Box::pin(authorize(security_pipeline::agent_action_for_identity(
 					egress_request_id.clone(),
 					egress_identity.clone(),
 					destination.clone(),
 					method.to_string(),
-				))?;
+				)))
+				.await?;
 			}
 			if backend_call.backend_policies.inference_routing.is_some()
 				&& !routing_guards
 					.as_ref()
 					.is_some_and(|guards| guards.covers(security))
 			{
-				authorize(security_pipeline::inference_route_for_identity(
+				Box::pin(authorize(security_pipeline::inference_route_for_identity(
 					egress_request_id.clone(),
 					egress_identity.clone(),
 					destination,
-				))?;
+				)))
+				.await?;
 			}
 		}
 	}
@@ -3309,9 +3072,12 @@ async fn make_backend_call(
 		let check = |action: security_types::ActionRequest| {
 			security_integration_runtime::check_data_egress(egress, &action, &destination, audit).map_err(
 				|error| {
-					ProxyResponse::from(ProxyError::ProcessingString(format!(
-						"data egress denied outbound request: {error:?}"
-					)))
+					tracing::warn!(
+						code = "DATA_EGRESS_DENIED",
+						?error,
+						"data egress policy refused outbound request"
+					);
+					ProxyResponse::from(ProxyError::AuthorizationFailed)
 				},
 			)
 		};
@@ -3358,9 +3124,11 @@ async fn make_backend_call(
 			))?;
 		}
 		if !recognized_channel {
-			return Err(ProxyResponse::from(ProxyError::ProcessingString(
-				"data egress policy has no adapter for this outbound protocol".into(),
-			)));
+			tracing::warn!(
+				code = "DATA_EGRESS_UNSUPPORTED_PROTOCOL",
+				"data egress policy has no adapter for this outbound protocol"
+			);
+			return Err(ProxyResponse::from(ProxyError::AuthorizationFailed));
 		}
 	}
 	let execution_action = if execution_scope.is_some() {
@@ -3601,6 +3369,10 @@ async fn make_backend_call(
 	}
 	#[cfg(feature = "gateway-mcp")]
 	crate::mcp::dispatch::before_send(&call.req)?;
+	// Another guard or transport preparation may have awaited after this guard authorized.
+	for guard in routing_guards.iter().flat_map(|guards| guards.0.iter()) {
+		guard.check_response_current(&response_target)?;
+	}
 	let resp = if let Some(scope) = &execution_scope {
 		Box::pin(scope.run_for(
 			&execution_action.as_ref().expect("budget action").1,
@@ -3856,8 +3628,8 @@ fn build_service_call_filtered(
 
 	let discovery = inputs.stores.read_discovery();
 	let workloads = &discovery.workloads;
-	let mut denied = false;
-	let (ep, handle, wl) = if let Some(guards) = guards.filter(|g| !g.0.is_empty()) {
+	let mut denied = None;
+	let selected = if let Some(guards) = guards.filter(|g| !g.0.is_empty()) {
 		svc.endpoints.select_endpoint_where(
 			workloads,
 			svc,
@@ -3885,8 +3657,8 @@ fn build_service_call_filtered(
 					return false;
 				};
 				for guard in &guards.0 {
-					if guard.prefilter(Some(&target)).is_err() {
-						denied = true;
+					if let Err(denial) = guard.prefilter(Some(&target)) {
+						denied = Some((guard.clone(), denial));
 						return false;
 					}
 				}
@@ -3897,12 +3669,17 @@ fn build_service_call_filtered(
 		svc
 			.endpoints
 			.select_endpoint(workloads, svc, port, service_override.destination)
-	}
-	.ok_or(if denied {
-		ProxyError::AuthorizationFailed
-	} else {
-		ProxyError::NoHealthyEndpoints
-	})?;
+	};
+	let (ep, handle, wl) = match selected {
+		Some(selected) => selected,
+		None => {
+			drop(discovery);
+			return Err(match denied {
+				Some((guard, denial)) => guard.reject_candidate(denial),
+				None => ProxyError::NoHealthyEndpoints,
+			});
+		},
+	};
 
 	let target_port = select_service_target_port(
 		ep.as_ref(),
@@ -4417,7 +4194,6 @@ fn sensitive_headers(req: &mut Request) {
 // The http library will not put the authority into req.uri().authority for HTTP/1. Normalize so
 // the rest of the code doesn't need to worry about it
 fn normalize_uri(tls: Option<&TLSConnectionInfo>, req: &mut Request) -> anyhow::Result<()> {
-	debug!("request before normalization: {req:?}");
 	if let ::http::Version::HTTP_10 | ::http::Version::HTTP_11 = req.version() {
 		let host = req.headers_mut().remove(http::header::HOST);
 		if req.uri().authority().is_none() {
@@ -4439,7 +4215,6 @@ fn normalize_uri(tls: Option<&TLSConnectionInfo>, req: &mut Request) -> anyhow::
 			*req.uri_mut() = Uri::from_parts(parts)?
 		}
 	}
-	debug!("request after normalization: {req:?}");
 	Ok(())
 }
 
@@ -4890,11 +4665,15 @@ impl PolicyExecution for RuntimePolicyExecutor {
 	}
 }
 
-trait OptLogger {
+pub(super) trait OptLogger {
 	fn add<F>(&mut self, f: F)
 	where
 		F: FnOnce(&mut RequestLog);
 }
+
+#[cfg(test)]
+#[path = "egress_mapping_tests.rs"]
+mod egress_mapping_tests;
 
 #[cfg(test)]
 #[path = "policy_execution_tests.rs"]

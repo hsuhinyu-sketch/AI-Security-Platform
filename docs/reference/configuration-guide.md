@@ -8,6 +8,161 @@
 
 平台面向生产级端侧开发，但目标设备发布门禁尚未通过。文中“PoC/进程内”只描述特定示例或后端，不定义整个平台目标。已有文件审计/状态日志和远程受信 Broker 接入；本地 Broker 的默认 Store 仍为进程内实现，跨重启/多实例保证须按实际存储验证。受保护 Tool/API 必须校验可信身份/Capability，不能以示例配置代替执行边界。
 
+
+## Startup configuration and hot updates
+
+The top-level `config:` section configures the Runtime Host at startup. Changing, adding,
+or removing a nonempty section requires a restart. File reloads and UI saves reject the
+entire candidate with `config: is startup-only; restart required` before preparing protocol
+resources or publishing stores. A rejected candidate keeps the current policies, listeners,
+and configuration generation; an existing session is not revoked by that rejection.
+
+Protocol configuration and security declarations under `aiSystems`, routes and backends retain
+their supported hot-update behavior. A successful update still revokes the affected generation;
+RAG listener topology changes still require a restart. Publication across stores is not a global
+transaction.
+
+Startup and reload use the same environment expansion and YAML/JSON parsing. Comments, key order
+and formatting do not affect the comparison. An absent section, `config: null` and `config: {}`
+are equivalent. Other changes to parsed startup fields, including adding explicit defaults,
+require a restart. Restore the original startup section to apply a corrected dynamic update.
+Rust embedders should construct `Config` through `config::parse_config`; the private startup
+snapshot is skipped from configuration dumps and redacted in Debug.
+
+
+## Configuration file watch recovery
+
+The Host registers its main configuration file watch before loading the initial configuration.
+When file removal/replacement invalidates the watch or its event channel closes, the Host retries
+registration at a one-second interval instead of stopping. It registers the new watch before
+reading the current file, so a candidate written during the gap is also checked. A missing or
+invalid candidate keeps the previous configuration and security generation. A valid candidate
+retains the existing publication and revocation behavior; publication across stores is not a global transaction.
+
+Initial watch setup failure still fails startup. The Host owns the reload task and stops it before
+draining listeners, or when the Host is dropped. This recovery applies to the main configuration
+file. Resource dependency watches are managed separately by ResourceManager, as described below.
+
+The existing metrics endpoint exposes these bounded metrics, subject to `metrics.excludedMetrics`:
+
+| Metric | Meaning |
+| --- | --- |
+| `agentgateway_config_reloads_total{result="success"\|"failure"}` | Completed local configuration loads, including startup. Sum the results for completed attempts. |
+| `agentgateway_config_reload_last_successful` | 1 if the last completed load succeeded, otherwise 0; initially 0. |
+| `agentgateway_config_watch_active` | 1 while the main configuration file watch is registered; 0 during retry, after task stop or for a static source. |
+| `agentgateway_config_watch_failures_total` | Registration failures and unexpected event-channel closures. Ordinary file replacements do not increment it. |
+
+The registration gauge is independent of the last candidate's validity and listener readiness.
+Errors retain server-side detail and use stable log codes: `CONFIG_RELOAD_FAILED`,
+`CONFIG_WATCH_START_FAILED`, `CONFIG_WATCH_LOST`, `CONFIG_WATCH_RETRY_FAILED` and
+`CONFIG_WATCH_RESTORED`. Unexpected task failure during shutdown uses `CONFIG_WATCH_TASK_FAILED`.
+Resource notification channel closure uses `CONFIG_RESOURCE_WATCH_CLOSED`;
+it does not stop an otherwise active main file watch. No configuration contents or error strings
+are used as metric labels.
+
+Rust embedders pass the existing `Arc<Metrics>` to `StateManager::new(config, client, metrics)`
+and retain the StateManager for the Host lifetime. Dropping it aborts the reload task.
+`LocalClient::run` now returns a `JoinHandle<()>`; direct callers must own and stop that task.
+Configuration reload futures are boxed at task boundaries to keep the watcher stack small.
+
+## Dependency file watch recovery
+
+ResourceManager retains one watch task for each referenced local dependency, including file-based
+JWKS. File removal/replacement or an event-channel closure invalidates its OS watch. The same task
+retries registration once per second, registers first and then reads the current file, capturing
+changes made while no watch was active. The main configuration file does not need another edit
+to trigger this recovery. Initial registration failure still returns an error to configuration preparation.
+
+Missing files evict their cached bytes and notify the existing configuration reload path. Invalid
+candidates keep the current accepted configuration; valid key or policy changes retain normal
+validation, publication and generation revocation. Unchanged bytes do not trigger another publication.
+Recovery does not grant authorization or bypass the final security checks.
+
+Removing a dependency from the accepted configuration cancels its watch and retries. A subsequent
+write to that retired path does not restore it to the active cache. File refresh checks and cache
+publication share the existing active-resource lock with pruning. Background file tasks and the HTTP
+refresh scheduler hold weak manager references; releasing the last ResourceManager owner aborts
+registered file tasks and closes the scheduler channel. In-flight reads or HTTP operations may finish
+before their temporary manager ownership is released.
+
+Resource diagnostics use stable server-side log codes: `RESOURCE_WATCH_LOST`,
+`RESOURCE_WATCH_RETRY_FAILED`, `RESOURCE_WATCH_RESTORED` and `RESOURCE_FILE_READ_FAILED`.
+The main configuration's `config_watch_active` metric describes its own file watch, not every dependency.
+No YAML fields, dependencies or public Rust interfaces are added by dependency watch recovery.
+
+HTTP dependency fetches have a 10-second total deadline, including response-body reading, and
+only 2xx responses are accepted. Failed refreshes retain the last cached bytes and retry after
+15 seconds while the dependency remains active; normal configuration validation and generation
+invalidation still apply to subsequent successful changes. A previously started refresh cannot
+republish a resource while it remains retired. The scheduler processes refreshes serially, so one slow fetch may
+delay another for up to its deadline. Diagnostic resource names omit URL userinfo and query
+parameters; `ResourceChange.resource` now contains that sanitized name rather than the full URL.
+
+Ordinary request logs record the HTTP path without the query string. Debug/trace logging does not
+dump whole upstream requests or responses, and connection-pool debug output redacts proxy tokens.
+These changes do not remove credentials from requests sent to the configured upstream.
+
+## HTTP egress refusal responses
+
+A data-egress refusal uses the existing authorization error: HTTP 403 with the default
+`text/plain` body `authorization failed`, and request telemetry reason `Authorization`.
+The same mapping applies when declared security controls prohibit request mirroring or raw
+CONNECT, or when a data-egress declaration has no adapter for the outbound protocol.
+Allowlist checks, exact-target validation and audit calls remain on their existing execution paths;
+this change does not permit any previously blocked operation.
+
+Detailed refusal reasons remain in server-side diagnostics. Stable log codes are
+`DATA_EGRESS_DENIED`, `DATA_EGRESS_UNSUPPORTED_PROTOCOL`, `SECURITY_MIRROR_DENIED`
+and `SECURITY_CONNECT_DENIED`. Internal decisions, policy identifiers and guard implementation
+details are not included in the default client error body.
+
+Authorization errors retain their existing non-retryable classification. An actual upstream HTTP
+503 is still an upstream response and follows the configured retry policy. The mapping is applied
+to these refusal sites only; other processing errors retain their existing conversion.
+Clients that previously treated these refusals as transient HTTP 503 responses should now handle
+HTTP 403. YAML, route/backend keys and public Rust interfaces do not change.
+
+## Listener lifecycle and readiness
+
+The Host tracks each configured socket listener, including every per-core listener.
+`/healthz/ready` stays unready until initial listeners have entered their accept loops.
+Socket creation, CPU affinity, runtime startup and permanent accept failures block readiness;
+other listeners can continue serving through their existing security controls. Readiness failures
+use the existing HTTP 500 response and identify the affected bind without returning internal errors.
+
+Removing a bind cancels its accept loop and waits for its socket and any per-core runtime thread
+to close. A later update can add the same port again. Host shutdown retains the configured graceful
+drain deadlines. Explicit bind removal retains the existing cancellation behavior; it does not
+promise to finish active requests on a removed bind or undo upstream side effects.
+
+Listener failures do not trigger automatic restart or roll back an already published configuration.
+Remove the failed bind, correct the cause, then add it again, or restart the Host. `--validate-only`
+does not guarantee that a port will be available at runtime. Per-core mode remains experimental.
+Rust consumers matching `store::BindEvent` must also handle the new `Failed(BindKey, String)` variant.
+
+## Remote security Provider preflight
+
+Configured `remotePdp`, `approval`, `capabilityBroker`, `delegationRevocation` and
+`remoteAgentIdentity` transports are checked before startup, `--validate-only`, and supported
+configuration publication. Preflight reuses the real transport constructors without sending
+requests. Endpoints must be absolute HTTPS URLs without user information or fragments;
+`timeoutMillis` must be positive. CA files must contain at least one parseable certificate; CA bundles
+and combined client-certificate/private-key identity PEMs are supported. Broker `ttlSeconds` must
+be positive and representable as a duration and expiry time.
+
+Invalid configuration is rejected even in Audit or Shadow mode and without `dependencyEgress`.
+Existing mode/composition restrictions still apply, including Enforce for Capability Broker.
+A rejected hot-update candidate keeps the previous policy and generation. Restore or correct the
+provider fields to publish a new candidate. A passing preflight does not verify remote availability,
+trustworthiness of a response, approval, revocation status or a policy decision; those checks remain
+on the actual execution path. Dependency allowlists and required audit still apply there.
+
+Rust embedders calling the synchronous `SecurityConfig::prepare_execution` from Tokio should
+use a blocking thread. The Host handles this in shared configuration normalization, including RAG-only declarations,
+for startup, validation and reload. Preflight
+uses temporary clients; live request transports keep their existing per-configuration cache.
+
+
 ## RAG retrieval security
 
 `security-rag` is a vector-database-neutral security brick. A `SecureRetriever` first normalizes
@@ -43,6 +198,14 @@ mandatory `tenantId` and `corpusId` matches plus a `min_should` ACL condition ov
 User, or Agent access. The `SecureRetriever` still revalidates every returned point. Qdrant
 collections must be provisioned ahead of time with the matching vector dimension and keyword
 Payload indexes for `tenantId`, `corpusId`, `allowedUsers`, and `allowedAgents`.
+
+Chunk keys passed to `IndexedDocument::to_chunk` are document-local. The resulting point ID is
+a deterministic UUID scoped by tenant, corpus, document and chunk key, including without a
+lifecycle store. This satisfies the [Qdrant point-ID contract](https://qdrant.tech/documentation/concepts/points/#point-ids)
+and prevents equal document names in different namespaces from overwriting one another.
+Lifecycle-managed IDs keep their existing authority/version derivation. Non-lifecycle IDs
+change from the old raw-key format; previously populated custom stores that accepted those keys
+need an explicit reindex/cleanup plan. The gateway does not automatically delete legacy points.
 
 After retrieval, `ContextGuard` separately authorizes `ContextAssemble` and examines the approved
 Chunk text before it reaches the LLM. Its default Enforce mode removes Chunk content that matches
@@ -105,6 +268,17 @@ Identity controls run first, authorization is mandatory, action controls run onl
 allow decision, and the capability broker is optional. Each outcome is sent to the configured
 audit sink.
 
+The unused Rust `SecurityGateway` facade has been removed. Embedded callers can replace
+`SecurityGateway::new(policies, audit_sink)` with
+`SecurityPipeline::new(PolicyAuthorizer::new(policies), audit_sink)`. Add
+`.with_capability_broker()` when using the local `authorize_tool` /
+`consume_tool_capability` pair; keep the same pipeline instance for issuance and consumption.
+Call `authorize(&request, None)` for an argument-free decision, or pass `Some(&arguments)`
+when controls need Tool arguments. This method returns `Result<Decision, GatewayError>`;
+denials are errors and must be handled before execution. Existing identity, argument,
+approval and other required controls must still be installed. Host integrations continue
+to use their configured Security Core. YAML, HTTP APIs and CLI behavior are unchanged.
+
 ## MCP route configuration
 
 Attach `securityPipeline` under a route or MCP backend `policies` block. When this block is
@@ -147,6 +321,20 @@ configured together with `aiSystems[].security` or `securityAudit`, both declara
 the operation according to their own modes. Audit/Shadow on the common declaration cannot disable
 the legacy constraint. The gateway prepares both through the shared security implementation;
 it does not concatenate their policy lists or share approval providers between them.
+
+When common security enables protected MCP Sessions/Tasks, the compatibility declaration must
+also permit their `mcpSessionOperation`, `mcpTaskOperation`, and applicable `mcpOperation` actions.
+Session admission and renewal, Task transport and interaction checks, and stream business
+reauthorization enforce both declarations. A Tool-only allow rule does not grant Session access.
+Protected MCP sessions use `config.mcp.sessionTtl` (default `30m`) as their idle limit.
+A successfully admitted request or an authorized, correlated protocol message refreshes activity;
+periodic reauthorization, rejected calls, unrelated notifications, and raw stream bytes do not.
+Activity cannot extend `mcpSessions.maxSessionSeconds`, revive expired sessions, or bypass credential,
+policy, or configuration-revision checks. The stream idle and maximum-duration limits still apply.
+`config.mcp` is startup configuration; this change does not add hot reload for that block.
+
+Raw `/.well-known/` forwarding is restricted to GET/HEAD discovery with no MCP-specific controls
+or security declarations on either the gateway or its resolved target.
 
 The configuration is dynamically reloaded with the existing local configuration watcher.
 MCP authorization, outbound checks, and protected-stream rechecks share normalized operations;
@@ -269,6 +457,51 @@ verify authentication and insert `gateway_rag::VerifiedGatewayIdentity` into the
 the router runs. The document endpoint accepts only `corpusId`, `documentId`, `sourceUri`, and
 `content`; the query endpoint accepts only `corpusId`, `query`, and `limit`. Therefore tenant,
 principal ACL, and Qdrant filtering are exclusively derived inside the trusted processing chain.
+
+For document ingestion, `maxDocumentBytes` limits decoded UTF-8 content. Only
+`POST /v1/rag/documents` receives a JSON request limit of `6 * maxDocumentBytes + 65536`
+bytes, allowing worst-case JSON escaping and a bounded envelope. The decoded content budget
+is still enforced before policy/backend work: exceeding it returns 400, while exceeding the
+wire limit returns 413. Other RAG JSON routes retain their existing 2 MiB limit. Hot updates
+replace both the content budget and the document route limit. Invalid arithmetic overflow is
+rejected during configuration validation. Embedded `RagHttpService` implementations must
+provide `max_document_bytes()` from the same ingestion configuration.
+
+With document lifecycle enabled, `POST /v1/rag/documents/lifecycle` persists Deleted before
+requesting physical index cleanup. A purge failure returns 502 with the existing status fields,
+including `state: "deleted"`, `purged: false`, and the current `revision`. Reads remain blocked.
+Retry the delete using this revision as `expectedRevision`; successful cleanup returns 200 and
+`purged: true`. The gateway does not automatically retry or restore the document. Rust callers
+receive `RagGatewayError::PurgeFailed(DocumentStatus)` for this partial failure. Managed audit
+records the failure as `rag:document-purge-failed`; index/quarantine failures return a sanitized
+502 and record a Denied ingestion stage with a fixed backend-failure reason.
+
+Rust embedders can enable `security-integration-runtime/rag-sqlite` to use the async
+`rag_sqlite::SqliteRagStore` backend for Context and document state in one database.
+It reuses the journal's document transition, ACL and Context-binding rules; a Context read
+checks documents and commits its clock highwater in one transaction. A returned classification
+is not an execution permit. The current gateway YAML and HTTP handlers still use their existing
+stores: this feature does not select a backend for the Host or import JSONL files.
+
+`SqliteRagConfig` requires an absolute path in a private directory, a namespace, document and
+Context count limits, `max_database_bytes`, and a bounded busy timeout. An open store should be
+shared by its embedding application; a second owner is rejected. Its private `.owner` file must
+remain beside the database. Use async `close()` for orderly shutdown. WAL/FULL commits precede
+successful reads; storage, clock and WAL-reclamation failures quarantine that instance.
+The page budget bounds the main database, not total disk usage. A WAL larger than 1 MiB triggers
+truncate checkpoint; failure blocks further use, but one transaction can exceed that threshold.
+Deleted document tombstones remain counted. Expired Contexts are reclaimed on open or issuance.
+Interrupted COMMIT results may be unknown. Unknown schemas/declarations and invalid recovered
+metadata are rejected; existing JSONL files are never reinterpreted or overwritten.
+
+RAG ingestion, retrieval, and context-assembly stage events now retain the request
+Subject used for policy evaluation: `tenantId`, `userId`, `agentId`, and `delegationId` use the existing
+managed-audit/UI fields. Identity comes from the trusted processing chain, including on denied
+and backend-failure paths; missing values remain null, and historical records are not backfilled.
+Event counts and persistence format are unchanged. JWTs, query text, and document content are
+not added to these events. For Rust integrations, `IngestionAuditEvent.tenant_id` is replaced by
+`subject` (read `event.subject.tenant_id`), and `ContextAuditEvent` requires the original
+`security_types::Subject`. `RetrievalAuditEvent` already carries this type.
 
 ### Compile-time gateway profiles
 
@@ -478,6 +711,20 @@ security:
 The approval authority response contains `approvalId`, `requestId`, `argumentsHash`, `approved`,
 and, for an allow, `expiresAt`. HTTPS/mTLS configuration errors, transport failures, non-2xx
 responses, mismatched bindings, and expired approvals deny the Tool call.
+The receipt is retained as `authorizationContext.approval = { approvalId, expiresAt }` in the
+broker request, the protected backend's capability context, and authorization audit. The broker
+must cap the token's absolute `expiresAt` at the approval deadline and echo `approvalId` in its
+issue response; the gateway rejects a missing/mismatched ID, a later deadline, or a response
+that arrives after expiry. It does not repeat approval to issue a token or keep an approval cache.
+Deploy the matching broker before this gateway change: an older broker without the receipt/echo
+contract fails closed for protected calls. YAML configuration is unchanged.
+
+Rust integrations implement `ApprovalProvider::approved` as
+`Result<Option<security_types::ApprovalGrant>, ApprovalError>` (`None` means denied).
+`SecurityControl::check` returns `Result<Option<ApprovalGrant>, ControlDenial>`; ordinary controls
+return `Ok(None)`, while approval controls return the receipt. The pipeline retains the receipt
+on `Decision`, validates it after all action controls, and bounds the decision lifetime. A PDP
+response cannot supply the approval receipt on behalf of these controls.
 
 `capabilityBroker` connects approved high-risk MCP Tool calls to a shared capability broker. After
 approval and authorization succeed, the gateway requests an opaque token bound to the normalized
@@ -495,7 +742,7 @@ security:
     rootCaPemFile: /run/secrets/capability-root-ca.pem
 ```
 
-The broker issues `{ token, requestId, argumentsHash, expiresAt }`. The protected Tool/API must
+The broker issues `{ token, requestId, argumentsHash, expiresAt, approvalId }` for an approval-bound call. The protected Tool/API must
 consume the token once through the broker using the same normalized request and argument hash;
 reuse, expiry, request mismatch, and parameter mismatch are denied. This allows broker state to be
 durable and shared across gateway instances without treating a client header as authority.
@@ -601,6 +848,10 @@ security:
 
 `failClosed` is the default and calls the PDP on every request. `useCachedDecision` can reuse a
 still-valid decision for `cacheTtlSeconds`; use it only for explicitly low-risk read operations.
+Fail-closed operation never reads or writes the decision cache. An explicitly enabled cache
+holds at most 4,096 decisions per shared configuration, reclaims expired entries when full,
+and consults the PDP for new keys when no cache space is available. Cache misses and PDP failures
+never become an implicit Allow.
 The cache key includes the policy version, subject, action, resource, session, and client, so it
 cannot be reused across a different security context. The current implementation provides `LocalDynamicPdp` and a
 replaceable `DynamicPdp` trait. A trusted HTTPS remote PDP can now be selected through

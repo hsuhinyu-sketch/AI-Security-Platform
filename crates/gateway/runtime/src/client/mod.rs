@@ -72,11 +72,21 @@ impl ApplicationTransport {
 	}
 }
 
-#[derive(Debug, Clone, Hash, PartialEq, Eq)]
+#[derive(Clone, Hash, PartialEq, Eq)]
 pub struct TunnelConfig {
 	pub target: Target,
 	pub transport: Box<Transport>,
 	pub token: Option<HeaderValue>,
+}
+
+impl Debug for TunnelConfig {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		f.debug_struct("TunnelConfig")
+			.field("target", &self.target)
+			.field("transport", &self.transport)
+			.field("token", &self.token.as_ref().map(|_| "[REDACTED]"))
+			.finish()
+	}
 }
 
 /// The role this agentgateway is acting as when originating an HBONE CONNECT.
@@ -305,7 +315,7 @@ impl Connector {
 			ApplicationTransport::Plaintext => None,
 			ApplicationTransport::Tls(application) => Some(application.clone()),
 		};
-		trace!(?transport, "connecting");
+		trace!(transport = transport_name, "connecting");
 		let stream = match transport {
 			Transport::Plain(_) => dial(&target, ep, &self.backend_config).await?,
 			Transport::Tunnel(_, tcfg) if tls.is_some() || !http => {
@@ -659,20 +669,13 @@ impl Client {
 					.insert(http::header::PROXY_AUTHORIZATION, h.clone());
 			}
 			let key = PoolKey(target.clone(), dest, transport, version);
-			trace!(?req, ?key, "sending request");
+			trace!(transport = transport_name, "sending request");
 			req.extensions_mut().insert(key);
 			let method = req.method().clone();
 			let uri = req.uri().clone();
 			let path = uri.path();
-			let host = uri.authority().to_owned();
-			event!(
-				target: "upstream request",
-				parent: None,
-				tracing::Level::TRACE,
-
-				request =? req,
-				extensions =? crate::http::DebugExtensions(&req)
-			);
+			// Authority can include URL userinfo; diagnostics need only the host.
+			let host = uri.host().map(|host| host.to_owned());
 			let buffer_limit = http::buffer_limit(&req);
 			let to = req.extensions().get::<BackendRequestTimeout>().cloned();
 			let call = client.request(req);
@@ -706,14 +709,6 @@ impl Client {
 				duration = dur,
 			);
 			let mut resp = resp?;
-
-			event!(
-				target: "upstream response",
-				parent: None,
-				tracing::Level::TRACE,
-
-				response =?resp
-			);
 
 			resp
 				.extensions_mut()

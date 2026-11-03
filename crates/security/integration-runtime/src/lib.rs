@@ -1,5 +1,4 @@
 use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, Ordering};
 
 use security_audit::{AuditSink, event_from_decision};
 use security_pipeline::{
@@ -21,6 +20,9 @@ pub mod identity_binding;
 pub mod mcp_sessions;
 pub mod pii;
 mod prepared;
+#[cfg(feature = "rag-sqlite")]
+pub mod rag_sqlite;
+mod remote_worker;
 pub mod required_audit;
 pub mod task_cleanup;
 pub use data_egress::{DataEgressConfig, check_data_egress};
@@ -377,25 +379,51 @@ impl SecurityConfigAuthorizer {
 
 impl Authorizer for SecurityConfigAuthorizer {
 	fn decide(&self, request: &ActionRequest) -> Decision {
-		match evaluate_with_audit(&self.config, request, None, self.audit.as_ref()) {
-			Ok(()) => Decision {
-				request_id: request.request_id.clone(),
-				effect: DecisionEffect::Allow,
-				policy_id: Some("security:runtime".into()),
-				policy_version: None,
-				expires_at: None,
-			},
-			Err(GatewayError::Denied(decision) | GatewayError::DeniedByControl { decision, .. }) => {
-				decision
-			},
-			Err(GatewayError::Capability(_) | GatewayError::CapabilityUnavailable) => Decision {
-				request_id: request.request_id.clone(),
-				effect: DecisionEffect::Deny,
-				policy_id: Some("security:runtime-unavailable".into()),
-				policy_version: None,
-				expires_at: None,
-			},
-		}
+		runtime_decision(
+			request,
+			evaluate_with_audit(&self.config, request, None, self.audit.as_ref()),
+		)
+	}
+	fn decide_async<'a>(
+		&'a self,
+		request: &'a ActionRequest,
+	) -> std::pin::Pin<Box<dyn std::future::Future<Output = Decision> + Send + 'a>> {
+		Box::pin(async move {
+			runtime_decision(
+				request,
+				evaluate_with_audit_async(
+					self.config.clone(),
+					request.clone(),
+					None,
+					self.audit.clone(),
+				)
+				.await,
+			)
+		})
+	}
+}
+
+fn runtime_decision(request: &ActionRequest, result: Result<(), GatewayError>) -> Decision {
+	match result {
+		Ok(()) => Decision {
+			approval: None,
+			request_id: request.request_id.clone(),
+			effect: DecisionEffect::Allow,
+			policy_id: Some("security:runtime".into()),
+			policy_version: None,
+			expires_at: None,
+		},
+		Err(GatewayError::Denied(decision) | GatewayError::DeniedByControl { decision, .. }) => {
+			decision
+		},
+		Err(GatewayError::Capability(_) | GatewayError::CapabilityUnavailable) => Decision {
+			approval: None,
+			request_id: request.request_id.clone(),
+			effect: DecisionEffect::Deny,
+			policy_id: Some("security:runtime-unavailable".into()),
+			policy_version: None,
+			expires_at: None,
+		},
 	}
 }
 
@@ -411,6 +439,7 @@ impl AuditSink for TracingAuditSink {
 			delegation_id = ?event.subject.delegation_id,
 			session_id = ?event.authorization_context.session_id,
 			client_id = ?event.authorization_context.client_id,
+			approval = ?event.authorization_context.approval,
 			action = ?event.action.action_type,
 			resource = %event.resource.id,
 			decision = ?event.decision,
@@ -478,6 +507,7 @@ pub fn unsupported_operation_with_audit(
 	audit: &dyn AuditSink,
 ) -> Result<(), GatewayError> {
 	let decision = Decision {
+		approval: None,
 		request_id: action.request_id.clone(),
 		effect: DecisionEffect::Deny,
 		policy_id: Some(format!("adapter:{adapter}:unsupported-operation")),
@@ -519,6 +549,15 @@ pub fn evaluate_with_audit(
 	arguments: Option<&serde_json::Value>,
 	audit: &dyn AuditSink,
 ) -> Result<(), GatewayError> {
+	evaluate_decision(config, action, arguments, audit).map(|_| ())
+}
+
+fn evaluate_decision(
+	config: &SecurityConfig,
+	action: &ActionRequest,
+	arguments: Option<&serde_json::Value>,
+	audit: &dyn AuditSink,
+) -> Result<Option<Decision>, GatewayError> {
 	if config.required_audit.is_some() && config.mode != SecurityMode::Enforce {
 		return Err(configuration_denial(
 			action,
@@ -526,11 +565,7 @@ pub fn evaluate_with_audit(
 			audit,
 		));
 	}
-	if config.remote_pdp.is_some()
-		|| config.remote_agent_identity.is_some()
-		|| config.delegation_revocation.is_some()
-		|| config.approval.is_some()
-	{
+	if has_remote_evaluation(config) {
 		let result = on_blocking_security_thread(action, audit, || {
 			evaluate_with_audit_inner(config, action, arguments, audit)
 		});
@@ -538,10 +573,67 @@ pub fn evaluate_with_audit(
 			result
 		} else {
 			// Worker saturation is still audited, but observe-only modes do not interrupt traffic.
-			Ok(())
+			Ok(None)
 		};
 	}
 	evaluate_with_audit_inner(config, action, arguments, audit)
+}
+
+fn has_remote_evaluation(config: &SecurityConfig) -> bool {
+	config.remote_pdp.is_some()
+		|| config.remote_agent_identity.is_some()
+		|| config.delegation_revocation.is_some()
+		|| config.approval.is_some()
+}
+
+/// Await remote evaluation without blocking the caller's Tokio worker. The owned snapshot and
+/// audit destination outlive cancellation of the waiter; running HTTP work retains its admission
+/// slot until it actually ends. An Allow still requires the caller's final lifecycle checks.
+pub async fn evaluate_with_audit_async(
+	config: Arc<SecurityConfig>,
+	action: ActionRequest,
+	arguments: Option<serde_json::Value>,
+	audit: Arc<dyn AuditSink>,
+) -> Result<(), GatewayError> {
+	evaluate_decision_async(config, action, arguments, audit)
+		.await
+		.map(|_| ())
+}
+
+async fn evaluate_decision_async(
+	config: Arc<SecurityConfig>,
+	action: ActionRequest,
+	arguments: Option<serde_json::Value>,
+	audit: Arc<dyn AuditSink>,
+) -> Result<Option<Decision>, GatewayError> {
+	if config.required_audit.is_some() && config.mode != SecurityMode::Enforce {
+		return Err(configuration_denial(
+			&action,
+			"requiredAudit requires enforce mode".into(),
+			audit.as_ref(),
+		));
+	}
+	if !has_remote_evaluation(&config) {
+		return evaluate_with_audit_inner(&config, &action, arguments.as_ref(), audit.as_ref());
+	}
+	let mode = config.mode;
+	let owned_action = action.clone();
+	let owned_audit = audit.clone();
+	let result = remote_worker::evaluate(move || {
+		evaluate_with_audit_inner(
+			&config,
+			&owned_action,
+			arguments.as_ref(),
+			owned_audit.as_ref(),
+		)
+	})
+	.await
+	.unwrap_or_else(|reason| Err(configuration_denial(&action, reason.into(), audit.as_ref())));
+	if mode == SecurityMode::Enforce {
+		result
+	} else {
+		Ok(None)
+	}
 }
 
 fn evaluate_with_audit_inner(
@@ -549,7 +641,7 @@ fn evaluate_with_audit_inner(
 	action: &ActionRequest,
 	arguments: Option<&serde_json::Value>,
 	audit: &dyn AuditSink,
-) -> Result<(), GatewayError> {
+) -> Result<Option<Decision>, GatewayError> {
 	let decision = (|| {
 		let controls = runtime_security_controls(config)
 			.map_err(|reason| configuration_denial(action, reason, audit))?;
@@ -578,10 +670,10 @@ fn evaluate_with_audit_inner(
 			if let Some(required) = &config.required_audit {
 				required_audit::acknowledge(required, action, &decision, audit)?;
 			}
-			Ok(())
+			Ok(Some(decision))
 		},
 		Err(error) => match config.mode {
-			SecurityMode::Audit => Ok(()),
+			SecurityMode::Audit => Ok(None),
 			SecurityMode::Shadow => {
 				tracing::warn!(
 					target: "security_audit",
@@ -589,7 +681,7 @@ fn evaluate_with_audit_inner(
 					error = ?error,
 					"security shadow policy would deny request"
 				);
-				Ok(())
+				Ok(None)
 			},
 			SecurityMode::Enforce => Err(error),
 		},
@@ -614,7 +706,7 @@ pub fn authorize_tool_with_capability_with_audit(
 	arguments: &serde_json::Value,
 	audit: &dyn AuditSink,
 ) -> Result<Option<CapabilityGrant>, GatewayError> {
-	evaluate_with_audit(config, action, Some(arguments), audit)?;
+	let decision = evaluate_decision(config, action, Some(arguments), audit)?;
 	if config.mode != SecurityMode::Enforce || !config.pipeline.requires_tool_approval(action) {
 		return Ok(None);
 	}
@@ -622,18 +714,67 @@ pub fn authorize_tool_with_capability_with_audit(
 		return Ok(None);
 	};
 	on_blocking_security_thread(action, audit, || {
-		let issuer = broker
-			.issuer()
-			.map_err(|error| capability_denial(action, error.reason, audit))?;
-		issuer
-			.issue(action, arguments)
-			.map(Some)
-			.map_err(|error| capability_denial(action, error.reason, audit))
+		issue_capability(broker, action, arguments, decision.as_ref(), audit)
 	})
 }
 
-const MAX_CONCURRENT_REMOTE_DECISIONS: usize = 32;
-static ACTIVE_REMOTE_DECISIONS: AtomicUsize = AtomicUsize::new(0);
+/// Await authorization/approval, then issue a capability through the same bounded remote worker.
+/// Dropping the waiter never installs a grant into the caller's request. The caller must recheck
+/// its live session, configuration and execution state before publishing or using the result.
+pub async fn authorize_tool_with_capability_with_audit_async(
+	config: Arc<SecurityConfig>,
+	action: ActionRequest,
+	arguments: serde_json::Value,
+	audit: Arc<dyn AuditSink>,
+) -> Result<Option<CapabilityGrant>, GatewayError> {
+	let decision = evaluate_decision_async(
+		config.clone(),
+		action.clone(),
+		Some(arguments.clone()),
+		audit.clone(),
+	)
+	.await?;
+	if config.mode != SecurityMode::Enforce || !config.pipeline.requires_tool_approval(&action) {
+		return Ok(None);
+	}
+	let Some(broker) = config.capability_broker.clone() else {
+		return Ok(None);
+	};
+	let owned_action = action.clone();
+	let owned_audit = audit.clone();
+	remote_worker::evaluate(move || {
+		issue_capability(
+			&broker,
+			&owned_action,
+			&arguments,
+			decision.as_ref(),
+			owned_audit.as_ref(),
+		)
+	})
+	.await
+	.unwrap_or_else(|reason| Err(configuration_denial(&action, reason.into(), audit.as_ref())))
+}
+
+fn issue_capability(
+	broker: &RemoteCapabilityBrokerConfig,
+	action: &ActionRequest,
+	arguments: &serde_json::Value,
+	decision: Option<&Decision>,
+	audit: &dyn AuditSink,
+) -> Result<Option<CapabilityGrant>, GatewayError> {
+	let approval = decision
+		.and_then(|d| d.approval.clone())
+		.ok_or_else(|| capability_denial(action, "missing trusted approval receipt".into(), audit))?;
+	let mut bound_action = action.clone();
+	bound_action.authorization_context.approval = Some(approval);
+	let issuer = broker
+		.issuer()
+		.map_err(|error| capability_denial(action, error.reason, audit))?;
+	issuer
+		.issue(&bound_action, arguments)
+		.map(Some)
+		.map_err(|error| capability_denial(action, error.reason, audit))
+}
 
 /// Keep synchronous remote-provider traits usable from every protocol adapter, including RAG.
 /// Requests beyond the bounded bridge are denied rather than spawning unbounded OS threads.
@@ -645,18 +786,8 @@ fn on_blocking_security_thread<T: Send>(
 	if tokio::runtime::Handle::try_current().is_err() {
 		return work();
 	}
-	if ACTIVE_REMOTE_DECISIONS
-		.fetch_update(Ordering::AcqRel, Ordering::Acquire, |active| {
-			(active < MAX_CONCURRENT_REMOTE_DECISIONS).then_some(active + 1)
-		})
-		.is_err()
-	{
-		return Err(configuration_denial(
-			action,
-			"remote security worker limit reached".into(),
-			audit,
-		));
-	}
+	let _permit = remote_worker::reserve()
+		.map_err(|reason| configuration_denial(action, reason.into(), audit))?;
 	let run = || std::thread::scope(|scope| scope.spawn(work).join());
 	let result = if tokio::runtime::Handle::current().runtime_flavor()
 		== tokio::runtime::RuntimeFlavor::MultiThread
@@ -665,7 +796,6 @@ fn on_blocking_security_thread<T: Send>(
 	} else {
 		run()
 	};
-	ACTIVE_REMOTE_DECISIONS.fetch_sub(1, Ordering::AcqRel);
 	result.unwrap_or_else(|_| {
 		Err(configuration_denial(
 			action,
@@ -718,6 +848,7 @@ fn configuration_denial(
 		"external security configuration is invalid"
 	);
 	let decision = Decision {
+		approval: None,
 		request_id: action.request_id.clone(),
 		effect: DecisionEffect::Deny,
 		policy_id: Some("security:configuration".into()),
@@ -744,6 +875,7 @@ fn capability_denial(
 		"capability broker could not issue a required Tool capability"
 	);
 	let decision = Decision {
+		approval: None,
 		request_id: action.request_id.clone(),
 		effect: DecisionEffect::Deny,
 		policy_id: Some("security:capability-broker".into()),

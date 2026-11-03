@@ -354,9 +354,6 @@
             "$ref": "#/$defs/RouteBackendReference"
           }
         },
-        "llmRouter": {
-          "readOnly": true
-        },
         "inlinePolicies": {
           "type": "array",
           "items": true

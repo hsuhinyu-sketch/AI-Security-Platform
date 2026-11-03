@@ -111,7 +111,7 @@ impl SessionAccess {
 		super::security::McpSecurity::new(Some(&self.config), self.legacy.as_ref())
 	}
 
-	pub fn prepare(
+	pub async fn prepare(
 		parts: &mut http::request::Parts,
 		inputs: &RelayInputs,
 		manager: &SessionManager,
@@ -198,10 +198,10 @@ impl SessionAccess {
 			legacy: inputs.security_pipeline.clone(),
 			authorization_request: Arc::new(http::Request::from_parts(parts.clone(), ())),
 		};
-		access.check()?;
+		access.check_async().await?;
 		Ok(Some(Box::new(access)))
 	}
-	fn current(&self) -> Result<(), ProxyError> {
+	pub(super) fn current(&self) -> Result<(), ProxyError> {
 		if let Some(flow) = &self.flow {
 			flow.current()?;
 		}
@@ -218,8 +218,23 @@ impl SessionAccess {
 	}
 	pub fn check(&self) -> Result<(), ProxyError> {
 		self.current()?;
-		crate::security::evaluate(&self.config, &self.action)
+		self
+			.security()
+			.authorize(&self.action, None)
 			.map_err(|_| self.denial("authorization"))?;
+		self.current()
+	}
+
+	pub async fn check_async(&self) -> Result<(), ProxyError> {
+		self.current()?;
+		let security = self.security();
+		Box::pin(super::dispatch::authorize(
+			http_for_authorization(self),
+			&self.action,
+			security.authorize_async(&self.action, None),
+		))
+		.await?
+		.map_err(|_| self.denial("authorization"))?;
 		self.current()
 	}
 
@@ -244,17 +259,26 @@ impl SessionAccess {
 		}
 		Ok(())
 	}
-	pub fn bind(&mut self, binding: Arc<SessionBinding>) -> Result<(), ProxyError> {
+	pub async fn bind(&mut self, binding: Arc<SessionBinding>) -> Result<(), ProxyError> {
 		self.validate_binding(&binding)?;
 		self.binding = Some(binding);
-		self.check()?;
-		*self
-			.binding
-			.as_ref()
-			.expect("bound")
-			.last_access
-			.lock()
-			.map_err(|_| self.denial("store-unavailable"))? = Instant::now();
+		self.check_async().await
+	}
+
+	/// Call only after an authorized message is accepted. Reauthorization timers are not activity.
+	fn record_activity(&self) -> Result<(), ProxyError> {
+		self.current()?;
+		if let Some(binding) = &self.binding {
+			let mut last = binding
+				.last_access
+				.lock()
+				.map_err(|_| self.denial("store-unavailable"))?;
+			// Do not revive a binding that expired between current() and taking the lock.
+			if last.elapsed() >= binding.idle_ttl {
+				return Err(self.denial("unknown-or-not-owner"));
+			}
+			*last = Instant::now();
+		}
 		Ok(())
 	}
 	pub fn create_binding(
@@ -300,23 +324,30 @@ impl SessionAccess {
 					.stream_idle_seconds
 					.min(self.limits.max_stream_seconds),
 			);
-		self.check()?;
+		self.check_async().await?;
 		let mut revision = self.revision.clone();
 		loop {
 			tokio::select! {
 				biased;
 				_ = revision.changed() => return Err(self.denial("config-changed")),
 				_ = tokio::time::sleep_until(end) => return Err(self.denial("stream-timeout")),
-				_ = tokio::time::sleep(Duration::from_secs(self.limits.reauthorize_seconds)) => self.check()?,
-				result = &mut future => { self.check()?; return result; },
+				_ = tokio::time::sleep(Duration::from_secs(self.limits.reauthorize_seconds)) => self.check_async().await?,
+				result = &mut future => {
+					self.check_async().await?;
+					// A successfully admitted request counts before response-body demand begins.
+					if result.as_ref().is_ok_and(|r| r.status().is_success()) {
+						self.record_activity()?;
+					}
+					return result;
+				},
 			}
 		}
 	}
 	pub fn denial(&self, rule: &str) -> ProxyError {
 		deny(&self.action, rule)
 	}
-	pub fn protect_response(&self, mut response: Response) -> Result<Response, ProxyError> {
-		self.check()?;
+	pub async fn protect_response(&self, mut response: Response) -> Result<Response, ProxyError> {
+		self.check_async().await?;
 		response.headers_mut().insert(
 			http::header::CACHE_CONTROL,
 			"private, no-store".parse().expect("constant"),
@@ -331,16 +362,16 @@ impl SessionAccess {
 		let stream = futures_util::stream::try_unfold(
 			(access, body.into_data_stream(), idle),
 			move |(mut access, mut body, mut idle)| async move {
-				access.check()?;
+				access.check_async().await?;
 				loop {
 					let bytes = tokio::select! {
 						biased;
 						_ = access.revision.changed() => return Err(access.denial("config-changed")),
 						_ = tokio::time::sleep_until(idle.min(end)) => return Err(access.denial("stream-timeout")),
-						_ = tokio::time::sleep(Duration::from_secs(access.limits.reauthorize_seconds)) => { access.check()?; continue; },
+						_ = tokio::time::sleep(Duration::from_secs(access.limits.reauthorize_seconds)) => { access.check_async().await?; continue; },
 						bytes = body.next() => bytes,
 					};
-					access.check()?;
+					access.check_async().await?;
 					return match bytes {
 						None => Ok(None),
 						Some(Err(_)) => Err(access.denial("response-stream")),
@@ -361,7 +392,7 @@ impl SessionAccess {
 		response: Response,
 		id: &rmcp::model::RequestId,
 	) -> Result<Response, ProxyError> {
-		let response = self.protect_response(response)?;
+		let response = self.protect_response(response).await?;
 		let (parts, body) = response.into_parts();
 		let bytes = axum::body::to_bytes(body, self.limits.max_message_bytes)
 			.await
@@ -391,7 +422,7 @@ impl SessionAccess {
 		{
 			return Err(self.denial("initialize-response"));
 		}
-		self.check()?;
+		self.check_async().await?;
 		if let Some(capabilities) = rpc[0]["result"]["capabilities"].as_object_mut() {
 			for name in ["experimental", "extensions", "logging", "completions"] {
 				capabilities.remove(name);
@@ -418,9 +449,14 @@ impl SessionAccess {
 	}
 }
 
+fn http_for_authorization(access: &SessionAccess) -> ::http::Request<()> {
+	(*access.authorization_request).clone()
+}
+
 pub(crate) fn deny(action: &ActionRequest, rule: &str) -> ProxyError {
 	use security_audit::AuditSink;
 	let decision = Decision {
+		approval: None,
 		request_id: action.request_id.clone(),
 		effect: DecisionEffect::Deny,
 		policy_id: Some(format!("mcp-session:{rule}")),
@@ -464,6 +500,8 @@ pub(crate) fn protect_messages_with_sampling(
 	let Some(access) = http.extensions().get::<SessionAccess>().cloned() else {
 		return stream;
 	};
+	use rmcp::model::GetMeta;
+	let progress_token = request.and_then(|r| r.request.get_meta().get_progress_token());
 	let expected = request.map(|r| r.id.clone());
 	let method = request.map(|r| r.request.method().to_string());
 	let subscription = http.extensions().get::<subscriptions::Ticket>().cloned();
@@ -497,6 +535,7 @@ pub(crate) fn protect_messages_with_sampling(
 			let sampling = sampling.clone();
 			let (expected, business) = (expected.clone(), business.clone());
 			let method = method.clone();
+			let progress_token = progress_token.clone();
 			let subscription = subscription.clone();
 			let task = task.clone();
 			let server = server.clone();
@@ -505,7 +544,7 @@ pub(crate) fn protect_messages_with_sampling(
 				if done {
 					return Ok(None);
 				}
-				access.check().map_err(ClientError::new)?;
+				access.check_async().await.map_err(ClientError::new)?;
 				if let Some(task) = &task {
 					task.check(&access).map_err(ClientError::new)?;
 				}
@@ -513,178 +552,209 @@ pub(crate) fn protect_messages_with_sampling(
 				let mut revision = access.revision.clone();
 				let deadline =
 					tokio::time::Instant::now() + Duration::from_secs(access.limits.stream_idle_seconds);
-				let mut message = loop {
-					let message = loop {
-						tokio::select! {
-							biased;
-							_ = revision.changed() => return Err(ClientError::new(access.denial("config-changed"))),
-							_ = tokio::time::sleep_until(deadline) => return Err(ClientError::new(access.denial("stream-timeout"))),
-							_ = tokio::time::sleep(Duration::from_secs(access.limits.reauthorize_seconds)) => {
-								access.check().map_err(ClientError::new)?;
-								if let Some(task) = &task { task.check(&access).map_err(ClientError::new)?; }
-								reverse::check_parent(&access, parent.as_ref()).map_err(ClientError::new)?;
-							},
-							message = stream.next() => break message,
+				loop {
+					let mut message = loop {
+						let message = loop {
+							tokio::select! {
+								biased;
+								_ = revision.changed() => return Err(ClientError::new(access.denial("config-changed"))),
+								_ = tokio::time::sleep_until(deadline) => return Err(ClientError::new(access.denial("stream-timeout"))),
+								_ = tokio::time::sleep(Duration::from_secs(access.limits.reauthorize_seconds)) => {
+									access.check_async().await.map_err(ClientError::new)?;
+									if let Some(task) = &task { task.check(&access).map_err(ClientError::new)?; }
+									reverse::check_parent(&access, parent.as_ref()).map_err(ClientError::new)?;
+								},
+								message = stream.next() => break message,
+							}
+						};
+						let Some(message) = message else {
+							return Ok(None);
+						};
+						let mut message = message?;
+						#[cfg(feature = "gateway-llm")]
+						if task.is_some() && reverse::sampling::is_request(&message) {
+							reverse::request(&access, parent.as_ref(), &mut message).map_err(ClientError::new)?;
+							Box::pin(reverse::sampling::execute(
+								&access,
+								parent.as_ref(),
+								&message,
+								sampling.as_deref(),
+							))
+							.await
+							.map_err(ClientError::new)?;
+							access.record_activity().map_err(ClientError::new)?;
+							continue;
 						}
+						break message;
 					};
-					let Some(message) = message else {
-						return Ok(None);
-					};
-					let mut message = message?;
-					#[cfg(feature = "gateway-llm")]
-					if task.is_some() && reverse::sampling::is_request(&message) {
-						reverse::request(&access, parent.as_ref(), &mut message).map_err(ClientError::new)?;
-						Box::pin(reverse::sampling::execute(
-							&access,
-							parent.as_ref(),
-							&message,
-							sampling.as_deref(),
+					access.check_async().await.map_err(ClientError::new)?;
+					if let Some(task) = &task {
+						task.check(&access).map_err(ClientError::new)?;
+					}
+					reverse::check_parent(&access, parent.as_ref()).map_err(ClientError::new)?;
+					if let Some(business) = &business {
+						let (action, args) = business.as_ref();
+						let security = access.security();
+						Box::pin(super::dispatch::authorize(
+							http_for_authorization(&access),
+							&action,
+							security.authorize_async(action, args.as_ref()),
 						))
 						.await
-						.map_err(ClientError::new)?;
-						continue;
-					}
-					break message;
-				};
-				access.check().map_err(ClientError::new)?;
-				if let Some(task) = &task {
-					task.check(&access).map_err(ClientError::new)?;
-				}
-				reverse::check_parent(&access, parent.as_ref()).map_err(ClientError::new)?;
-				if let Some(business) = business {
-					let (action, args) = business.as_ref();
-					security_integration_runtime::evaluate_with_audit(
-						&access.config,
-						&action,
-						args.as_ref(),
-						&crate::security_events::UiSecurityAuditSink,
-					)
-					.map_err(|_| ClientError::new(access.denial("business-authorization")))?;
-					if let Some(flow) = &access.flow {
-						let destination = if action.action.action_type == security_types::ActionType::ToolInvoke
-						{
-							format!("{server}/{}", action.resource.id)
-						} else {
-							server.clone()
-						};
-						if action.action.action_type != security_types::ActionType::ToolList {
-							flow
-								.check(&action, &destination)
-								.map_err(ClientError::new)?;
-						}
-					}
-				}
-				use rmcp::model::ServerJsonRpcMessage;
-				let valid = match &mut message {
-					ServerJsonRpcMessage::Request(_) => {
-						reverse::request(&access, parent.as_ref(), &mut message).map_err(ClientError::new)?;
-						true
-					},
-					ServerJsonRpcMessage::Response(r) => {
-						if let Some(task) = &task {
-							if expected.as_ref() != Some(&r.id) {
-								return Err(ClientError::new(access.denial("task-response-id")));
-							}
-							task
-								.response(&access, &mut r.result)
-								.map_err(ClientError::new)?;
-							if security_audit::StateJournal::encoded_len(
-								&message,
-								access.limits.max_message_bytes,
-							)
-							.is_err()
-							{
-								return Err(ClientError::new(access.denial("task-message-limit")));
-							}
-							return Ok(Some((message, (stream, access, true, Ok(parent)))));
-						}
-						use rmcp::model::ServerResult::*;
-						if let (Some(flow), ListToolsResult(list)) = (&access.flow, &mut r.result) {
-							list.tools.retain(|tool| {
-								let action = security_pipeline::tool_invoke_for_identity(
-									access.action.request_id.clone(),
-									access.identity.clone(),
-									tool.name.to_string(),
-								);
+						.map_err(ClientError::new)?
+						.map_err(|_| ClientError::new(access.denial("business-authorization")))?;
+						if let Some(flow) = &access.flow {
+							let destination =
+								if action.action.action_type == security_types::ActionType::ToolInvoke {
+									format!("{server}/{}", action.resource.id)
+								} else {
+									server.clone()
+								};
+							if action.action.action_type != security_types::ActionType::ToolList {
 								flow
-									.check(&action, &format!("{server}/{}", tool.name))
-									.is_ok()
-							});
+									.check(&action, &destination)
+									.map_err(ClientError::new)?;
+							}
 						}
-						let kind_matches = matches!(
-							(method.as_deref(), &r.result),
-							(Some("initialize"), InitializeResult(_))
-								| (Some("server/discover"), DiscoverResult(_))
-								| (Some("ping"), EmptyResult(_))
-								| (Some("tools/call"), CallToolResult(_))
-								| (Some("tools/list"), ListToolsResult(_))
-								| (Some("resources/list"), ListResourcesResult(_))
-								| (
-									Some("resources/templates/list"),
-									ListResourceTemplatesResult(_)
-								) | (Some("resources/read"), ReadResourceResult(_))
-								| (Some("prompts/list"), ListPromptsResult(_))
-								| (Some("prompts/get"), GetPromptResult(_))
-								| (
-									Some("resources/subscribe" | "resources/unsubscribe"),
-									EmptyResult(_)
+					}
+					access.current().map_err(ClientError::new)?;
+					reverse::check_parent(&access, parent.as_ref()).map_err(ClientError::new)?;
+					use rmcp::model::ServerJsonRpcMessage;
+					if security_audit::StateJournal::encoded_len(&message, access.limits.max_message_bytes)
+						.is_err()
+					{
+						return Err(ClientError::new(access.denial("message-limit")));
+					}
+					let valid = match &mut message {
+						ServerJsonRpcMessage::Request(_) => {
+							reverse::request(&access, parent.as_ref(), &mut message).map_err(ClientError::new)?;
+							true
+						},
+						ServerJsonRpcMessage::Response(r) => {
+							if let Some(task) = &task {
+								if expected.as_ref() != Some(&r.id) {
+									return Err(ClientError::new(access.denial("task-response-id")));
+								}
+								task
+									.response(&access, &mut r.result)
+									.map_err(ClientError::new)?;
+								if security_audit::StateJournal::encoded_len(
+									&message,
+									access.limits.max_message_bytes,
 								)
-						);
-						if let rmcp::model::ServerResult::InitializeResult(init) = &mut r.result {
-							tasks::observe_initialize(&access, &server, init).map_err(ClientError::new)?;
-							session_capabilities(&mut init.capabilities, access.binding.is_some());
-							tasks::capabilities(&access, &mut init.capabilities);
-						}
-						if let rmcp::model::ServerResult::DiscoverResult(discovery) = &mut r.result {
-							session_capabilities(&mut discovery.capabilities, false);
-						}
-						if let rmcp::model::ServerResult::ListToolsResult(list) = &mut r.result {
-							tasks::observe_tools(&access, &server, list).map_err(ClientError::new)?;
-						}
-						kind_matches && expected.as_ref() == Some(&r.id)
-					},
-					ServerJsonRpcMessage::Error(e) => {
-						e.error.data = None;
-						if task.is_some() {
-							e.error.message = "asynchronous Task operation failed".into();
-						}
-						expected
-							.as_ref()
-							.is_some_and(|id| e.id.as_ref() == Some(id))
-					},
-					_ if expected.is_none() => {
-						subscriptions::notification(&access, &server, &message).map_err(ClientError::new)?
-					},
-					_ => false,
-				};
-				if !valid {
-					return Err(ClientError::new(
-						access.denial("unsupported-server-message"),
-					));
+								.is_err()
+								{
+									return Err(ClientError::new(access.denial("task-message-limit")));
+								}
+								access.record_activity().map_err(ClientError::new)?;
+								return Ok(Some((message, (stream, access, true, Ok(parent)))));
+							}
+							use rmcp::model::ServerResult::*;
+							if let (Some(flow), ListToolsResult(list)) = (&access.flow, &mut r.result) {
+								list.tools.retain(|tool| {
+									let action = security_pipeline::tool_invoke_for_identity(
+										access.action.request_id.clone(),
+										access.identity.clone(),
+										tool.name.to_string(),
+									);
+									flow
+										.check(&action, &format!("{server}/{}", tool.name))
+										.is_ok()
+								});
+							}
+							let kind_matches = matches!(
+								(method.as_deref(), &r.result),
+								(Some("initialize"), InitializeResult(_))
+									| (Some("server/discover"), DiscoverResult(_))
+									| (Some("ping"), EmptyResult(_))
+									| (Some("tools/call"), CallToolResult(_))
+									| (Some("tools/list"), ListToolsResult(_))
+									| (Some("resources/list"), ListResourcesResult(_))
+									| (
+										Some("resources/templates/list"),
+										ListResourceTemplatesResult(_)
+									) | (Some("resources/read"), ReadResourceResult(_))
+									| (Some("prompts/list"), ListPromptsResult(_))
+									| (Some("prompts/get"), GetPromptResult(_))
+									| (
+										Some("resources/subscribe" | "resources/unsubscribe"),
+										EmptyResult(_)
+									)
+							);
+							if let rmcp::model::ServerResult::InitializeResult(init) = &mut r.result {
+								tasks::observe_initialize(&access, &server, init).map_err(ClientError::new)?;
+								session_capabilities(&mut init.capabilities, access.binding.is_some());
+								tasks::capabilities(&access, &mut init.capabilities);
+							}
+							if let rmcp::model::ServerResult::DiscoverResult(discovery) = &mut r.result {
+								session_capabilities(&mut discovery.capabilities, false);
+							}
+							if let rmcp::model::ServerResult::ListToolsResult(list) = &mut r.result {
+								tasks::observe_tools(&access, &server, list).map_err(ClientError::new)?;
+							}
+							kind_matches && expected.as_ref() == Some(&r.id)
+						},
+						ServerJsonRpcMessage::Error(e) => {
+							e.error.data = None;
+							if task.is_some() {
+								e.error.message = "asynchronous Task operation failed".into();
+							}
+							expected
+								.as_ref()
+								.is_some_and(|id| e.id.as_ref() == Some(id))
+						},
+						ServerJsonRpcMessage::Notification(n) => {
+							// Bound before dropping unrelated messages, and retain the original idle deadline.
+							match &n.notification {
+								rmcp::model::ServerNotification::ProgressNotification(p)
+									if progress_token.as_ref() == Some(&p.params.progress_token) =>
+								{
+									true
+								},
+								rmcp::model::ServerNotification::ResourceUpdatedNotification(_)
+									if expected.is_none() =>
+								{
+									subscriptions::notification(&access, &server, &message)
+										.map_err(ClientError::new)?
+								},
+								// Logging, unrelated progress, and upstream Task identifiers are not grants.
+								// They cannot terminate the request or bypass subscription/object authorization.
+								_ => {
+									tokio::task::yield_now().await;
+									continue;
+								},
+							}
+						},
+					};
+					if !valid {
+						return Err(ClientError::new(
+							access.denial("unsupported-server-message"),
+						));
+					}
+					if let ServerJsonRpcMessage::Notification(n) = &mut message
+						&& let rmcp::model::ServerNotification::ResourceUpdatedNotification(n) =
+							&mut n.notification
+					{
+						n.params.meta = None;
+					}
+					if serde_json::to_vec(&message)
+						.map_err(ClientError::new)?
+						.len() > access.limits.max_message_bytes
+					{
+						return Err(ClientError::new(access.denial("message-limit")));
+					}
+					if matches!(message, ServerJsonRpcMessage::Response(_))
+						&& let Some(ticket) = &subscription
+					{
+						ticket.commit(&access)?;
+					}
+					let done = matches!(
+						message,
+						ServerJsonRpcMessage::Response(_) | ServerJsonRpcMessage::Error(_)
+					) && expected.is_some();
+					access.record_activity().map_err(ClientError::new)?;
+					return Ok(Some((message, (stream, access, done, Ok(parent)))));
 				}
-				if let ServerJsonRpcMessage::Notification(n) = &mut message
-					&& let rmcp::model::ServerNotification::ResourceUpdatedNotification(n) =
-						&mut n.notification
-				{
-					n.params.meta = None;
-				}
-				if serde_json::to_vec(&message)
-					.map_err(ClientError::new)?
-					.len()
-					> access.limits.max_message_bytes
-				{
-					return Err(ClientError::new(access.denial("message-limit")));
-				}
-				if matches!(message, ServerJsonRpcMessage::Response(_))
-					&& let Some(ticket) = subscription
-				{
-					ticket.commit(&access)?;
-				}
-				let done = matches!(
-					message,
-					ServerJsonRpcMessage::Response(_) | ServerJsonRpcMessage::Error(_)
-				) && expected.is_some();
-				Ok(Some((message, (stream, access, done, Ok(parent)))))
 			}
 		},
 	))

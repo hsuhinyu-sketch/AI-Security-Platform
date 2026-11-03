@@ -4,7 +4,7 @@ use security_integration_runtime::{SecurityConfig, dependency_egress::Dependency
 
 impl NormalizedLocalConfig {
 	pub(super) async fn prepare_security(
-		&self,
+		&mut self,
 		parent: Option<&DependencyEgressConfig>,
 	) -> anyhow::Result<()> {
 		let configs = self.security_configs();
@@ -12,6 +12,13 @@ impl NormalizedLocalConfig {
 		if let Some(parent) = parent {
 			for config in &configs {
 				config
+					.check_dependency_endpoints(parent)
+					.map_err(anyhow::Error::msg)?;
+			}
+			#[cfg(feature = "gateway-rag")]
+			for system in &self.rag_systems {
+				system
+					.security
 					.check_dependency_endpoints(parent)
 					.map_err(anyhow::Error::msg)?;
 			}
@@ -27,7 +34,23 @@ impl NormalizedLocalConfig {
 					.map_err(anyhow::Error::msg)?;
 			}
 			config.configuration_digest().map_err(anyhow::Error::msg)?;
-			config.prepare_execution().map_err(anyhow::Error::msg)?;
+			tokio::task::spawn_blocking(move || config.prepare_execution())
+				.await
+				.map_err(|_| anyhow!("security configuration preparation failed"))?
+				.map_err(anyhow::Error::msg)?;
+		}
+		// RAG-only declarations have no route policy entry. Prepare their owned security
+		// here as well so CLI validation and live publication have the same boundary.
+		#[cfg(feature = "gateway-rag")]
+		for system in &mut self.rag_systems {
+			let security = std::mem::take(&mut system.security);
+			system.security = tokio::task::spawn_blocking(move || {
+				security.prepare_execution()?;
+				Ok::<_, String>(security)
+			})
+			.await
+			.map_err(|_| anyhow!("security configuration preparation failed"))?
+			.map_err(anyhow::Error::msg)?;
 		}
 		Ok(())
 	}

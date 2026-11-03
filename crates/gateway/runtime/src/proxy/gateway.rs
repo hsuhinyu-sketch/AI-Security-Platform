@@ -14,13 +14,15 @@ use hyper_util::rt::TokioIo;
 use hyper_util::server::conn::auto;
 use platform_core::drain::{DrainUpgrader, DrainWatcher};
 use platform_core::prelude::AssertSize;
+use platform_core::readiness::{BlockReady, Ready};
 use platform_core::{drain, strng, telemetry};
 use platform_hbone::server::H2Request;
 use rand::RngExt;
 use tokio::net::TcpStream;
 use tokio::sync::watch;
-use tokio::task::{AbortHandle, JoinSet};
+use tokio::task::JoinSet;
 use tokio_stream::StreamExt;
+use tokio_util::sync::CancellationToken;
 use tracing::{Instrument, debug, error, event, info, info_span, warn};
 
 use crate::proxy::{ProxyError, WaypointService, dtrace};
@@ -124,6 +126,183 @@ impl TryFrom<&http::Uri> for HboneAddress {
 	}
 }
 
+#[cfg(test)]
+#[path = "gateway_tests.rs"]
+mod tests;
+
+// Own both async listeners and per-core threads for a bind. Removal cancels the
+// accept futures, then waits for sockets and thread runtimes to be released.
+struct ListenerTasks {
+	cancel: CancellationToken,
+	tasks: JoinSet<()>,
+}
+
+impl ListenerTasks {
+	fn start(
+		pi: Arc<RuntimeContext>,
+		services: crate::runtime::services::ServiceHandles,
+		drain: DrainWatcher,
+		bind: Arc<crate::types::agent::Bind>,
+		listeners: BindListeners,
+		ready: Ready,
+	) -> Self {
+		let mut group = Self {
+			cancel: CancellationToken::new(),
+			tasks: JoinSet::new(),
+		};
+		let listeners: Vec<_> = match listeners {
+			BindListeners::Single(listener) => vec![(None, listener)],
+			BindListeners::PerCore(listeners) => listeners
+				.into_iter()
+				.map(|(core, listener)| (Some(core), listener))
+				.collect(),
+		};
+		if listeners.is_empty() {
+			return Self::failed(
+				&bind.key,
+				ready,
+				drain,
+				"no CPU cores available for listener".into(),
+			);
+		}
+		for (core, listener) in listeners {
+			let name = match core {
+				Some(core) => format!("bind {} core {}", bind.key, core.id),
+				None => format!("bind {}", bind.key),
+			};
+			let blocker = ready.register_task(&name);
+			let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+			let cancel = group.cancel.clone();
+			let worker_cancel = cancel.clone();
+			let (pi, services, worker_drain, bind) =
+				(pi.clone(), services.clone(), drain.clone(), bind.clone());
+			let worker = async move {
+				tokio::select! {
+					biased;
+					_ = worker_cancel.cancelled() => Ok(()),
+					result = Gateway::run_bind(pi, services, worker_drain, bind, listener, started_tx) => result,
+				}
+			};
+			let worker = std::panic::AssertUnwindSafe(worker).catch_unwind();
+			let worker = async move {
+				worker
+					.await
+					.unwrap_or_else(|_| Err(anyhow!("listener task panicked")))
+			};
+			if let Some(core) = core {
+				group.tasks.spawn(monitor_listener(
+					listener_thread(core, worker),
+					started_rx,
+					ready.clone(),
+					blocker,
+					name,
+					cancel,
+					drain.clone(),
+				));
+			} else {
+				group.tasks.spawn(monitor_listener(
+					worker,
+					started_rx,
+					ready.clone(),
+					blocker,
+					name,
+					cancel,
+					drain.clone(),
+				));
+			}
+		}
+		group
+	}
+
+	fn failed(key: &BindKey, ready: Ready, drain: DrainWatcher, reason: String) -> Self {
+		let mut group = Self {
+			cancel: CancellationToken::new(),
+			tasks: JoinSet::new(),
+		};
+		let blocker = ready.register_task(&format!("bind {key}"));
+		let cancel = group.cancel.clone();
+		error!(bind=%key, error=%reason, "listener failed");
+		group.tasks.spawn(async move {
+			tokio::select! { _ = cancel.cancelled() => {}, _ = drain.wait_for_drain() => {} }
+			drop(blocker);
+		});
+		group
+	}
+
+	async fn join(mut self) {
+		while let Some(result) = self.tasks.join_next().await {
+			if let Err(error) = result {
+				error!(%error, "listener supervisor failed");
+			}
+		}
+	}
+}
+
+impl Drop for ListenerTasks {
+	fn drop(&mut self) {
+		self.cancel.cancel();
+	}
+}
+
+async fn listener_thread(
+	core: core_affinity::CoreId,
+	worker: impl Future<Output = anyhow::Result<()>> + Send + 'static,
+) -> anyhow::Result<()> {
+	let (tx, rx) = tokio::sync::oneshot::channel();
+	let thread = std::thread::Builder::new()
+		.name(format!("gateway-core-{}", core.id))
+		.spawn(move || {
+			let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+				if !core_affinity::set_for_current(core) {
+					return Err(anyhow!(
+						"failed to set listener CPU affinity for core {}",
+						core.id
+					));
+				}
+				let runtime = tokio::runtime::Builder::new_current_thread()
+					.enable_all()
+					.build()?;
+				runtime.block_on(worker)
+			}))
+			.unwrap_or_else(|_| Err(anyhow!("listener thread panicked")));
+			let _ = tx.send(result);
+		})?;
+	let result = rx.await;
+	// The result channel reports completion; join off the async worker to also wait
+	// for the OS thread and its runtime to finish destruction.
+	tokio::task::spawn_blocking(move || thread.join())
+		.await?
+		.map_err(|_| anyhow!("listener thread panicked"))?;
+	result.map_err(|_| anyhow!("listener thread stopped without a result"))?
+}
+
+async fn monitor_listener(
+	worker: impl Future<Output = anyhow::Result<()>>,
+	mut started: tokio::sync::oneshot::Receiver<()>,
+	ready: Ready,
+	blocker: BlockReady,
+	name: String,
+	cancel: CancellationToken,
+	drain: DrainWatcher,
+) {
+	let mut blocker = Some(blocker);
+	tokio::pin!(worker);
+	let result = tokio::select! {
+		biased;
+		started = &mut started => {
+			if started.is_ok() { blocker.take(); }
+			worker.await
+		}
+		result = &mut worker => result,
+	};
+	if let Err(error) = result {
+		error!(bind=%name, %error, "listener failed");
+		blocker.get_or_insert_with(|| ready.register_task(&name));
+		// Failure remains visible until this bind is removed or the Host shuts down.
+		tokio::select! { _ = cancel.cancelled() => {}, _ = drain.wait_for_drain() => {} }
+	}
+}
+
 pub struct Gateway {
 	pi: Arc<RuntimeContext>,
 	services: crate::runtime::services::ProtocolServices,
@@ -158,88 +337,71 @@ impl Gateway {
 	}
 
 	pub async fn run(self) {
-		let drain = self.drain.clone();
-		let subdrain = self.drain.clone();
-		let services = self.services.handles();
-		let mut js = JoinSet::new();
-		let mut binds = {
-			let mut binds = self.pi.stores.binds.write();
-			binds.subscribe()
-		};
-		let mut active: HashMap<BindKey, AbortHandle> = HashMap::new();
-		let mut handle_bind = |js: &mut JoinSet<anyhow::Result<()>>, b: BindEvent| {
-			let (bind_key, bind, listeners) = match b {
-				BindEvent::Add(bind, listeners) => (bind.key.clone(), bind, listeners),
-				BindEvent::Remove(bind_key) => {
-					if let Some(h) = active.remove(&bind_key) {
-						h.abort();
-					}
-					return;
-				},
-			};
-			if let Some(h) = active.remove(&bind_key) {
-				h.abort();
-			}
+		let ready = Ready::new();
+		let startup = ready.register_task("agentgateway");
+		self.run_with_readiness(ready, startup).await;
+	}
 
-			debug!("add bind {}", bind.address);
-			match listeners {
-				BindListeners::Single(listener) => {
-					let task = js.spawn(
-						Self::run_bind(
-							self.pi.clone(),
-							services.clone(),
-							subdrain.clone(),
-							Arc::new(bind),
-							listener,
-						)
-						.in_current_span(),
-					);
-					active.insert(bind_key, task);
-				},
-				BindListeners::PerCore(listeners) => {
-					for (core_id, listener) in listeners {
-						let subdrain = subdrain.clone();
-						let pi = self.pi.clone();
-						let services = services.clone();
-						let bind = bind.clone();
-						std::thread::spawn(move || {
-							let res = core_affinity::set_for_current(core_id);
-							if !res {
-								panic!("failed to set current CPU")
-							}
-							tokio::runtime::Builder::new_current_thread()
-								.enable_all()
-								.build()
-								.unwrap()
-								.block_on(async {
-									let _ = Self::run_bind(pi, services, subdrain, Arc::new(bind), listener)
-										.in_current_span()
-										.await;
-								})
-						});
-					}
-				},
-			}
-		};
-		let wait = drain.wait_for_drain();
+	pub(crate) async fn run_with_readiness(self, ready: Ready, startup: BlockReady) {
+		let mut binds = self.pi.stores.binds.write().subscribe();
+		let mut active: HashMap<BindKey, ListenerTasks> = HashMap::new();
+		// Register initial listener blockers before releasing the Host startup blocker.
+		while let Some(Some(event)) = binds.next().now_or_never() {
+			self.handle_bind(&mut active, &ready, event).await;
+		}
+		drop(startup);
+		let wait = self.drain.clone().wait_for_drain();
 		tokio::pin!(wait);
 		loop {
 			tokio::select! {
-				Some(res) = binds.next() => {
-					handle_bind(&mut js, res);
-				}
-				Some(res) = js.join_next() => {
-					warn!("bind complete {res:?}");
-				}
+				Some(event) = binds.next() => self.handle_bind(&mut active, &ready, event).await,
 				_ = &mut wait => {
 					info!("stop listening for binds; drain started");
-					while let Some(res) = js.join_next().await  {
-						info!("bind complete {res:?}");
+					for (_, listeners) in active {
+						listeners.join().await;
 					}
 					info!("binds drained");
-					return
+					return;
 				}
 			}
+		}
+	}
+
+	async fn handle_bind(
+		&self,
+		active: &mut HashMap<BindKey, ListenerTasks>,
+		ready: &Ready,
+		event: BindEvent,
+	) {
+		let key = match &event {
+			BindEvent::Add(bind, _) => &bind.key,
+			BindEvent::Remove(key) | BindEvent::Failed(key, _) => key,
+		};
+		if let Some(listeners) = active.remove(key) {
+			listeners.cancel.cancel();
+			listeners.join().await;
+		}
+		match event {
+			BindEvent::Add(bind, listeners) => {
+				debug!("add bind {}", bind.address);
+				let key = bind.key.clone();
+				active.insert(
+					key,
+					ListenerTasks::start(
+						self.pi.clone(),
+						self.services.handles(),
+						self.drain.clone(),
+						Arc::new(bind),
+						listeners,
+						ready.clone(),
+					),
+				);
+			},
+			BindEvent::Failed(key, reason) => {
+				let failed = ListenerTasks::failed(&key, ready.clone(), self.drain.clone(), reason);
+				active.insert(key, failed);
+			},
+			BindEvent::Remove(_) => {},
 		}
 	}
 
@@ -249,6 +411,7 @@ impl Gateway {
 		drain: DrainWatcher,
 		bind: Arc<crate::types::agent::Bind>,
 		listener: std::net::TcpListener,
+		started: tokio::sync::oneshot::Sender<()>,
 	) -> anyhow::Result<()> {
 		let min_deadline = pi.cfg.termination_min_deadline;
 		let max_deadline = pi.cfg.termination_max_deadline;
@@ -270,6 +433,7 @@ impl Gateway {
 		};
 		let listener = tokio::net::TcpListener::from_std(listener)?;
 		info!(bind = name.as_str(), "started bind");
+		let _ = started.send(());
 		let component = format!("bind {name}");
 
 		// Desired drain semantics:
@@ -285,7 +449,9 @@ impl Gateway {
 		// This handles gracefully serving any long-running requests.
 		// New connections may still be made during this time which we will attempt to serve, though they
 		// are at increased risk of early termination.
-		let accept = |drain: DrainWatcher, force_shutdown: watch::Receiver<()>| async move {
+		let mut accept_result = Ok(());
+		let result = &mut accept_result;
+		let accept = move |drain: DrainWatcher, force_shutdown: watch::Receiver<()>| async move {
 			// We will need to be able to watch for drains, so take a copy
 			let drain_watch = drain.clone();
 			// Subtle but important: we need to be able to create drain-blockers for each accepted connection.
@@ -338,6 +504,7 @@ impl Gateway {
 						Err(e) => {
 							if is_accept_error_permanent(&e) {
 								error!(bind=?name, "fatal accept error, stopping listener: {e}");
+								*result = Err(e.into());
 								return;
 							}
 							if is_accept_error_per_connection(&e) {
@@ -385,6 +552,7 @@ impl Gateway {
 						Err(e) => {
 							if is_accept_error_permanent(&e) {
 								error!(bind=?name, "fatal accept error during drain, stopping listener: {e}");
+								*result = Err(e.into());
 								return;
 							}
 							if is_accept_error_per_connection(&e) {
@@ -413,7 +581,7 @@ impl Gateway {
 		};
 
 		drain::run_with_drain(component, drain, max_deadline, min_deadline, accept).await;
-		Ok(())
+		accept_result
 	}
 
 	pub async fn proxy_bind(
@@ -1508,7 +1676,7 @@ impl Gateway {
 		ext: Arc<Extension>,
 		drain: DrainWatcher,
 	) {
-		debug!(?req, "received request");
+		debug!("received gateway CONNECT request");
 
 		let uri = req.uri();
 		let hbone_addr = HboneAddress::try_from(uri)

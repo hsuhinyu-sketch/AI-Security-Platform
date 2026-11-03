@@ -131,6 +131,28 @@ async fn shutdown_wakes_pending_call_with_failure() {
 	assert!(matches!(result, Err(UpstreamError::Recv)));
 }
 
+#[tokio::test]
+async fn queued_invalidated_request_is_not_written_to_peer() {
+	let (process, _incoming, mut outgoing) = connection();
+	let revision = gateway_contracts::ConfigRevision::default();
+	let mut request = ::http::Request::new(());
+	request.extensions_mut().insert(revision.lease());
+	let context = IncomingRequestContext::new(&request.into_parts().0);
+	revision.invalidate();
+	let rpc = serde_json::from_value(json!({"jsonrpc":"2.0","id":99,"method":"tools/call",
+		"params":{"name":"echo","arguments":{}}}))
+	.unwrap();
+	assert!(
+		tokio::time::timeout(Duration::from_secs(2), process.send_message(rpc, &context))
+			.await
+			.unwrap()
+			.is_err()
+	);
+	assert!(outgoing.try_recv().is_err());
+	assert!(process.is_alive());
+	process.stop().await.unwrap();
+}
+
 #[tokio::test(start_paused = true)]
 async fn cancelled_waiters_keep_id_reserved_until_response_deadline_closes_connection() {
 	let (process, _incoming, mut outgoing) = connection();

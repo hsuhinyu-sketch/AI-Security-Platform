@@ -4,7 +4,7 @@ use http_body_util::BodyExt;
 #[tokio::test]
 async fn buffered_response_is_revoked_before_first_poll_and_stays_terminal() {
 	let revision = ConfigRevision::default();
-	let mut body = RevocableBody::new(axum::body::Body::from("secret"), revision.lease());
+	let mut body = RevocableBody::new(axum::body::Body::from("secret"), revision.lease(), None);
 	revision.invalidate();
 	assert!(body.frame().await.unwrap().is_err());
 	assert!(body.frame().await.is_none());
@@ -30,6 +30,7 @@ async fn revocation_inside_source_poll_cannot_release_the_returned_frame() {
 	let mut body = RevocableBody::new(
 		axum::body::Body::new(RevokeOnPoll(revision.clone())),
 		revision.lease(),
+		None,
 	);
 	assert!(body.frame().await.unwrap().is_err());
 	assert!(body.frame().await.is_none());
@@ -38,13 +39,13 @@ async fn revocation_inside_source_poll_cannot_release_the_returned_frame() {
 #[tokio::test]
 async fn idle_source_wakes_on_revocation_and_normal_frames_are_unchanged() {
 	let revision = ConfigRevision::default();
-	let body = RevocableBody::new(axum::body::Body::from("visible"), revision.lease());
+	let body = RevocableBody::new(axum::body::Body::from("visible"), revision.lease(), None);
 	assert_eq!(body.size_hint().exact(), Some(7));
 	assert_eq!(body.collect().await.unwrap().to_bytes(), "visible");
 	let source = axum::body::Body::from_stream(futures_util::stream::pending::<
 		Result<bytes::Bytes, std::io::Error>,
 	>());
-	let mut body = RevocableBody::new(source, revision.lease());
+	let mut body = RevocableBody::new(source, revision.lease(), None);
 	// Poll once to register the watch waker while the source supplies no waker of its own.
 	let pending = std::future::poll_fn(|cx| {
 		assert!(Pin::new(&mut body).poll_frame(cx).is_pending());
@@ -96,4 +97,34 @@ async fn publication_replaces_all_routes_and_invalidates_only_the_previous_gener
 		response.into_body().collect().await.unwrap().to_bytes(),
 		"new"
 	);
+}
+
+#[tokio::test(start_paused = true)]
+async fn credential_expiry_wakes_idle_body_and_blocks_buffered_output() {
+	let revision = ConfigRevision::default();
+	let mut buffered = RevocableBody::new(
+		axum::body::Body::from("secret"),
+		revision.lease(),
+		Some(chrono::Utc::now().timestamp() - 1),
+	);
+	assert!(buffered.frame().await.unwrap().is_err());
+	assert!(buffered.frame().await.is_none());
+	let source = axum::body::Body::from_stream(futures_util::stream::pending::<
+		Result<bytes::Bytes, std::io::Error>,
+	>());
+	let mut body = RevocableBody::new(
+		source,
+		revision.lease(),
+		Some(chrono::Utc::now().timestamp() + 1),
+	);
+	assert!(futures_util::poll!(body.frame()).is_pending());
+	tokio::time::advance(std::time::Duration::from_secs(2)).await;
+	assert!(
+		tokio::time::timeout(std::time::Duration::from_secs(1), body.frame())
+			.await
+			.unwrap()
+			.unwrap()
+			.is_err()
+	);
+	assert!(body.frame().await.is_none());
 }

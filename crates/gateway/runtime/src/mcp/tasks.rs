@@ -302,7 +302,7 @@ impl Ticket {
 			.extensions()
 			.get::<crate::execution_budget::ExecutionScope>();
 		match (&self.record.execution, current) {
-			(Some(original), Some(current)) if original.binding() == current.binding() => {
+			(Some(original), Some(current)) if original.same_execution(current) => {
 				if let Some(error) = original.failure().or_else(|| current.failure()) {
 					return Err(error);
 				}
@@ -334,7 +334,9 @@ impl Ticket {
 			}
 		}
 		let action = operation(access, &self.method, &self.record.server, &self.record.id);
-		crate::security::evaluate(&access.config, &action)
+		access
+			.security()
+			.authorize(&action, None)
 			.map_err(|_| access.denial("task-authorization"))?;
 		let transport = security_pipeline::mcp_operation_for_identity(
 			&access.action.request_id,
@@ -344,7 +346,9 @@ impl Ticket {
 			&self.record.server,
 		);
 		if self.method != "tools/call" {
-			crate::security::evaluate(&access.config, &transport)
+			access
+				.security()
+				.authorize(&transport, None)
 				.map_err(|_| access.denial("task-transport-authorization"))?;
 		}
 		if self.cleanup.is_none() {
@@ -600,24 +604,37 @@ impl Ticket {
 		Ok(())
 	}
 }
-/// Keeps a dropped/unconfirmed create from remaining inFlight merely because its Task row lives.
-pub(crate) struct Admission(Ticket);
+/// Owns an unconfirmed create from reservation through response validation.
+pub(crate) struct Admission {
+	ticket: Ticket,
+	owner: std::sync::Weak<SessionBinding>,
+}
 impl Drop for Admission {
 	fn drop(&mut self) {
-		if !self.0.record.accepted.load(Ordering::Acquire)
-			&& let Some(proof) = self.0.record.budget.get()
+		if self.ticket.record.accepted.load(Ordering::Acquire) {
+			return;
+		}
+		if let Some(owner) = self.owner.upgrade()
+			&& let Ok(mut registry) = owner.tasks.lock()
+			&& registry
+				.records
+				.get(&self.ticket.record.id)
+				.is_some_and(|record| Arc::ptr_eq(record, &self.ticket.record))
 		{
+			registry.records.remove(&self.ticket.record.id);
+		}
+		if let Some(proof) = self.ticket.record.budget.get() {
 			proof.abandon_task();
 		}
 	}
 }
-pub(crate) fn bind_budget(ctx: &IncomingRequestContext) -> Result<Option<Admission>, ProxyError> {
+pub(crate) fn bind_budget(ctx: &IncomingRequestContext) -> Result<(), ProxyError> {
 	let http = ctx.as_request();
 	let Some(ticket) = http.extensions().get::<Ticket>() else {
-		return Ok(None);
+		return Ok(());
 	};
 	if ticket.method != "tools/call" {
-		return Ok(None);
+		return Ok(());
 	}
 	if ticket.record.execution.is_some() {
 		let proof = http
@@ -631,7 +648,7 @@ pub(crate) fn bind_budget(ctx: &IncomingRequestContext) -> Result<Option<Admissi
 			.set(proof)
 			.map_err(|_| ProxyError::AuthorizationFailed)?;
 	}
-	Ok(Some(Admission(ticket.clone())))
+	Ok(())
 }
 pub(crate) fn hold_admission(stream: Messages, admission: Option<Admission>) -> Messages {
 	Messages::from_stream(stream.map(move |item| {
@@ -755,9 +772,9 @@ pub(crate) fn prepare(
 	ctx: &mut IncomingRequestContext,
 	server: &str,
 	guardrails: bool,
-) -> Result<(), UpstreamError> {
+) -> Result<Option<Admission>, UpstreamError> {
 	let ClientRequest::CallToolRequest(call) = &request.request else {
-		return Ok(());
+		return Ok(None);
 	};
 	// rmcp moves wire `_meta` into Request.extensions during deserialization.
 	// Params can also carry metadata added by an in-process policy processor.
@@ -785,7 +802,7 @@ pub(crate) fn prepare(
 		{
 			return Err(fail(&access, "task-required"));
 		}
-		return Ok(());
+		return Ok(None);
 	}
 	let access = access(ctx)?;
 	let binding = binding(&access)?;
@@ -872,15 +889,6 @@ pub(crate) fn prepare(
 	});
 	registry.records.insert(id, record.clone());
 	drop(registry);
-	if let Err(error) = register_owner(binding) {
-		binding
-			.tasks
-			.lock()
-			.map_err(|_| fail(&access, "task-store"))?
-			.records
-			.remove(&record.id);
-		return Err(error);
-	}
 	let ticket = Ticket {
 		interaction: std::sync::Weak::new(),
 		cleanup: None,
@@ -889,15 +897,15 @@ pub(crate) fn prepare(
 		method: "tools/call".into(),
 		requested_ttl: requested,
 	};
-	if let Err(error) = ticket.check(&access) {
-		binding
-			.tasks
-			.lock()
-			.map_err(|_| fail(&access, "task-store"))?
-			.records
-			.remove(&ticket.record.id);
-		return Err(UpstreamError::Proxy(error));
-	}
-	ctx.extensions_mut().insert(ticket);
-	Ok(())
+	let admission = Admission {
+		ticket,
+		owner: Arc::downgrade(binding),
+	};
+	register_owner(binding)?;
+	admission
+		.ticket
+		.check(&access)
+		.map_err(UpstreamError::Proxy)?;
+	ctx.extensions_mut().insert(admission.ticket.clone());
+	Ok(Some(admission))
 }

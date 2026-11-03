@@ -76,6 +76,7 @@ impl Endpoint<'_> {
 			},
 			(Some(ProviderFormat::Embeddings), _) => {
 				let model = self.configured_model(request_model).unwrap_or_default();
+				let model = percent_encoding::utf8_percent_encode(model, super::MODEL_PATH_SEGMENT);
 				strng::format!(
 					"/v1/projects/{}/locations/{}/publishers/google/models/{}:predict",
 					self.project_id,
@@ -84,6 +85,7 @@ impl Endpoint<'_> {
 				)
 			},
 			(_, Some(model)) => {
+				let model = percent_encoding::utf8_percent_encode(&model, super::MODEL_PATH_SEGMENT);
 				strng::format!(
 					"/v1/projects/{}/locations/{}/publishers/anthropic/models/{}:{}",
 					self.project_id,

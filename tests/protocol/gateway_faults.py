@@ -531,6 +531,67 @@ class Acceptance(unittest.TestCase):
         self.assertTrue(status >= 400 or any("error" in v for v in values), response)
         self.assertFalse(any("result" in v for v in values), response)
 
+    def test_invalid_discovery_reload_never_publishes_a_listener_and_recovers(self):
+        session = self.session()
+        original = self.gateway.config.read_text()
+        log = self.gateway.directory / 'gateway.log'
+
+        def reload(config, successful):
+            offset = log.stat().st_size
+            candidate = self.gateway.config.with_suffix('.next')
+            candidate.write_text(config)
+            candidate.replace(self.gateway.config)
+            marker = 'Config reloaded successfully' if successful else 'Failed to reload config:'
+            deadline = time.monotonic() + 10
+            while time.monotonic() < deadline:
+                if marker in log.read_text()[offset:]:
+                    return
+                self.assertIsNone(self.gateway.process.poll())
+                time.sleep(.025)
+            self.fail(log.read_text()[-5000:])
+
+        def assert_closed(port):
+            # Observe beyond the publication log so asynchronous listener events also run.
+            for _ in range(5):
+                with self.assertRaises(ConnectionRefusedError):
+                    with socket.create_connection(('127.0.0.1', port), timeout=.5):
+                        pass
+                time.sleep(.05)
+
+        with socket.socket() as reservation:
+            reservation.bind(('127.0.0.1', 0))
+            port = reservation.getsockname()[1]
+            config = json.loads(original)
+            system = json.loads(json.dumps(config['aiSystems'][0]))
+            system.pop('llm', None)
+            system['name'] = 'discovery-candidate'
+            system['mcp']['port'] = port
+            config['aiSystems'].append(system)
+            config['workloads'] = [{'uid': 'invalid-candidate', 'namespace': 'default',
+                'workloadIps': ['127.0.0.2'], 'services': {'invalid-service-key': {'80': 8080}}}]
+        try:
+            reload(json.dumps(config), False)
+            assert_closed(port)
+            status, _, values = self.gateway.request(rpc('tools/call', name='echo', arguments={}), session)
+            self.assertEqual(status, 200, values)
+            self.assertTrue(any('result' in value for value in values), values)
+            del config['workloads']
+            reload(json.dumps(config), True)
+            deadline = time.monotonic() + 5
+            while True:
+                try:
+                    with socket.create_connection(('127.0.0.1', port), timeout=.5):
+                        break
+                except ConnectionRefusedError:
+                    if time.monotonic() >= deadline:
+                        raise
+                    time.sleep(.025)
+        finally:
+            reload(original, True)
+        assert_closed(port)
+        self.observations.update(rejectedDiscoveryKeptSession=True, ghostListeners=0,
+                                 validReloadRecovered=True)
+
     def test_authenticated_tool_dispatch_and_policy_denial(self):
         session = self.session()
         self.gateway.request(rpc("tools/list"), session)

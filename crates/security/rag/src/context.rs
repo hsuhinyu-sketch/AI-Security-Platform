@@ -7,6 +7,7 @@ use security_audit::AuditSink;
 use security_pipeline::{
 	Authorizer, GatewayError, GatewayIdentity, SecurityPipeline, context_assemble_for_identity,
 };
+use security_types::Subject;
 use serde::{Deserialize, Serialize};
 
 use crate::{AuthorizedContext, DataClassification, KnowledgeChunk};
@@ -100,6 +101,7 @@ pub enum ContextAuditOutcome {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ContextAuditEvent {
 	pub request_id: String,
+	pub subject: Subject,
 	pub corpus_id: String,
 	pub query_hash: String,
 	pub outcome: ContextAuditOutcome,
@@ -186,15 +188,54 @@ impl ContextGuard {
 		S: AuditSink,
 		CS: ContextAuditSink,
 	{
+		let (action, arguments) = Self::assembly_action(request_id.into(), identity, &context);
+		let decision = pipeline.authorize(&action, Some(&arguments));
+		self.finish_assembly(audit, action, context, decision)
+	}
+
+	pub async fn assemble_async<A, S, CS>(
+		&self,
+		pipeline: &SecurityPipeline<A, S>,
+		audit: &CS,
+		request_id: impl Into<String>,
+		identity: GatewayIdentity,
+		context: AuthorizedContext,
+	) -> Result<GuardedContext, ContextAssemblyError>
+	where
+		A: Authorizer,
+		S: AuditSink,
+		CS: ContextAuditSink,
+	{
+		let (action, arguments) = Self::assembly_action(request_id.into(), identity, &context);
+		let decision = pipeline.authorize_async(&action, Some(&arguments)).await;
+		self.finish_assembly(audit, action, context, decision)
+	}
+
+	fn assembly_action(
+		request_id: String,
+		identity: GatewayIdentity,
+		context: &AuthorizedContext,
+	) -> (security_types::ActionRequest, serde_json::Value) {
 		let action = context_assemble_for_identity(request_id, identity, context.corpus_id.clone());
 		let arguments = serde_json::json!({
 			"queryHash": context.query_hash,
 			"chunkIds": context.chunks.iter().map(|chunk| chunk.id.clone()).collect::<Vec<_>>(),
 			"contextTokens": context.context_tokens,
 		});
-		if let Err(error) = pipeline.authorize(&action, Some(&arguments)) {
+		(action, arguments)
+	}
+
+	fn finish_assembly<CS: ContextAuditSink>(
+		&self,
+		audit: &CS,
+		action: security_types::ActionRequest,
+		context: AuthorizedContext,
+		decision: Result<security_types::Decision, GatewayError>,
+	) -> Result<GuardedContext, ContextAssemblyError> {
+		if let Err(error) = decision {
 			audit.record(ContextAuditEvent {
 				request_id: action.request_id,
+				subject: action.subject,
 				corpus_id: action.resource.id,
 				query_hash: context.query_hash,
 				outcome: ContextAuditOutcome::Denied,
@@ -217,6 +258,7 @@ impl ContextGuard {
 		};
 		audit.record(ContextAuditEvent {
 			request_id: action.request_id,
+			subject: action.subject,
 			corpus_id: guarded.corpus_id.clone(),
 			query_hash: guarded.query_hash.clone(),
 			outcome,

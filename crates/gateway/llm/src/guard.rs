@@ -107,6 +107,7 @@ pin_project! {
 		held_frames: Vec<Bytes>,
 		held_bytes: usize,
 		pending_text: String,
+		pending_ancillary: String,
 		overlap_tail: String,
 		sse_decoder: SseDecoder<Bytes>,
 		decode_buffer: bytes::BytesMut,
@@ -156,6 +157,7 @@ impl<B, L> GuardedSseBody<B, L> {
 			held_frames: Vec::new(),
 			held_bytes: 0,
 			pending_text: String::new(),
+			pending_ancillary: String::new(),
 			overlap_tail: String::new(),
 			sse_decoder: SseDecoder::with_max_size(buffer_limit),
 			decode_buffer: bytes::BytesMut::new(),
@@ -164,46 +166,164 @@ impl<B, L> GuardedSseBody<B, L> {
 		}
 	}
 
-	/// Extract text delta from a parsed SSE frame if present.
-	fn extract_text_delta(frame: &SseFrame<Bytes>) -> Result<Option<String>, ()> {
+	/// Project primary and ancillary content from one parsed SSE event.
+	fn extract_content(frame: &SseFrame<Bytes>) -> Result<(String, String), ()> {
 		let SseFrame::Event(Event { data, .. }) = frame else {
-			return Ok(None);
+			return Ok((String::new(), String::new()));
 		};
 		if data.as_ref() == b"[DONE]" {
-			return Ok(None);
+			return Ok((String::new(), String::new()));
 		}
 		let value: serde_json::Value = serde_json::from_slice(data).map_err(|_| ())?;
 		if !value.is_object() {
 			return Err(());
 		}
-		// Inspect content fields in every choice, initial block and final response copy.
-		// Telemetry/obfuscation must not be interleaved between consecutive text deltas:
-		// that would hide a pattern split across otherwise adjacent fragments.
-		fn collect(value: &serde_json::Value, text: &mut String, content: bool) {
+		// Treat unknown content fields as unsupported, rather than forwarding text that
+		// no evaluator saw. Envelope metadata stays separate from adjacent text deltas.
+		fn collect(
+			value: &serde_json::Value,
+			text: &mut String,
+			ancillary: &mut String,
+			context: &str,
+		) -> Result<(), ()> {
+			use serde_json::Value;
 			match value {
-				serde_json::Value::String(s) if content => text.push_str(s),
-				serde_json::Value::Array(values) => values.iter().for_each(|v| collect(v, text, content)),
-				serde_json::Value::Object(values) => {
-					for (key, value) in values {
-						let content = matches!(
-							key.as_str(),
-							"text"
-								| "content"
-								| "delta"
-								| "arguments"
-								| "partial_json"
-								| "thinking"
-								| "reasoning_content"
-								| "refusal"
-								| "data"
-						);
-						collect(value, text, content);
-					}
+				Value::Null => Ok(()),
+				Value::String(s) => {
+					text.push_str(s);
+					Ok(())
 				},
-				_ => {},
+				Value::Array(values) => {
+					for value in values {
+						collect(value, text, ancillary, context)?;
+					}
+					Ok(())
+				},
+				Value::Object(values) => {
+					// A Responses snapshot has a large request/accounting envelope, just as
+					// in the buffered projection. Only output is model content.
+					if context == "response" {
+						return collect(&value["output"], text, ancillary, "output");
+					}
+					let kind = value["type"].as_str();
+					for (key, value) in values {
+						if value.is_null() {
+							continue;
+						}
+						let field = key.as_str();
+						let supported = match context {
+							"choices" => matches!(
+								field,
+								"index" | "delta" | "message" | "text" | "finish_reason" | "logprobs"
+							),
+							"message" if kind != Some("message") => matches!(
+								field,
+								"role"
+									| "content"
+									| "refusal"
+									| "reasoning_content"
+									| "tool_calls"
+									| "function_call"
+							),
+							"message" => matches!(
+								field,
+								"id"
+									| "type" | "model"
+									| "role" | "content"
+									| "usage" | "stop_reason"
+									| "stop_sequence"
+							),
+							"delta" => matches!(
+								field,
+								"type"
+									| "role" | "content"
+									| "text" | "partial_json"
+									| "thinking"
+									| "signature"
+									| "reasoning_content"
+									| "reasoning_signature"
+									| "refusal"
+									| "tool_calls"
+									| "function_call"
+									| "stop_reason"
+									| "stop_sequence"
+									| "citations"
+							),
+							"tool_calls" => matches!(field, "index" | "id" | "type" | "function"),
+							"function" | "function_call" => matches!(field, "name" | "arguments"),
+							"content" | "content_block" | "part" | "item" | "output" => match kind {
+								Some("text" | "output_text") => matches!(
+									field,
+									"type" | "text" | "citations" | "annotations" | "logprobs" | "cache_control"
+								),
+								Some("refusal") => matches!(field, "type" | "refusal"),
+								Some("thinking") => matches!(field, "type" | "thinking" | "signature"),
+								Some("tool_use" | "server_tool_use") => {
+									matches!(field, "type" | "id" | "name" | "input" | "cache_control")
+								},
+								Some("function_call") => matches!(
+									field,
+									"type" | "id" | "call_id" | "name" | "arguments" | "status"
+								),
+								Some("custom_tool_call") => matches!(
+									field,
+									"type" | "id" | "call_id" | "name" | "input" | "status"
+								),
+								Some("message") => matches!(
+									field,
+									"type" | "id" | "role" | "content" | "status" | "phase"
+								),
+								_ => false,
+							},
+							_ => matches!(
+								field,
+								"choices"
+									| "type" | "index"
+									| "content_index"
+									| "output_index"
+									| "item_id"
+									| "sequence_number"
+									| "delta" | "text"
+									| "arguments"
+									| "name" | "content_block"
+									| "message"
+									| "response"
+									| "item" | "part"
+									| "usage" | "id"
+									| "object"
+									| "created"
+									| "model" | "system_fingerprint"
+									| "service_tier"
+									| "obfuscation"
+							),
+						};
+						if !supported {
+							return Err(());
+						}
+						match key.as_str() {
+							"text" | "content" | "delta" | "arguments" | "partial_json" | "thinking"
+							| "reasoning_content" | "refusal" | "choices" | "message" | "tool_calls"
+							| "function_call" | "function" | "content_block" | "response" | "output" | "item"
+							| "part" => collect(value, text, ancillary, key)?,
+							"input" => text.push_str(&serde_json::to_string(value).map_err(|_| ())?),
+							// Keep ancillary text out of the main delta sequence and its overlap.
+							"annotations" | "citations" | "logprobs" => {
+								if value.as_array().is_some_and(Vec::is_empty)
+									|| value.as_object().is_some_and(serde_json::Map::is_empty)
+								{
+									continue;
+								}
+								ancillary.push_str(&serde_json::to_string(value).map_err(|_| ())?);
+								ancillary.push('\n');
+							},
+							_ => {},
+						}
+					}
+					Ok(())
+				},
+				_ => Err(()),
 			}
 		}
-		let mut text = String::new();
 		fn uninspectable(value: &serde_json::Value) -> bool {
 			match value {
 				serde_json::Value::Array(a) => a.iter().any(uninspectable),
@@ -221,8 +341,9 @@ impl<B, L> GuardedSseBody<B, L> {
 		if uninspectable(&value) {
 			return Err(());
 		}
-		collect(&value, &mut text, false);
-		Ok((!text.is_empty()).then_some(text))
+		let (mut text, mut ancillary) = (String::new(), String::new());
+		collect(&value, &mut text, &mut ancillary, "")?;
+		Ok((text, ancillary))
 	}
 
 	fn encode_frame(frame: SseFrame<Bytes>) -> Option<Bytes> {
@@ -341,9 +462,11 @@ impl<B: http_body::Body<Data = Bytes>, L> http_body::Body for GuardedSseBody<B, 
 							loop {
 								match this.sse_decoder.decode(this.decode_buffer) {
 									Ok(Some(sse_frame)) => {
-										match Self::extract_text_delta(&sse_frame) {
-											Ok(Some(delta)) => this.pending_text.push_str(&delta),
-											Ok(None) => {},
+										match Self::extract_content(&sse_frame) {
+											Ok((delta, ancillary)) => {
+												this.pending_text.push_str(&delta);
+												this.pending_ancillary.push_str(&ancillary);
+											},
 											Err(()) => {
 												*this.state = GuardedBodyState::Blocked(Bytes::from_static(
 													b"Invalid structured stream",
@@ -379,22 +502,38 @@ impl<B: http_body::Body<Data = Bytes>, L> http_body::Body for GuardedSseBody<B, 
 							}
 
 							let over_limit = *this.held_bytes >= *this.buffer_limit;
-							if this.pending_text.len() >= *this.eval_threshold || over_limit {
+							if this
+								.pending_text
+								.len()
+								.saturating_add(this.pending_ancillary.len())
+								>= *this.eval_threshold
+								|| over_limit
+							{
 								// Having a full buffer but empty text implies that the
-								// buffer is full of non-text frames (e.g. control frames or unsupported SSE formats that fail to decode).
-								// In that case, flush the buffer as-is without evaluation, to avoid stalling on unprocessable content.
-								if this.pending_text.is_empty() {
+								// buffer contains only validated metadata/control frames.
+								// There is no model content to evaluate in this window.
+								if this.pending_text.is_empty() && this.pending_ancillary.is_empty() {
 									let queue: VecDeque<Bytes> = this.held_frames.drain(..).collect();
 									*this.held_bytes = 0;
 									*this.state = GuardedBodyState::Flushing { queue, eof: false };
 									continue;
 								}
 								let batch = std::mem::take(this.pending_text);
+								let ancillary = std::mem::take(this.pending_ancillary);
 								let window = format!("{}{}", this.overlap_tail, batch);
 								*this.overlap_tail = tail_chars(&window, OVERLAP_BYTES).to_string();
 								let mut evaluators = std::mem::take(this.evaluators);
 								let fut: EvalFuture = Box::pin(async move {
-									let blocked_body = evaluate_window(&mut evaluators, &window).await;
+									let mut blocked_body = None;
+									for text in [&window, &ancillary]
+										.into_iter()
+										.filter(|text| !text.is_empty())
+									{
+										blocked_body = evaluate_window(&mut evaluators, text).await;
+										if blocked_body.is_some() {
+											break;
+										}
+									}
 									(evaluators, blocked_body)
 								});
 								*this.state = GuardedBodyState::Evaluating { fut, eof: false };
@@ -422,7 +561,7 @@ impl<B: http_body::Body<Data = Bytes>, L> http_body::Body for GuardedSseBody<B, 
 								continue;
 							}
 
-							if this.pending_text.is_empty() {
+							if this.pending_text.is_empty() && this.pending_ancillary.is_empty() {
 								let queue: VecDeque<Bytes> = this.held_frames.drain(..).collect();
 								*this.held_bytes = 0;
 								*this.state = GuardedBodyState::Flushing { queue, eof: true };
@@ -430,11 +569,21 @@ impl<B: http_body::Body<Data = Bytes>, L> http_body::Body for GuardedSseBody<B, 
 							}
 
 							let batch = std::mem::take(this.pending_text);
+							let ancillary = std::mem::take(this.pending_ancillary);
 							let window = format!("{}{}", this.overlap_tail, batch);
 							this.overlap_tail.clear();
 							let mut evaluators = std::mem::take(this.evaluators);
 							let fut: EvalFuture = Box::pin(async move {
-								let blocked_body = evaluate_window(&mut evaluators, &window).await;
+								let mut blocked_body = None;
+								for text in [&window, &ancillary]
+									.into_iter()
+									.filter(|text| !text.is_empty())
+								{
+									blocked_body = evaluate_window(&mut evaluators, text).await;
+									if blocked_body.is_some() {
+										break;
+									}
+								}
 								(evaluators, blocked_body)
 							});
 							*this.state = GuardedBodyState::Evaluating { fut, eof: true };

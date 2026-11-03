@@ -37,7 +37,13 @@ pub(crate) use service::Runtime;
 struct DiscardAudit;
 
 impl AuditSink for DiscardAudit {
-	fn record(&self, _: SecurityEvent) {}
+	fn record(&self, event: SecurityEvent) {
+		// Policy evaluation is already audited by the inner Security Core. An execution
+		// failure occurs afterwards and must still reach the authoritative event sink.
+		if event.policy_id.as_deref() == Some("rag:document-purge-failed") {
+			UiSecurityAuditSink.record(event);
+		}
+	}
 }
 
 #[derive(Clone, Copy)]
@@ -50,7 +56,7 @@ impl IngestionAuditSink for TracingIngestionAudit {
 			request_id = %event.request_id,
 			corpus_id = %event.corpus_id,
 			document_id = %event.document_id,
-			tenant_id = ?event.tenant_id,
+			tenant_id = ?event.subject.tenant_id,
 			source_hash = ?event.source_hash,
 			outcome = ?event.outcome,
 			"RAG ingestion decision"
@@ -59,7 +65,7 @@ impl IngestionAuditSink for TracingIngestionAudit {
 			SecurityEventKind::RagIngestion,
 			event.request_id,
 			event.timestamp,
-			event.tenant_id,
+			event.subject,
 			"KnowledgeIngest:ingest",
 			"Document",
 			event.document_id,
@@ -115,7 +121,7 @@ impl RetrievalAuditSink for TracingRetrievalAudit {
 			SecurityEventKind::RagRetrieval,
 			event.request_id,
 			event.timestamp,
-			event.subject.tenant_id,
+			event.subject,
 			"KnowledgeRetrieve:retrieve",
 			"KnowledgeBase",
 			event.corpus_id,
@@ -165,7 +171,7 @@ impl ContextAuditSink for TracingContextAudit {
 			SecurityEventKind::RagContextAssembly,
 			event.request_id,
 			event.timestamp,
-			None,
+			event.subject,
 			"ContextAssemble:assemble",
 			"KnowledgeBase",
 			event.corpus_id,
@@ -278,10 +284,6 @@ async fn build_router(
 		.security
 		.configuration_digest()
 		.map_err(anyhow::Error::msg)?;
-	system
-		.security
-		.prepare_execution()
-		.map_err(anyhow::Error::msg)?;
 	let security = Arc::new(system.security);
 	let ingestor = SecureIngestor::new(
 		backend.clone(),
@@ -344,6 +346,7 @@ async fn verify_rag_jwt(
 		Ok(claims) => claims,
 		Err(_) => return StatusCode::UNAUTHORIZED.into_response(),
 	};
+	let expires = claims.inner.get("exp").and_then(serde_json::Value::as_i64);
 	if state.security.cross_component.is_some() {
 		let request_id = crate::security::request_id(request.extensions_mut());
 		let issuer = match crate::security_flow::rag_issuer(state.security.clone(), &claims, request_id)
@@ -364,16 +367,41 @@ async fn verify_rag_jwt(
 	let response = tokio::select! {
 		biased;
 		_ = lease.changed() => return StatusCode::FORBIDDEN.into_response(),
+		_ = credential_expired(expires) => return StatusCode::FORBIDDEN.into_response(),
 		response = next.run(request) => response,
 	};
-	if !state.lease.is_current() {
+	if !state.lease.is_current() || credential_is_expired(expires) {
 		return StatusCode::FORBIDDEN.into_response();
 	}
 	let (parts, body) = response.into_parts();
 	Response::from_parts(
 		parts,
-		axum::body::Body::new(service::RevocableBody::new(body, state.lease.clone())),
+		axum::body::Body::new(service::RevocableBody::new(
+			body,
+			state.lease.clone(),
+			expires,
+		)),
 	)
+}
+
+fn credential_is_expired(expires: Option<i64>) -> bool {
+	expires.is_some_and(|exp| exp <= chrono::Utc::now().timestamp())
+}
+
+async fn credential_expired(expires: Option<i64>) {
+	if let Some(expires) = expires {
+		let delay = std::time::Duration::from_millis(
+			expires
+				.saturating_mul(1000)
+				.saturating_sub(chrono::Utc::now().timestamp_millis())
+				.max(0) as u64,
+		);
+		if let Some(deadline) = tokio::time::Instant::now().checked_add(delay) {
+			tokio::time::sleep_until(deadline).await;
+			return;
+		}
+	}
+	std::future::pending::<()>().await;
 }
 
 fn bearer_token(headers: &axum::http::HeaderMap) -> Option<&str> {

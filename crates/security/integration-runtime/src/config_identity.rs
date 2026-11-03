@@ -7,7 +7,6 @@ use std::{
 };
 
 pub(super) struct ConfigurationIdentity {
-	json: String,
 	value: serde_json::Value,
 	digest: [u8; 32],
 }
@@ -54,11 +53,9 @@ impl SecurityConfig {
 		let json = serde_json::to_string(self)?;
 		let value = serde_json::to_value(self)?;
 		let digest = Sha256::digest(json.as_bytes()).into();
-		let _ = self.identity.set(Arc::new(ConfigurationIdentity {
-			json,
-			value,
-			digest,
-		}));
+		let _ = self
+			.identity
+			.set(Arc::new(ConfigurationIdentity { value, digest }));
 		Ok(
 			self
 				.identity
@@ -77,13 +74,10 @@ impl SecurityConfig {
 	}
 
 	/// Preserve the existing serialized bytes used by Context and execution-budget bindings.
-	/// Successful static validation and identity are reused until mutable access.
+	/// Reuses static validation; the compatibility API serializes only when explicitly requested.
 	pub fn validated_configuration_json(&self) -> Result<String, String> {
 		self.validate_composition()?;
-		self
-			.configuration_identity()
-			.map(|identity| identity.json.clone())
-			.map_err(|error| error.to_string())
+		serde_json::to_string(self).map_err(|error| error.to_string())
 	}
 
 	/// Compare declared configuration as JSON values, preserving object-order-independent equality.

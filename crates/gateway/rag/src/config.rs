@@ -88,6 +88,16 @@ impl RagGatewayConfig {
 		{
 			return Err("RAG security budgets must be greater than zero".into());
 		}
+		if self
+			.ingestion
+			.max_document_bytes
+			.checked_mul(6)
+			.and_then(|v| v.checked_add(64 * 1024))
+			.is_none()
+		{
+			return Err("RAG maxDocumentBytes exceeds the representable JSON transport limit".into());
+		}
+
 		let mut classification_ids = std::collections::HashSet::new();
 		if self.ingestion.classification_rules.iter().any(|rule| {
 			rule.id.trim().is_empty()

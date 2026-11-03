@@ -5,6 +5,7 @@ use security_capability_broker::CAPABILITY_CONTEXT_HEADER;
 use security_integration_runtime::SecurityConfig;
 use security_pipeline::{GatewayError, GatewayIdentity};
 use security_types::ResourceType;
+use std::sync::Arc;
 
 #[cfg(test)]
 #[path = "security_tests.rs"]
@@ -14,23 +15,23 @@ mod tests;
 /// Rules are never concatenated: an Allow in one declaration cannot override the other's Deny.
 #[derive(Clone, Copy)]
 pub(super) struct McpSecurity<'a> {
-	common: Option<&'a SecurityConfig>,
+	common: Option<&'a Arc<SecurityConfig>>,
 	legacy: Option<&'a LegacySecurityPipeline>,
 }
 
 impl<'a> McpSecurity<'a> {
 	pub(super) fn new(
-		common: Option<&'a SecurityConfig>,
+		common: Option<&'a Arc<SecurityConfig>>,
 		legacy: Option<&'a LegacySecurityPipeline>,
 	) -> Self {
 		Self { common, legacy }
 	}
 
-	fn configurations(&self) -> impl Iterator<Item = &'a SecurityConfig> {
+	fn configurations(&self) -> impl Iterator<Item = &'a Arc<SecurityConfig>> {
 		self
 			.common
 			.into_iter()
-			.chain(self.legacy.map(|config| config.configuration().as_ref()))
+			.chain(self.legacy.map(|config| config.configuration()))
 	}
 
 	pub(super) fn authorize(
@@ -49,32 +50,49 @@ impl<'a> McpSecurity<'a> {
 		Ok(())
 	}
 
-	fn authorize_tool(
+	pub(super) async fn authorize_async(
+		&self,
+		action: &security_types::ActionRequest,
+		arguments: Option<&serde_json::Value>,
+	) -> Result<(), GatewayError> {
+		for config in self.configurations() {
+			security_integration_runtime::evaluate_with_audit_async(
+				config.clone(),
+				action.clone(),
+				arguments.cloned(),
+				Arc::new(crate::security_events::UiSecurityAuditSink),
+			)
+			.await?;
+		}
+		Ok(())
+	}
+
+	async fn authorize_tool(
 		&self,
 		action: &security_types::ActionRequest,
 		arguments: &serde_json::Value,
 	) -> Result<Option<security_integration_runtime::CapabilityGrant>, GatewayError> {
-		// Preserve common authorization/approval before the legacy constraint. Publish the
-		// capability into the request only after both declarations have accepted the call.
-		let grant = self
-			.common
-			.map(|config| {
-				security_integration_runtime::authorize_tool_with_capability_with_audit(
-					config,
-					action,
-					arguments,
-					&crate::security_events::UiSecurityAuditSink,
-				)
-			})
-			.transpose()?
-			.flatten();
+		// Preserve common authorization/approval/issuance before the legacy constraint.
+		// Publish a capability into the request only after both declarations accept.
+		let grant = if let Some(config) = self.common {
+			security_integration_runtime::authorize_tool_with_capability_with_audit_async(
+				config.clone(),
+				action.clone(),
+				arguments.clone(),
+				Arc::new(crate::security_events::UiSecurityAuditSink),
+			)
+			.await?
+		} else {
+			None
+		};
 		if let Some(legacy) = self.legacy {
-			security_integration_runtime::evaluate_with_audit(
-				legacy.configuration(),
-				action,
-				Some(arguments),
-				&crate::security_events::UiSecurityAuditSink,
-			)?;
+			security_integration_runtime::evaluate_with_audit_async(
+				legacy.configuration().clone(),
+				action.clone(),
+				Some(arguments.clone()),
+				Arc::new(crate::security_events::UiSecurityAuditSink),
+			)
+			.await?;
 		}
 		Ok(grant)
 	}
@@ -114,7 +132,7 @@ impl<'a> McpSecurity<'a> {
 		self.authorize(&action, None).is_ok()
 	}
 
-	pub(super) fn authorize_request(
+	pub(super) async fn authorize_request(
 		&self,
 		request: &JsonRpcRequest<ClientRequest>,
 		context: &mut IncomingRequestContext,
@@ -123,6 +141,8 @@ impl<'a> McpSecurity<'a> {
 		if self.common.is_none() && self.legacy.is_none() {
 			return Ok(());
 		}
+		context.extensions_mut().remove::<IssuedCapability>();
+		super::dispatch::current(&context.as_request())?;
 		let op = normalize(
 			request,
 			context.security_request_id(),
@@ -171,13 +191,24 @@ impl<'a> McpSecurity<'a> {
 			.map_err(UpstreamError::Security)?;
 		}
 		if let Some(arguments) = &op.arguments {
-			let grant = self
-				.authorize_tool(&op.action, arguments)
-				.map_err(UpstreamError::Security)?;
+			let grant = Box::pin(super::dispatch::authorize(
+				context.as_request().map(|_| ()),
+				&op.action,
+				self.authorize_tool(&op.action, arguments),
+			))
+			.await?
+			.map_err(UpstreamError::Security)?;
 			if let Some(grant) = grant {
+				if grant.expires_at <= chrono::Utc::now() {
+					return Err(UpstreamError::InvalidRequest(
+						"capability expired before publication".into(),
+					));
+				}
 				let capability = ::http::HeaderValue::from_str(&grant.token)
 					.map_err(|_| UpstreamError::InvalidRequest("invalid broker token".into()))?;
-				let encoded = serde_json::to_vec(&op.action)
+				let mut bound_action = op.action.clone();
+				bound_action.authorization_context.approval = Some(grant.approval);
+				let encoded = serde_json::to_vec(&bound_action)
 					.map(|v| base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(v))
 					.map_err(|_| {
 						UpstreamError::InvalidRequest("unable to encode capability context".into())
@@ -186,15 +217,20 @@ impl<'a> McpSecurity<'a> {
 					UpstreamError::InvalidRequest(format!("invalid {CAPABILITY_CONTEXT_HEADER}"))
 				})?;
 				context.extensions_mut().insert(IssuedCapability {
+					expires_at: grant.expires_at,
 					capability,
 					context: context_header,
 				});
 			}
 			Ok(())
 		} else {
-			self
-				.authorize(&op.action, None)
-				.map_err(UpstreamError::Security)
+			Box::pin(super::dispatch::authorize(
+				context.as_request().map(|_| ()),
+				&op.action,
+				self.authorize_async(&op.action, None),
+			))
+			.await?
+			.map_err(UpstreamError::Security)
 		}
 	}
 }

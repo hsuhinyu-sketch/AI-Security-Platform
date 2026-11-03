@@ -148,7 +148,9 @@ impl Link {
 			&self.ticket.record.server,
 			&self.ticket.record.id,
 		);
-		crate::security::evaluate(&access.config, &action)
+		access
+			.security()
+			.authorize(&action, None)
 			.map_err(|_| access.denial("task-interaction-authorization"))?;
 		if let Some(guards) = &self.ticket.record.guards {
 			guards.check_mcp_elicitation_approval(&self.ticket.record.business)?;
@@ -186,7 +188,9 @@ impl Link {
 			&self.ticket.record.id,
 		);
 		action.request_id = request_id;
-		crate::security::evaluate(&access.config, &action)
+		access
+			.security()
+			.authorize(&action, None)
 			.map_err(|_| access.denial("task-sampling-model-correlation"))?;
 		if let Some(guards) = &self.ticket.record.guards {
 			guards.authorize_mcp_task(&access.config, &[&action])?;

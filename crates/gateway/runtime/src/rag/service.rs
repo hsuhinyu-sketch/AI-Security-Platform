@@ -149,16 +149,23 @@ async fn dispatch(
 pub(super) struct RevocableBody {
 	inner: axum::body::Body,
 	lease: ConfigLease,
+	expires: Option<i64>,
 	changed: Pin<Box<dyn Future<Output = ()> + Send>>,
 	ended: bool,
 }
 impl RevocableBody {
-	pub(super) fn new(inner: axum::body::Body, lease: ConfigLease) -> Self {
+	pub(super) fn new(inner: axum::body::Body, lease: ConfigLease, expires: Option<i64>) -> Self {
 		let mut receiver = lease.clone();
 		Self {
 			inner,
 			lease,
-			changed: Box::pin(async move { receiver.changed().await }),
+			expires,
+			changed: Box::pin(async move {
+				tokio::select! {
+					_ = receiver.changed() => (),
+					_ = super::credential_expired(expires) => (),
+				}
+			}),
 			ended: false,
 		}
 	}
@@ -183,19 +190,22 @@ impl Body for RevocableBody {
 		if self.ended {
 			return Poll::Ready(None);
 		}
-		if !self.lease.is_current() || self.changed.as_mut().poll(cx).is_ready() {
+		if !self.lease.is_current()
+			|| super::credential_is_expired(self.expires)
+			|| self.changed.as_mut().poll(cx).is_ready()
+		{
 			self.ended = true;
 			return Poll::Ready(Some(Err(std::io::Error::new(
 				std::io::ErrorKind::PermissionDenied,
-				"RAG configuration changed",
+				"RAG request expired or configuration changed",
 			))));
 		}
 		let frame = Pin::new(&mut self.inner).poll_frame(cx);
-		if !self.lease.is_current() {
+		if !self.lease.is_current() || super::credential_is_expired(self.expires) {
 			self.ended = true;
 			return Poll::Ready(Some(Err(std::io::Error::new(
 				std::io::ErrorKind::PermissionDenied,
-				"RAG configuration changed",
+				"RAG request expired or configuration changed",
 			))));
 		}
 		match frame {

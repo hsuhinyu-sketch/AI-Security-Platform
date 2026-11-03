@@ -688,7 +688,7 @@ impl SessionManager {
 		sess.delete_session(parts).await.ok()
 	}
 
-	pub fn get_protected(
+	pub async fn get_protected(
 		&self,
 		id: &str,
 		inputs: RelayInputs,
@@ -706,13 +706,13 @@ impl SessionManager {
 			.clone()
 			.ok_or_else(|| access.denial("unknown-or-not-owner"))?;
 		// Current policy/PDP evaluation may perform I/O: never hold the session map lock.
-		access.bind(binding.clone())?;
-		let mut sessions = self
+		access.bind(binding.clone()).await?;
+		let sessions = self
 			.sessions
-			.write()
+			.read()
 			.map_err(|_| access.denial("store-unavailable"))?;
-		let entry = sessions
-			.get_mut(id)
+		sessions
+			.get(id)
 			.filter(|entry| {
 				entry
 					.session
@@ -721,7 +721,6 @@ impl SessionManager {
 					.is_some_and(|b| Arc::ptr_eq(b, &binding) && !b.expired())
 			})
 			.ok_or_else(|| access.denial("unknown-or-not-owner"))?;
-		entry.last_access = Instant::now();
 		Ok(session.with_inputs(inputs))
 	}
 	pub async fn delete_protected(
@@ -731,7 +730,7 @@ impl SessionManager {
 		inputs: RelayInputs,
 		access: &mut super::session_security::SessionAccess,
 	) -> Result<Response, ProxyError> {
-		let checked = self.get_protected(id, inputs, access)?;
+		let checked = self.get_protected(id, inputs, access).await?;
 		let session = {
 			let mut sessions = self
 				.sessions
@@ -789,8 +788,12 @@ fn reap_expired_entries(sessions: &Arc<RwLock<HashMap<String, SessionEntry>>>) {
 	let mut guard = sessions.write().expect("write lock");
 	let pre = guard.len();
 	guard.retain(|_, entry| {
-		let keep = now.duration_since(entry.last_access) < entry.idle_ttl
-			&& entry.session.binding.as_ref().is_none_or(|b| !b.expired());
+		// Protected streams update their binding when a validated message is accepted.
+		// Their SessionEntry timestamp only describes lookup time and is not an idle clock.
+		let keep = entry.session.binding.as_ref().map_or_else(
+			|| now.duration_since(entry.last_access) < entry.idle_ttl,
+			|binding| !binding.expired(),
+		);
 		if !keep && let Some(binding) = &entry.session.binding {
 			binding
 				.closed

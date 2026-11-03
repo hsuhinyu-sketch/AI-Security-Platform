@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use axum::{
 	Json, Router,
-	extract::{Extension, Request, State},
+	extract::{DefaultBodyLimit, Extension, Request, State},
 	http::{HeaderMap, StatusCode},
 	middleware::{self, Next},
 	response::Response,
@@ -39,6 +39,12 @@ pub trait ContextConstraintIssuer: Send + Sync {
 	fn revoke(&self, _id: &str) -> Result<(), String> {
 		Err("context revocation unavailable".into())
 	}
+	fn revoke_async<'a>(
+		&'a self,
+		id: &'a str,
+	) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), String>> + Send + 'a>> {
+		Box::pin(async move { self.revoke(id) })
+	}
 }
 #[derive(Clone)]
 pub struct VerifiedContextIssuer(pub Arc<dyn ContextConstraintIssuer>);
@@ -47,6 +53,8 @@ pub struct VerifiedContextIssuer(pub Arc<dyn ContextConstraintIssuer>);
 /// exposing the concrete policy, audit, vector-store, and chunking types in its public state.
 #[async_trait::async_trait]
 pub trait RagHttpService: Send + Sync {
+	/// Decoded document content budget, also used to bound the JSON transport.
+	fn max_document_bytes(&self) -> usize;
 	async fn document_operation(
 		&self,
 		_request_id: String,
@@ -109,6 +117,10 @@ where
 	RAudit: security_rag::RetrievalAuditSink,
 	CA: security_rag::ContextAuditSink,
 {
+	fn max_document_bytes(&self) -> usize {
+		self.ingestor().max_document_bytes()
+	}
+
 	async fn document_operation(
 		&self,
 		request_id: String,
@@ -130,7 +142,9 @@ where
 		document_id: &str,
 		source_id: &str,
 	) -> Result<(), RagGatewayError> {
-		self.authorize_import(request_id, identity, corpus_id, document_id, source_id)
+		self
+			.authorize_import_async(request_id, identity, corpus_id, document_id, source_id)
+			.await
 	}
 
 	fn record_source_fetch_failure(
@@ -180,8 +194,14 @@ pub fn router_with_sources(
 	sources: Option<Arc<TrustedHttpsSourceRegistry>>,
 ) -> Router {
 	let has_sources = sources.is_some();
+	// JSON can encode one content byte as six bytes (e.g. \u0000). Metadata/whitespace
+	// remain bounded independently of the decoded content budget enforced by SecureIngestor.
+	let ingest_limit = ingest_body_limit(service.max_document_bytes());
 	let mut router = Router::new()
-		.route("/v1/rag/documents", post(ingest_document))
+		.route(
+			"/v1/rag/documents",
+			post(ingest_document).layer(DefaultBodyLimit::max(ingest_limit)),
+		)
 		.route("/v1/rag/documents/lifecycle", post(document_operation))
 		.route("/v1/rag/contexts/revoke", post(revoke_context))
 		.route("/v1/rag/query", post(query_corpus));
@@ -191,6 +211,11 @@ pub fn router_with_sources(
 	router
 		.with_state(Arc::new(RagHttpState { service, sources }))
 		.layer(middleware::from_fn(correlate_request))
+}
+
+/// Include worst-case JSON escaping and a bounded envelope. Config validation rejects overflow.
+pub(crate) fn ingest_body_limit(content_bytes: usize) -> usize {
+	content_bytes.saturating_mul(6).saturating_add(64 * 1024)
 }
 
 /// Only trusted in-process extensions can provide a prior context. Client IDs never mint it.
@@ -241,7 +266,7 @@ async fn document_operation(
 	Json(body): Json<DocumentOperationBody>,
 ) -> Result<(StatusCode, HeaderMap, Json<crate::DocumentStatus>), (StatusCode, Json<ApiError>)> {
 	let identity = verified_identity(identity)?;
-	let status = state
+	let result = state
 		.service
 		.document_operation(
 			context.request_id().to_owned(),
@@ -251,14 +276,18 @@ async fn document_operation(
 			body.expected_revision,
 			body.mutation,
 		)
-		.await
-		.map_err(map_error)?;
+		.await;
+	let (code, status) = match result {
+		Ok(status) => (StatusCode::OK, status),
+		Err(RagGatewayError::PurgeFailed(status)) => (StatusCode::BAD_GATEWAY, status),
+		Err(error) => return Err(map_error(error)),
+	};
 	let mut headers = HeaderMap::new();
 	headers.insert(
 		"cache-control",
 		"private, no-store".parse().expect("constant"),
 	);
-	Ok((StatusCode::OK, headers, Json(status)))
+	Ok((code, headers, Json(status)))
 }
 
 #[derive(Deserialize)]
@@ -287,7 +316,8 @@ async fn revoke_context(
 		.ok_or_else(denied)?
 		.0
 		.0
-		.revoke(&body.context_id)
+		.revoke_async(&body.context_id)
+		.await
 		.map_err(|_| denied())?;
 	let mut headers = HeaderMap::new();
 	headers.insert(

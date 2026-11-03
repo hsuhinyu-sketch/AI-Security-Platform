@@ -144,13 +144,14 @@ impl StreamableHttpService {
 		} else {
 			"use"
 		};
-		let mut access = super::session_security::SessionAccess::prepare(
+		let mut access = Box::pin(super::session_security::SessionAccess::prepare(
 			&mut part,
 			&inputs,
 			&self.session_manager,
 			operation,
 			header_session.as_deref(),
-		)?;
+		))
+		.await?;
 		if let Some(access) = &access {
 			if part.headers.contains_key("last-event-id")
 				|| (!self.config.stateful_mode && header_session.is_some())
@@ -234,12 +235,11 @@ impl StreamableHttpService {
 				trace!("cleaning up stateless session");
 				let _ = session.delete_session(part).await;
 			});
-			return response
-				.map(|r| r.map(|b| DropBody::new(b, tx)))
-				.and_then(|r| match &access {
-					Some(a) => a.protect_response(r),
-					None => Ok(r),
-				});
+			let response = response?.map(|b| DropBody::new(b, tx));
+			return match &access {
+				Some(a) => a.protect_response(response).await,
+				None => Ok(response),
+			};
 		}
 
 		let session_id = part
@@ -254,10 +254,11 @@ impl StreamableHttpService {
 			if let Some(access) = &mut access {
 				let mut session = self
 					.session_manager
-					.get_protected(session_id, inputs, access)?;
+					.get_protected(session_id, inputs, access)
+					.await?;
 				access.install(&mut part);
 				let response = access.call(Box::pin(session.send(part, message))).await?;
-				return access.protect_response(response);
+				return access.protect_response(response).await;
 			}
 			let Some(mut session) = self
 				.session_manager
@@ -277,7 +278,7 @@ impl StreamableHttpService {
 				None => Box::pin(session.send(part, message)).await?,
 			};
 			return match &access {
-				Some(a) => a.protect_response(response),
+				Some(a) => a.protect_response(response).await,
 				None => Ok(response),
 			};
 		}
@@ -346,22 +347,26 @@ impl StreamableHttpService {
 
 		let session_id = session_id.to_owned();
 		let (mut parts, _) = request.into_parts();
-		let mut access = super::session_security::SessionAccess::prepare(
+		let mut access = Box::pin(super::session_security::SessionAccess::prepare(
 			&mut parts,
 			&inputs,
 			&self.session_manager,
 			"listen",
 			Some(&session_id),
-		)?;
+		))
+		.await?;
 		if let Some(access) = &mut access {
 			if parts.headers.contains_key("last-event-id") {
 				return Err(access.denial("unsupported-replay"));
 			}
 			let session = self
 				.session_manager
-				.get_protected(&session_id, inputs, access)?;
+				.get_protected(&session_id, inputs, access)
+				.await?;
 			access.install(&mut parts);
-			return access.protect_response(access.call(Box::pin(session.get_stream(parts))).await?);
+			return access
+				.protect_response(access.call(Box::pin(session.get_stream(parts))).await?)
+				.await;
 		}
 		let Some(session) = self.session_manager.get_session(&session_id, inputs) else {
 			return mcp::Error::UnknownSession.into();
@@ -387,13 +392,15 @@ impl StreamableHttpService {
 		};
 		let session_id = session_id.to_string();
 		let (mut parts, _) = request.into_parts();
-		if let Some(mut access) = super::session_security::SessionAccess::prepare(
+		if let Some(mut access) = Box::pin(super::session_security::SessionAccess::prepare(
 			&mut parts,
 			&inputs,
 			&self.session_manager,
 			"close",
 			Some(&session_id),
-		)? {
+		))
+		.await?
+		{
 			access.install(&mut parts);
 			return self
 				.session_manager

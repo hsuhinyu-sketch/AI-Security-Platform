@@ -114,6 +114,7 @@ fn audit_invocation(
 fn audit_policy(action: &ActionRequest, result: Result<(), BudgetError>, policy_id: String) {
 	use security_audit::AuditSink;
 	let decision = security_types::Decision {
+		approval: None,
 		request_id: action.request_id.clone(),
 		effect: if result.is_ok() {
 			security_types::DecisionEffect::Allow
@@ -289,6 +290,9 @@ impl ExecutionScope {
 				Ok(result)
 			}
 		}
+	}
+	pub(crate) fn same_execution(&self, other: &Self) -> bool {
+		self.fingerprint == other.fingerprint && self.handle.id() == other.handle.id()
 	}
 	pub fn binding(&self) -> String {
 		crate::security::digest(

@@ -261,14 +261,12 @@ impl ServiceStore {
 	fn insert_endpoint_for_services(
 		&mut self,
 		workload: &Arc<Workload>,
-		services: &HashMap<String, HashMap<u16, u16>>,
+		services: &HashMap<NamespacedHostname, HashMap<u16, u16>>,
 		locality_source: Option<&Workload>,
-	) -> anyhow::Result<()> {
+	) {
 		for (namespaced_host, ports) in services {
-			// Parse the namespaced hostname for the service.
-			let namespaced_host = NamespacedHostname::from_str(namespaced_host)?;
 			self.insert_endpoint(
-				namespaced_host,
+				namespaced_host.clone(),
 				Endpoint {
 					workload_uid: workload.uid.clone(),
 					port: ports.clone(),
@@ -278,7 +276,6 @@ impl ServiceStore {
 				locality_source,
 			)
 		}
-		Ok(())
 	}
 
 	fn insert_endpoint(
@@ -564,6 +561,18 @@ impl StoreUpdater {
 		workloads: Vec<LocalWorkload>,
 		prev: PreviousState,
 	) -> anyhow::Result<PreviousState> {
+		// Parse the whole candidate before modifying workloads, endpoints, or notifiers.
+		let workloads = workloads
+			.into_iter()
+			.map(|wl| {
+				let services = wl
+					.services
+					.into_iter()
+					.map(|(host, ports)| Ok((NamespacedHostname::from_str(&host)?, ports)))
+					.collect::<anyhow::Result<HashMap<_, _>>>()?;
+				Ok((wl.workload, services))
+			})
+			.collect::<anyhow::Result<Vec<_>>>()?;
 		let mut s = self.state.write().expect("mutex acquired");
 		let mut old_workloads = prev.workloads;
 		let mut old_services = prev.services;
@@ -572,24 +581,12 @@ impl StoreUpdater {
 			workloads: Default::default(),
 		};
 		let source = s.self_workload.get().cloned();
-		for wl in workloads {
-			trace!("inserting local workload {}", &wl.workload.uid);
-			let mut workload = wl.workload;
+		for (mut workload, services) in workloads {
+			trace!("inserting local workload {}", &workload.uid);
 			// Merge the LocalWorkload's per-service port maps into Workload.services so the
 			// workload carries the full membership info. `insert_service_internal` relies on
 			// this to rebuild the EndpointSet when a Service's LB config changes.
-			for (host, ports) in &wl.services {
-				let Some((namespace, hostname)) = host.split_once('/') else {
-					continue;
-				};
-				workload.services.insert(
-					NamespacedHostname {
-						namespace: namespace.into(),
-						hostname: hostname.into(),
-					},
-					ports.clone(),
-				);
-			}
+			workload.services.extend(services.clone());
 			let w = Arc::new(workload);
 			// First, remove the entry entirely to make sure things are cleaned up properly.
 			s.remove_workload_for_insert(&w.uid);
@@ -597,7 +594,7 @@ impl StoreUpdater {
 			// Lock and upstate the stores.
 			s.workloads.insert(w.clone());
 			s.services
-				.insert_endpoint_for_services(&w, &wl.services, source.as_ref())?;
+				.insert_endpoint_for_services(&w, &services, source.as_ref());
 			old_workloads.remove(&w.uid);
 			next_state.workloads.insert(w.uid.clone());
 		}
@@ -639,4 +636,59 @@ pub struct LocalWorkload {
 	#[serde(flatten)]
 	pub workload: Workload,
 	pub services: HashMap<String, HashMap<u16, u16>>,
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	fn workload(uid: &str, host: &str) -> LocalWorkload {
+		LocalWorkload {
+			workload: Workload {
+				uid: uid.into(),
+				..Default::default()
+			},
+			services: HashMap::from([(host.into(), HashMap::from([(80, 8080)]))]),
+		}
+	}
+
+	#[test]
+	fn rejected_candidate_preserves_workloads_endpoints_and_notifications() {
+		let updater = StoreUpdater::new(Arc::new(RwLock::new(Store::new())));
+		let prev = updater
+			.sync_local(
+				vec![],
+				vec![workload("old", "default/service")],
+				PreviousState::default(),
+			)
+			.unwrap();
+		let before = serde_json::to_value(updater.dump()).unwrap();
+		let mut changed = updater.read().workloads.insert_notifier.subscribe();
+		changed.borrow_and_update();
+		assert!(
+			updater
+				.sync_local(
+					vec![],
+					vec![
+						workload("new", "default/service"),
+						workload("old", "invalid-service-key"),
+					],
+					prev.clone()
+				)
+				.is_err()
+		);
+		assert_eq!(serde_json::to_value(updater.dump()).unwrap(), before);
+		assert!(!changed.has_changed().unwrap());
+		let key = NamespacedHostname::from_str("default/service").unwrap();
+		assert_eq!(updater.read().services.staged_services[&key].len(), 1);
+		assert!(updater.read().services.staged_services[&key].contains_key("old"));
+
+		let next = updater
+			.sync_local(vec![], vec![workload("new", "default/service")], prev)
+			.unwrap();
+		assert_eq!(next.workloads, HashSet::from(["new".into()]));
+		assert!(updater.read().workloads.find_uid(&"old".into()).is_none());
+		assert!(updater.read().services.staged_services[&key].contains_key("new"));
+		assert!(!updater.read().services.staged_services[&key].contains_key("old"));
+	}
 }

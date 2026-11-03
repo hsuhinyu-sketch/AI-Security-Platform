@@ -21,6 +21,10 @@ use crate::types::agent::{
 };
 use crate::{cel, mcp};
 
+#[cfg(test)]
+#[path = "router_tests.rs"]
+mod tests;
+
 #[derive(Debug, Clone)]
 pub struct App {
 	state: Stores,
@@ -53,10 +57,23 @@ impl App {
 			return None;
 		}
 
-		if backend_policies.mcp_authentication.is_some() {
+		// Raw HTTP bypasses MCP authorization and lifecycle checks. Only unprotected,
+		// read-only metadata discovery can use that compatibility path.
+		if backend_policies.mcp_authentication.is_some()
+			|| backend_policies.mcp_authorization.is_some()
+			|| backend_policies.mcp_guardrails.is_some()
+			|| backend_policies.security_pipeline.is_some()
+			|| backend_policies.security_audit.is_some()
+			|| req
+				.extensions()
+				.get::<crate::proxy::InheritedConfigs>()
+				.is_some_and(|configs| !configs.0.is_empty())
+		{
 			return None;
 		}
-		if !req.uri().path().contains("/.well-known/") {
+		if !matches!(*req.method(), Method::GET | Method::HEAD)
+			|| !req.uri().path().starts_with("/.well-known/")
+		{
 			return None;
 		}
 		match backend.targets.first().map(|t| &t.spec) {

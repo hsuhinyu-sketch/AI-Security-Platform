@@ -4,6 +4,7 @@ use security_types::{ActionRequest, Decision, DecisionEffect};
 pub fn decide(policies: &[Policy], request: &ActionRequest) -> Decision {
 	match evaluate(policies, request) {
 		Some(policy) => Decision {
+			approval: None,
 			request_id: request.request_id.clone(),
 			effect: policy.effect,
 			policy_id: Some(policy.id.clone()),
@@ -11,6 +12,7 @@ pub fn decide(policies: &[Policy], request: &ActionRequest) -> Decision {
 			expires_at: None,
 		},
 		None => Decision {
+			approval: None,
 			request_id: request.request_id.clone(),
 			// Protected resources are fail-closed unless a policy explicitly allows them.
 			effect: DecisionEffect::Deny,

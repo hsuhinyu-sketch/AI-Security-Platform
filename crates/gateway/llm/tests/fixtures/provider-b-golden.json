@@ -8,7 +8,7 @@
     },
     "model": "arn:aws:bedrock:us-east-1:123:inference-profile/anthropic.claude%版本? x",
     "expected": {
-      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC? x/converse",
+      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC%3F%20x/converse",
       "host": "bedrock-runtime.us-east-1.amazonaws.com",
       "anthropic": true,
       "noRequest": false
@@ -23,7 +23,7 @@
     },
     "model": "arn:aws:bedrock:us-east-1:123:inference-profile/anthropic.claude%版本? x",
     "expected": {
-      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC? x/converse-stream",
+      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC%3F%20x/converse-stream",
       "host": "bedrock-runtime.us-east-1.amazonaws.com",
       "anthropic": true,
       "noRequest": false
@@ -38,7 +38,7 @@
     },
     "model": "arn:aws:bedrock:us-east-1:123:inference-profile/anthropic.claude%版本? x",
     "expected": {
-      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC? x/converse",
+      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC%3F%20x/converse",
       "host": "bedrock-runtime.us-east-1.amazonaws.com",
       "anthropic": true,
       "noRequest": false
@@ -53,7 +53,7 @@
     },
     "model": "arn:aws:bedrock:us-east-1:123:inference-profile/anthropic.claude%版本? x",
     "expected": {
-      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC? x/converse-stream",
+      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC%3F%20x/converse-stream",
       "host": "bedrock-runtime.us-east-1.amazonaws.com",
       "anthropic": true,
       "noRequest": false
@@ -68,7 +68,7 @@
     },
     "model": "arn:aws:bedrock:us-east-1:123:inference-profile/anthropic.claude%版本? x",
     "expected": {
-      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC? x/converse",
+      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC%3F%20x/converse",
       "host": "bedrock-runtime.us-east-1.amazonaws.com",
       "anthropic": true,
       "noRequest": false
@@ -83,7 +83,7 @@
     },
     "model": "arn:aws:bedrock:us-east-1:123:inference-profile/anthropic.claude%版本? x",
     "expected": {
-      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC? x/converse-stream",
+      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC%3F%20x/converse-stream",
       "host": "bedrock-runtime.us-east-1.amazonaws.com",
       "anthropic": true,
       "noRequest": false
@@ -98,7 +98,7 @@
     },
     "model": "arn:aws:bedrock:us-east-1:123:inference-profile/anthropic.claude%版本? x",
     "expected": {
-      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC? x/converse",
+      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC%3F%20x/converse",
       "host": "bedrock-runtime.us-east-1.amazonaws.com",
       "anthropic": true,
       "noRequest": false
@@ -113,7 +113,7 @@
     },
     "model": "arn:aws:bedrock:us-east-1:123:inference-profile/anthropic.claude%版本? x",
     "expected": {
-      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC? x/converse-stream",
+      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC%3F%20x/converse-stream",
       "host": "bedrock-runtime.us-east-1.amazonaws.com",
       "anthropic": true,
       "noRequest": false
@@ -128,7 +128,7 @@
     },
     "model": "arn:aws:bedrock:us-east-1:123:inference-profile/anthropic.claude%版本? x",
     "expected": {
-      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC? x/converse",
+      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC%3F%20x/converse",
       "host": "bedrock-runtime.us-east-1.amazonaws.com",
       "anthropic": true,
       "noRequest": false
@@ -143,7 +143,7 @@
     },
     "model": "arn:aws:bedrock:us-east-1:123:inference-profile/anthropic.claude%版本? x",
     "expected": {
-      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC? x/converse-stream",
+      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC%3F%20x/converse-stream",
       "host": "bedrock-runtime.us-east-1.amazonaws.com",
       "anthropic": true,
       "noRequest": false
@@ -158,7 +158,7 @@
     },
     "model": "arn:aws:bedrock:us-east-1:123:inference-profile/anthropic.claude%版本? x",
     "expected": {
-      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC? x/converse",
+      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC%3F%20x/converse",
       "host": "bedrock-runtime.us-east-1.amazonaws.com",
       "anthropic": true,
       "noRequest": false
@@ -173,7 +173,7 @@
     },
     "model": "arn:aws:bedrock:us-east-1:123:inference-profile/anthropic.claude%版本? x",
     "expected": {
-      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC? x/converse-stream",
+      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC%3F%20x/converse-stream",
       "host": "bedrock-runtime.us-east-1.amazonaws.com",
       "anthropic": true,
       "noRequest": false
@@ -188,7 +188,7 @@
     },
     "model": "arn:aws:bedrock:us-east-1:123:inference-profile/anthropic.claude%版本? x",
     "expected": {
-      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC? x/invoke",
+      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC%3F%20x/invoke",
       "host": "bedrock-runtime.us-east-1.amazonaws.com",
       "anthropic": true,
       "noRequest": false
@@ -203,7 +203,7 @@
     },
     "model": "arn:aws:bedrock:us-east-1:123:inference-profile/anthropic.claude%版本? x",
     "expected": {
-      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC? x/invoke",
+      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC%3F%20x/invoke",
       "host": "bedrock-runtime.us-east-1.amazonaws.com",
       "anthropic": true,
       "noRequest": false
@@ -218,7 +218,7 @@
     },
     "model": "arn:aws:bedrock:us-east-1:123:inference-profile/anthropic.claude%版本? x",
     "expected": {
-      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC? x/converse",
+      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC%3F%20x/converse",
       "host": "bedrock-runtime.us-east-1.amazonaws.com",
       "anthropic": true,
       "noRequest": false
@@ -233,7 +233,7 @@
     },
     "model": "arn:aws:bedrock:us-east-1:123:inference-profile/anthropic.claude%版本? x",
     "expected": {
-      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC? x/converse-stream",
+      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC%3F%20x/converse-stream",
       "host": "bedrock-runtime.us-east-1.amazonaws.com",
       "anthropic": true,
       "noRequest": false
@@ -248,7 +248,7 @@
     },
     "model": "arn:aws:bedrock:us-east-1:123:inference-profile/anthropic.claude%版本? x",
     "expected": {
-      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC? x/count-tokens",
+      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC%3F%20x/count-tokens",
       "host": "bedrock-runtime.us-east-1.amazonaws.com",
       "anthropic": true,
       "noRequest": false
@@ -263,7 +263,7 @@
     },
     "model": "arn:aws:bedrock:us-east-1:123:inference-profile/anthropic.claude%版本? x",
     "expected": {
-      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC? x/count-tokens",
+      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC%3F%20x/count-tokens",
       "host": "bedrock-runtime.us-east-1.amazonaws.com",
       "anthropic": true,
       "noRequest": false
@@ -308,7 +308,7 @@
     },
     "model": "arn:aws:bedrock:us-east-1:123:inference-profile/anthropic.claude%版本? x",
     "expected": {
-      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC? x/converse",
+      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC%3F%20x/converse",
       "host": "bedrock-runtime.cn-north-1.amazonaws.com",
       "anthropic": true,
       "noRequest": false
@@ -323,7 +323,7 @@
     },
     "model": "arn:aws:bedrock:us-east-1:123:inference-profile/anthropic.claude%版本? x",
     "expected": {
-      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC? x/converse-stream",
+      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC%3F%20x/converse-stream",
       "host": "bedrock-runtime.cn-north-1.amazonaws.com",
       "anthropic": true,
       "noRequest": false
@@ -338,7 +338,7 @@
     },
     "model": "arn:aws:bedrock:us-east-1:123:inference-profile/anthropic.claude%版本? x",
     "expected": {
-      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC? x/converse",
+      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC%3F%20x/converse",
       "host": "bedrock-runtime.cn-north-1.amazonaws.com",
       "anthropic": true,
       "noRequest": false
@@ -353,7 +353,7 @@
     },
     "model": "arn:aws:bedrock:us-east-1:123:inference-profile/anthropic.claude%版本? x",
     "expected": {
-      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC? x/converse-stream",
+      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC%3F%20x/converse-stream",
       "host": "bedrock-runtime.cn-north-1.amazonaws.com",
       "anthropic": true,
       "noRequest": false
@@ -368,7 +368,7 @@
     },
     "model": "arn:aws:bedrock:us-east-1:123:inference-profile/anthropic.claude%版本? x",
     "expected": {
-      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC? x/converse",
+      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC%3F%20x/converse",
       "host": "bedrock-runtime.cn-north-1.amazonaws.com",
       "anthropic": true,
       "noRequest": false
@@ -383,7 +383,7 @@
     },
     "model": "arn:aws:bedrock:us-east-1:123:inference-profile/anthropic.claude%版本? x",
     "expected": {
-      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC? x/converse-stream",
+      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC%3F%20x/converse-stream",
       "host": "bedrock-runtime.cn-north-1.amazonaws.com",
       "anthropic": true,
       "noRequest": false
@@ -398,7 +398,7 @@
     },
     "model": "arn:aws:bedrock:us-east-1:123:inference-profile/anthropic.claude%版本? x",
     "expected": {
-      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC? x/converse",
+      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC%3F%20x/converse",
       "host": "bedrock-runtime.cn-north-1.amazonaws.com",
       "anthropic": true,
       "noRequest": false
@@ -413,7 +413,7 @@
     },
     "model": "arn:aws:bedrock:us-east-1:123:inference-profile/anthropic.claude%版本? x",
     "expected": {
-      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC? x/converse-stream",
+      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC%3F%20x/converse-stream",
       "host": "bedrock-runtime.cn-north-1.amazonaws.com",
       "anthropic": true,
       "noRequest": false
@@ -428,7 +428,7 @@
     },
     "model": "arn:aws:bedrock:us-east-1:123:inference-profile/anthropic.claude%版本? x",
     "expected": {
-      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC? x/converse",
+      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC%3F%20x/converse",
       "host": "bedrock-runtime.cn-north-1.amazonaws.com",
       "anthropic": true,
       "noRequest": false
@@ -443,7 +443,7 @@
     },
     "model": "arn:aws:bedrock:us-east-1:123:inference-profile/anthropic.claude%版本? x",
     "expected": {
-      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC? x/converse-stream",
+      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC%3F%20x/converse-stream",
       "host": "bedrock-runtime.cn-north-1.amazonaws.com",
       "anthropic": true,
       "noRequest": false
@@ -458,7 +458,7 @@
     },
     "model": "arn:aws:bedrock:us-east-1:123:inference-profile/anthropic.claude%版本? x",
     "expected": {
-      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC? x/converse",
+      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC%3F%20x/converse",
       "host": "bedrock-runtime.cn-north-1.amazonaws.com",
       "anthropic": true,
       "noRequest": false
@@ -473,7 +473,7 @@
     },
     "model": "arn:aws:bedrock:us-east-1:123:inference-profile/anthropic.claude%版本? x",
     "expected": {
-      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC? x/converse-stream",
+      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC%3F%20x/converse-stream",
       "host": "bedrock-runtime.cn-north-1.amazonaws.com",
       "anthropic": true,
       "noRequest": false
@@ -488,7 +488,7 @@
     },
     "model": "arn:aws:bedrock:us-east-1:123:inference-profile/anthropic.claude%版本? x",
     "expected": {
-      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC? x/invoke",
+      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC%3F%20x/invoke",
       "host": "bedrock-runtime.cn-north-1.amazonaws.com",
       "anthropic": true,
       "noRequest": false
@@ -503,7 +503,7 @@
     },
     "model": "arn:aws:bedrock:us-east-1:123:inference-profile/anthropic.claude%版本? x",
     "expected": {
-      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC? x/invoke",
+      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC%3F%20x/invoke",
       "host": "bedrock-runtime.cn-north-1.amazonaws.com",
       "anthropic": true,
       "noRequest": false
@@ -518,7 +518,7 @@
     },
     "model": "arn:aws:bedrock:us-east-1:123:inference-profile/anthropic.claude%版本? x",
     "expected": {
-      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC? x/converse",
+      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC%3F%20x/converse",
       "host": "bedrock-runtime.cn-north-1.amazonaws.com",
       "anthropic": true,
       "noRequest": false
@@ -533,7 +533,7 @@
     },
     "model": "arn:aws:bedrock:us-east-1:123:inference-profile/anthropic.claude%版本? x",
     "expected": {
-      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC? x/converse-stream",
+      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC%3F%20x/converse-stream",
       "host": "bedrock-runtime.cn-north-1.amazonaws.com",
       "anthropic": true,
       "noRequest": false
@@ -548,7 +548,7 @@
     },
     "model": "arn:aws:bedrock:us-east-1:123:inference-profile/anthropic.claude%版本? x",
     "expected": {
-      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC? x/count-tokens",
+      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC%3F%20x/count-tokens",
       "host": "bedrock-runtime.cn-north-1.amazonaws.com",
       "anthropic": true,
       "noRequest": false
@@ -563,7 +563,7 @@
     },
     "model": "arn:aws:bedrock:us-east-1:123:inference-profile/anthropic.claude%版本? x",
     "expected": {
-      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC? x/count-tokens",
+      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC%3F%20x/count-tokens",
       "host": "bedrock-runtime.cn-north-1.amazonaws.com",
       "anthropic": true,
       "noRequest": false
@@ -608,7 +608,7 @@
     },
     "model": "arn:aws:bedrock:us-east-1:123:inference-profile/anthropic.claude%版本? x",
     "expected": {
-      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC? x/converse",
+      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC%3F%20x/converse",
       "host": "bedrock-runtime.us-gov-west-1.amazonaws.com",
       "anthropic": true,
       "noRequest": false
@@ -623,7 +623,7 @@
     },
     "model": "arn:aws:bedrock:us-east-1:123:inference-profile/anthropic.claude%版本? x",
     "expected": {
-      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC? x/converse-stream",
+      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC%3F%20x/converse-stream",
       "host": "bedrock-runtime.us-gov-west-1.amazonaws.com",
       "anthropic": true,
       "noRequest": false
@@ -638,7 +638,7 @@
     },
     "model": "arn:aws:bedrock:us-east-1:123:inference-profile/anthropic.claude%版本? x",
     "expected": {
-      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC? x/converse",
+      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC%3F%20x/converse",
       "host": "bedrock-runtime.us-gov-west-1.amazonaws.com",
       "anthropic": true,
       "noRequest": false
@@ -653,7 +653,7 @@
     },
     "model": "arn:aws:bedrock:us-east-1:123:inference-profile/anthropic.claude%版本? x",
     "expected": {
-      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC? x/converse-stream",
+      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC%3F%20x/converse-stream",
       "host": "bedrock-runtime.us-gov-west-1.amazonaws.com",
       "anthropic": true,
       "noRequest": false
@@ -668,7 +668,7 @@
     },
     "model": "arn:aws:bedrock:us-east-1:123:inference-profile/anthropic.claude%版本? x",
     "expected": {
-      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC? x/converse",
+      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC%3F%20x/converse",
       "host": "bedrock-runtime.us-gov-west-1.amazonaws.com",
       "anthropic": true,
       "noRequest": false
@@ -683,7 +683,7 @@
     },
     "model": "arn:aws:bedrock:us-east-1:123:inference-profile/anthropic.claude%版本? x",
     "expected": {
-      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC? x/converse-stream",
+      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC%3F%20x/converse-stream",
       "host": "bedrock-runtime.us-gov-west-1.amazonaws.com",
       "anthropic": true,
       "noRequest": false
@@ -698,7 +698,7 @@
     },
     "model": "arn:aws:bedrock:us-east-1:123:inference-profile/anthropic.claude%版本? x",
     "expected": {
-      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC? x/converse",
+      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC%3F%20x/converse",
       "host": "bedrock-runtime.us-gov-west-1.amazonaws.com",
       "anthropic": true,
       "noRequest": false
@@ -713,7 +713,7 @@
     },
     "model": "arn:aws:bedrock:us-east-1:123:inference-profile/anthropic.claude%版本? x",
     "expected": {
-      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC? x/converse-stream",
+      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC%3F%20x/converse-stream",
       "host": "bedrock-runtime.us-gov-west-1.amazonaws.com",
       "anthropic": true,
       "noRequest": false
@@ -728,7 +728,7 @@
     },
     "model": "arn:aws:bedrock:us-east-1:123:inference-profile/anthropic.claude%版本? x",
     "expected": {
-      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC? x/converse",
+      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC%3F%20x/converse",
       "host": "bedrock-runtime.us-gov-west-1.amazonaws.com",
       "anthropic": true,
       "noRequest": false
@@ -743,7 +743,7 @@
     },
     "model": "arn:aws:bedrock:us-east-1:123:inference-profile/anthropic.claude%版本? x",
     "expected": {
-      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC? x/converse-stream",
+      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC%3F%20x/converse-stream",
       "host": "bedrock-runtime.us-gov-west-1.amazonaws.com",
       "anthropic": true,
       "noRequest": false
@@ -758,7 +758,7 @@
     },
     "model": "arn:aws:bedrock:us-east-1:123:inference-profile/anthropic.claude%版本? x",
     "expected": {
-      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC? x/converse",
+      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC%3F%20x/converse",
       "host": "bedrock-runtime.us-gov-west-1.amazonaws.com",
       "anthropic": true,
       "noRequest": false
@@ -773,7 +773,7 @@
     },
     "model": "arn:aws:bedrock:us-east-1:123:inference-profile/anthropic.claude%版本? x",
     "expected": {
-      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC? x/converse-stream",
+      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC%3F%20x/converse-stream",
       "host": "bedrock-runtime.us-gov-west-1.amazonaws.com",
       "anthropic": true,
       "noRequest": false
@@ -788,7 +788,7 @@
     },
     "model": "arn:aws:bedrock:us-east-1:123:inference-profile/anthropic.claude%版本? x",
     "expected": {
-      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC? x/invoke",
+      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC%3F%20x/invoke",
       "host": "bedrock-runtime.us-gov-west-1.amazonaws.com",
       "anthropic": true,
       "noRequest": false
@@ -803,7 +803,7 @@
     },
     "model": "arn:aws:bedrock:us-east-1:123:inference-profile/anthropic.claude%版本? x",
     "expected": {
-      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC? x/invoke",
+      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC%3F%20x/invoke",
       "host": "bedrock-runtime.us-gov-west-1.amazonaws.com",
       "anthropic": true,
       "noRequest": false
@@ -818,7 +818,7 @@
     },
     "model": "arn:aws:bedrock:us-east-1:123:inference-profile/anthropic.claude%版本? x",
     "expected": {
-      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC? x/converse",
+      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC%3F%20x/converse",
       "host": "bedrock-runtime.us-gov-west-1.amazonaws.com",
       "anthropic": true,
       "noRequest": false
@@ -833,7 +833,7 @@
     },
     "model": "arn:aws:bedrock:us-east-1:123:inference-profile/anthropic.claude%版本? x",
     "expected": {
-      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC? x/converse-stream",
+      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC%3F%20x/converse-stream",
       "host": "bedrock-runtime.us-gov-west-1.amazonaws.com",
       "anthropic": true,
       "noRequest": false
@@ -848,7 +848,7 @@
     },
     "model": "arn:aws:bedrock:us-east-1:123:inference-profile/anthropic.claude%版本? x",
     "expected": {
-      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC? x/count-tokens",
+      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC%3F%20x/count-tokens",
       "host": "bedrock-runtime.us-gov-west-1.amazonaws.com",
       "anthropic": true,
       "noRequest": false
@@ -863,7 +863,7 @@
     },
     "model": "arn:aws:bedrock:us-east-1:123:inference-profile/anthropic.claude%版本? x",
     "expected": {
-      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC? x/count-tokens",
+      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC%3F%20x/count-tokens",
       "host": "bedrock-runtime.us-gov-west-1.amazonaws.com",
       "anthropic": true,
       "noRequest": false
@@ -908,7 +908,7 @@
     },
     "model": "arn:aws:bedrock:us-east-1:123:inference-profile/anthropic.claude%版本? x",
     "expected": {
-      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC? x/converse",
+      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC%3F%20x/converse",
       "host": "bedrock-runtime..amazonaws.com",
       "anthropic": true,
       "noRequest": false
@@ -923,7 +923,7 @@
     },
     "model": "arn:aws:bedrock:us-east-1:123:inference-profile/anthropic.claude%版本? x",
     "expected": {
-      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC? x/converse-stream",
+      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC%3F%20x/converse-stream",
       "host": "bedrock-runtime..amazonaws.com",
       "anthropic": true,
       "noRequest": false
@@ -938,7 +938,7 @@
     },
     "model": "arn:aws:bedrock:us-east-1:123:inference-profile/anthropic.claude%版本? x",
     "expected": {
-      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC? x/converse",
+      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC%3F%20x/converse",
       "host": "bedrock-runtime..amazonaws.com",
       "anthropic": true,
       "noRequest": false
@@ -953,7 +953,7 @@
     },
     "model": "arn:aws:bedrock:us-east-1:123:inference-profile/anthropic.claude%版本? x",
     "expected": {
-      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC? x/converse-stream",
+      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC%3F%20x/converse-stream",
       "host": "bedrock-runtime..amazonaws.com",
       "anthropic": true,
       "noRequest": false
@@ -968,7 +968,7 @@
     },
     "model": "arn:aws:bedrock:us-east-1:123:inference-profile/anthropic.claude%版本? x",
     "expected": {
-      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC? x/converse",
+      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC%3F%20x/converse",
       "host": "bedrock-runtime..amazonaws.com",
       "anthropic": true,
       "noRequest": false
@@ -983,7 +983,7 @@
     },
     "model": "arn:aws:bedrock:us-east-1:123:inference-profile/anthropic.claude%版本? x",
     "expected": {
-      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC? x/converse-stream",
+      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC%3F%20x/converse-stream",
       "host": "bedrock-runtime..amazonaws.com",
       "anthropic": true,
       "noRequest": false
@@ -998,7 +998,7 @@
     },
     "model": "arn:aws:bedrock:us-east-1:123:inference-profile/anthropic.claude%版本? x",
     "expected": {
-      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC? x/converse",
+      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC%3F%20x/converse",
       "host": "bedrock-runtime..amazonaws.com",
       "anthropic": true,
       "noRequest": false
@@ -1013,7 +1013,7 @@
     },
     "model": "arn:aws:bedrock:us-east-1:123:inference-profile/anthropic.claude%版本? x",
     "expected": {
-      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC? x/converse-stream",
+      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC%3F%20x/converse-stream",
       "host": "bedrock-runtime..amazonaws.com",
       "anthropic": true,
       "noRequest": false
@@ -1028,7 +1028,7 @@
     },
     "model": "arn:aws:bedrock:us-east-1:123:inference-profile/anthropic.claude%版本? x",
     "expected": {
-      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC? x/converse",
+      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC%3F%20x/converse",
       "host": "bedrock-runtime..amazonaws.com",
       "anthropic": true,
       "noRequest": false
@@ -1043,7 +1043,7 @@
     },
     "model": "arn:aws:bedrock:us-east-1:123:inference-profile/anthropic.claude%版本? x",
     "expected": {
-      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC? x/converse-stream",
+      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC%3F%20x/converse-stream",
       "host": "bedrock-runtime..amazonaws.com",
       "anthropic": true,
       "noRequest": false
@@ -1058,7 +1058,7 @@
     },
     "model": "arn:aws:bedrock:us-east-1:123:inference-profile/anthropic.claude%版本? x",
     "expected": {
-      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC? x/converse",
+      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC%3F%20x/converse",
       "host": "bedrock-runtime..amazonaws.com",
       "anthropic": true,
       "noRequest": false
@@ -1073,7 +1073,7 @@
     },
     "model": "arn:aws:bedrock:us-east-1:123:inference-profile/anthropic.claude%版本? x",
     "expected": {
-      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC? x/converse-stream",
+      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC%3F%20x/converse-stream",
       "host": "bedrock-runtime..amazonaws.com",
       "anthropic": true,
       "noRequest": false
@@ -1088,7 +1088,7 @@
     },
     "model": "arn:aws:bedrock:us-east-1:123:inference-profile/anthropic.claude%版本? x",
     "expected": {
-      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC? x/invoke",
+      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC%3F%20x/invoke",
       "host": "bedrock-runtime..amazonaws.com",
       "anthropic": true,
       "noRequest": false
@@ -1103,7 +1103,7 @@
     },
     "model": "arn:aws:bedrock:us-east-1:123:inference-profile/anthropic.claude%版本? x",
     "expected": {
-      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC? x/invoke",
+      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC%3F%20x/invoke",
       "host": "bedrock-runtime..amazonaws.com",
       "anthropic": true,
       "noRequest": false
@@ -1118,7 +1118,7 @@
     },
     "model": "arn:aws:bedrock:us-east-1:123:inference-profile/anthropic.claude%版本? x",
     "expected": {
-      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC? x/converse",
+      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC%3F%20x/converse",
       "host": "bedrock-runtime..amazonaws.com",
       "anthropic": true,
       "noRequest": false
@@ -1133,7 +1133,7 @@
     },
     "model": "arn:aws:bedrock:us-east-1:123:inference-profile/anthropic.claude%版本? x",
     "expected": {
-      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC? x/converse-stream",
+      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC%3F%20x/converse-stream",
       "host": "bedrock-runtime..amazonaws.com",
       "anthropic": true,
       "noRequest": false
@@ -1148,7 +1148,7 @@
     },
     "model": "arn:aws:bedrock:us-east-1:123:inference-profile/anthropic.claude%版本? x",
     "expected": {
-      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC? x/count-tokens",
+      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC%3F%20x/count-tokens",
       "host": "bedrock-runtime..amazonaws.com",
       "anthropic": true,
       "noRequest": false
@@ -1163,7 +1163,7 @@
     },
     "model": "arn:aws:bedrock:us-east-1:123:inference-profile/anthropic.claude%版本? x",
     "expected": {
-      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC? x/count-tokens",
+      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC%3F%20x/count-tokens",
       "host": "bedrock-runtime..amazonaws.com",
       "anthropic": true,
       "noRequest": false
@@ -1208,7 +1208,7 @@
     },
     "model": "arn:aws:bedrock:us-east-1:123:inference-profile/anthropic.claude%版本? x",
     "expected": {
-      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC? x/converse",
+      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC%3F%20x/converse",
       "host": "bedrock-runtime.r /%.amazonaws.com",
       "anthropic": true,
       "noRequest": false
@@ -1223,7 +1223,7 @@
     },
     "model": "arn:aws:bedrock:us-east-1:123:inference-profile/anthropic.claude%版本? x",
     "expected": {
-      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC? x/converse-stream",
+      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC%3F%20x/converse-stream",
       "host": "bedrock-runtime.r /%.amazonaws.com",
       "anthropic": true,
       "noRequest": false
@@ -1238,7 +1238,7 @@
     },
     "model": "arn:aws:bedrock:us-east-1:123:inference-profile/anthropic.claude%版本? x",
     "expected": {
-      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC? x/converse",
+      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC%3F%20x/converse",
       "host": "bedrock-runtime.r /%.amazonaws.com",
       "anthropic": true,
       "noRequest": false
@@ -1253,7 +1253,7 @@
     },
     "model": "arn:aws:bedrock:us-east-1:123:inference-profile/anthropic.claude%版本? x",
     "expected": {
-      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC? x/converse-stream",
+      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC%3F%20x/converse-stream",
       "host": "bedrock-runtime.r /%.amazonaws.com",
       "anthropic": true,
       "noRequest": false
@@ -1268,7 +1268,7 @@
     },
     "model": "arn:aws:bedrock:us-east-1:123:inference-profile/anthropic.claude%版本? x",
     "expected": {
-      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC? x/converse",
+      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC%3F%20x/converse",
       "host": "bedrock-runtime.r /%.amazonaws.com",
       "anthropic": true,
       "noRequest": false
@@ -1283,7 +1283,7 @@
     },
     "model": "arn:aws:bedrock:us-east-1:123:inference-profile/anthropic.claude%版本? x",
     "expected": {
-      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC? x/converse-stream",
+      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC%3F%20x/converse-stream",
       "host": "bedrock-runtime.r /%.amazonaws.com",
       "anthropic": true,
       "noRequest": false
@@ -1298,7 +1298,7 @@
     },
     "model": "arn:aws:bedrock:us-east-1:123:inference-profile/anthropic.claude%版本? x",
     "expected": {
-      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC? x/converse",
+      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC%3F%20x/converse",
       "host": "bedrock-runtime.r /%.amazonaws.com",
       "anthropic": true,
       "noRequest": false
@@ -1313,7 +1313,7 @@
     },
     "model": "arn:aws:bedrock:us-east-1:123:inference-profile/anthropic.claude%版本? x",
     "expected": {
-      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC? x/converse-stream",
+      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC%3F%20x/converse-stream",
       "host": "bedrock-runtime.r /%.amazonaws.com",
       "anthropic": true,
       "noRequest": false
@@ -1328,7 +1328,7 @@
     },
     "model": "arn:aws:bedrock:us-east-1:123:inference-profile/anthropic.claude%版本? x",
     "expected": {
-      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC? x/converse",
+      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC%3F%20x/converse",
       "host": "bedrock-runtime.r /%.amazonaws.com",
       "anthropic": true,
       "noRequest": false
@@ -1343,7 +1343,7 @@
     },
     "model": "arn:aws:bedrock:us-east-1:123:inference-profile/anthropic.claude%版本? x",
     "expected": {
-      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC? x/converse-stream",
+      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC%3F%20x/converse-stream",
       "host": "bedrock-runtime.r /%.amazonaws.com",
       "anthropic": true,
       "noRequest": false
@@ -1358,7 +1358,7 @@
     },
     "model": "arn:aws:bedrock:us-east-1:123:inference-profile/anthropic.claude%版本? x",
     "expected": {
-      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC? x/converse",
+      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC%3F%20x/converse",
       "host": "bedrock-runtime.r /%.amazonaws.com",
       "anthropic": true,
       "noRequest": false
@@ -1373,7 +1373,7 @@
     },
     "model": "arn:aws:bedrock:us-east-1:123:inference-profile/anthropic.claude%版本? x",
     "expected": {
-      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC? x/converse-stream",
+      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC%3F%20x/converse-stream",
       "host": "bedrock-runtime.r /%.amazonaws.com",
       "anthropic": true,
       "noRequest": false
@@ -1388,7 +1388,7 @@
     },
     "model": "arn:aws:bedrock:us-east-1:123:inference-profile/anthropic.claude%版本? x",
     "expected": {
-      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC? x/invoke",
+      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC%3F%20x/invoke",
       "host": "bedrock-runtime.r /%.amazonaws.com",
       "anthropic": true,
       "noRequest": false
@@ -1403,7 +1403,7 @@
     },
     "model": "arn:aws:bedrock:us-east-1:123:inference-profile/anthropic.claude%版本? x",
     "expected": {
-      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC? x/invoke",
+      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC%3F%20x/invoke",
       "host": "bedrock-runtime.r /%.amazonaws.com",
       "anthropic": true,
       "noRequest": false
@@ -1418,7 +1418,7 @@
     },
     "model": "arn:aws:bedrock:us-east-1:123:inference-profile/anthropic.claude%版本? x",
     "expected": {
-      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC? x/converse",
+      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC%3F%20x/converse",
       "host": "bedrock-runtime.r /%.amazonaws.com",
       "anthropic": true,
       "noRequest": false
@@ -1433,7 +1433,7 @@
     },
     "model": "arn:aws:bedrock:us-east-1:123:inference-profile/anthropic.claude%版本? x",
     "expected": {
-      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC? x/converse-stream",
+      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC%3F%20x/converse-stream",
       "host": "bedrock-runtime.r /%.amazonaws.com",
       "anthropic": true,
       "noRequest": false
@@ -1448,7 +1448,7 @@
     },
     "model": "arn:aws:bedrock:us-east-1:123:inference-profile/anthropic.claude%版本? x",
     "expected": {
-      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC? x/count-tokens",
+      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC%3F%20x/count-tokens",
       "host": "bedrock-runtime.r /%.amazonaws.com",
       "anthropic": true,
       "noRequest": false
@@ -1463,7 +1463,7 @@
     },
     "model": "arn:aws:bedrock:us-east-1:123:inference-profile/anthropic.claude%版本? x",
     "expected": {
-      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC? x/count-tokens",
+      "path": "/model/arn:aws:bedrock:us-east-1:123:inference-profile%2Fanthropic.claude%25%E7%89%88%E6%9C%AC%3F%20x/count-tokens",
       "host": "bedrock-runtime.r /%.amazonaws.com",
       "anthropic": true,
       "noRequest": false
@@ -1829,7 +1829,7 @@
     },
     "model": "中文/% ?",
     "expected": {
-      "path": "/model/%E4%B8%AD%E6%96%87%2F%25 ?/converse",
+      "path": "/model/%E4%B8%AD%E6%96%87%2F%25%20%3F/converse",
       "host": "bedrock-runtime.us-east-1.amazonaws.com",
       "anthropic": false,
       "noRequest": false
@@ -1845,7 +1845,7 @@
     },
     "model": "中文/% ?",
     "expected": {
-      "path": "/model/%E4%B8%AD%E6%96%87%2F%25 ?/invoke",
+      "path": "/model/%E4%B8%AD%E6%96%87%2F%25%20%3F/invoke",
       "host": "bedrock-runtime.us-east-1.amazonaws.com",
       "anthropic": false,
       "noRequest": false
@@ -1861,7 +1861,7 @@
     },
     "model": "中文/% ?",
     "expected": {
-      "path": "/model/%E4%B8%AD%E6%96%87%2F%25 ?/count-tokens",
+      "path": "/model/%E4%B8%AD%E6%96%87%2F%25%20%3F/count-tokens",
       "host": "bedrock-runtime.us-east-1.amazonaws.com",
       "anthropic": false,
       "noRequest": false
@@ -3237,7 +3237,7 @@
     },
     "model": "publishers/anthropic/models/claude-3-7-20250219",
     "expected": {
-      "path": "/v1/projects/p /%项目/locations/global/publishers/google/models/publishers/anthropic/models/claude-3-7-20250219:predict",
+      "path": "/v1/projects/p /%项目/locations/global/publishers/google/models/publishers%2Fanthropic%2Fmodels%2Fclaude-3-7-20250219:predict",
       "host": "aiplatform.googleapis.com",
       "anthropic": true,
       "noRequest": false
@@ -3253,7 +3253,7 @@
     },
     "model": "publishers/anthropic/models/claude-3-7-20250219",
     "expected": {
-      "path": "/v1/projects/p /%项目/locations/global/publishers/google/models/publishers/anthropic/models/claude-3-7-20250219:predict",
+      "path": "/v1/projects/p /%项目/locations/global/publishers/google/models/publishers%2Fanthropic%2Fmodels%2Fclaude-3-7-20250219:predict",
       "host": "aiplatform.googleapis.com",
       "anthropic": true,
       "noRequest": false
@@ -3557,7 +3557,7 @@
     },
     "model": "publishers/anthropic/models/claude-3-7-20250219",
     "expected": {
-      "path": "/v1/projects/p /%项目/locations/global/publishers/google/models/publishers/anthropic/models/claude-3-7-20250219:predict",
+      "path": "/v1/projects/p /%项目/locations/global/publishers/google/models/publishers%2Fanthropic%2Fmodels%2Fclaude-3-7-20250219:predict",
       "host": "aiplatform.googleapis.com",
       "anthropic": true,
       "noRequest": false
@@ -3573,7 +3573,7 @@
     },
     "model": "publishers/anthropic/models/claude-3-7-20250219",
     "expected": {
-      "path": "/v1/projects/p /%项目/locations/global/publishers/google/models/publishers/anthropic/models/claude-3-7-20250219:predict",
+      "path": "/v1/projects/p /%项目/locations/global/publishers/google/models/publishers%2Fanthropic%2Fmodels%2Fclaude-3-7-20250219:predict",
       "host": "aiplatform.googleapis.com",
       "anthropic": true,
       "noRequest": false
@@ -3877,7 +3877,7 @@
     },
     "model": "publishers/anthropic/models/claude-3-7-20250219",
     "expected": {
-      "path": "/v1/projects/p /%项目/locations/us/publishers/google/models/publishers/anthropic/models/claude-3-7-20250219:predict",
+      "path": "/v1/projects/p /%项目/locations/us/publishers/google/models/publishers%2Fanthropic%2Fmodels%2Fclaude-3-7-20250219:predict",
       "host": "aiplatform.us.rep.googleapis.com",
       "anthropic": true,
       "noRequest": false
@@ -3893,7 +3893,7 @@
     },
     "model": "publishers/anthropic/models/claude-3-7-20250219",
     "expected": {
-      "path": "/v1/projects/p /%项目/locations/us/publishers/google/models/publishers/anthropic/models/claude-3-7-20250219:predict",
+      "path": "/v1/projects/p /%项目/locations/us/publishers/google/models/publishers%2Fanthropic%2Fmodels%2Fclaude-3-7-20250219:predict",
       "host": "aiplatform.us.rep.googleapis.com",
       "anthropic": true,
       "noRequest": false
@@ -4197,7 +4197,7 @@
     },
     "model": "publishers/anthropic/models/claude-3-7-20250219",
     "expected": {
-      "path": "/v1/projects/p /%项目/locations/eu/publishers/google/models/publishers/anthropic/models/claude-3-7-20250219:predict",
+      "path": "/v1/projects/p /%项目/locations/eu/publishers/google/models/publishers%2Fanthropic%2Fmodels%2Fclaude-3-7-20250219:predict",
       "host": "aiplatform.eu.rep.googleapis.com",
       "anthropic": true,
       "noRequest": false
@@ -4213,7 +4213,7 @@
     },
     "model": "publishers/anthropic/models/claude-3-7-20250219",
     "expected": {
-      "path": "/v1/projects/p /%项目/locations/eu/publishers/google/models/publishers/anthropic/models/claude-3-7-20250219:predict",
+      "path": "/v1/projects/p /%项目/locations/eu/publishers/google/models/publishers%2Fanthropic%2Fmodels%2Fclaude-3-7-20250219:predict",
       "host": "aiplatform.eu.rep.googleapis.com",
       "anthropic": true,
       "noRequest": false
@@ -4517,7 +4517,7 @@
     },
     "model": "publishers/anthropic/models/claude-3-7-20250219",
     "expected": {
-      "path": "/v1/projects/p /%项目/locations/us-central1/publishers/google/models/publishers/anthropic/models/claude-3-7-20250219:predict",
+      "path": "/v1/projects/p /%项目/locations/us-central1/publishers/google/models/publishers%2Fanthropic%2Fmodels%2Fclaude-3-7-20250219:predict",
       "host": "us-central1-aiplatform.googleapis.com",
       "anthropic": true,
       "noRequest": false
@@ -4533,7 +4533,7 @@
     },
     "model": "publishers/anthropic/models/claude-3-7-20250219",
     "expected": {
-      "path": "/v1/projects/p /%项目/locations/us-central1/publishers/google/models/publishers/anthropic/models/claude-3-7-20250219:predict",
+      "path": "/v1/projects/p /%项目/locations/us-central1/publishers/google/models/publishers%2Fanthropic%2Fmodels%2Fclaude-3-7-20250219:predict",
       "host": "us-central1-aiplatform.googleapis.com",
       "anthropic": true,
       "noRequest": false
@@ -4837,7 +4837,7 @@
     },
     "model": "publishers/anthropic/models/claude-3-7-20250219",
     "expected": {
-      "path": "/v1/projects/p /%项目/locations//publishers/google/models/publishers/anthropic/models/claude-3-7-20250219:predict",
+      "path": "/v1/projects/p /%项目/locations//publishers/google/models/publishers%2Fanthropic%2Fmodels%2Fclaude-3-7-20250219:predict",
       "host": "-aiplatform.googleapis.com",
       "anthropic": true,
       "noRequest": false
@@ -4853,7 +4853,7 @@
     },
     "model": "publishers/anthropic/models/claude-3-7-20250219",
     "expected": {
-      "path": "/v1/projects/p /%项目/locations//publishers/google/models/publishers/anthropic/models/claude-3-7-20250219:predict",
+      "path": "/v1/projects/p /%项目/locations//publishers/google/models/publishers%2Fanthropic%2Fmodels%2Fclaude-3-7-20250219:predict",
       "host": "-aiplatform.googleapis.com",
       "anthropic": true,
       "noRequest": false
@@ -5157,7 +5157,7 @@
     },
     "model": "publishers/anthropic/models/claude-3-7-20250219",
     "expected": {
-      "path": "/v1/projects/p /%项目/locations/r /%/publishers/google/models/publishers/anthropic/models/claude-3-7-20250219:predict",
+      "path": "/v1/projects/p /%项目/locations/r /%/publishers/google/models/publishers%2Fanthropic%2Fmodels%2Fclaude-3-7-20250219:predict",
       "host": "r /%-aiplatform.googleapis.com",
       "anthropic": true,
       "noRequest": false
@@ -5173,7 +5173,7 @@
     },
     "model": "publishers/anthropic/models/claude-3-7-20250219",
     "expected": {
-      "path": "/v1/projects/p /%项目/locations/r /%/publishers/google/models/publishers/anthropic/models/claude-3-7-20250219:predict",
+      "path": "/v1/projects/p /%项目/locations/r /%/publishers/google/models/publishers%2Fanthropic%2Fmodels%2Fclaude-3-7-20250219:predict",
       "host": "r /%-aiplatform.googleapis.com",
       "anthropic": true,
       "noRequest": false

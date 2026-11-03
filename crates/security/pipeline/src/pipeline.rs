@@ -5,7 +5,7 @@ use chrono::{DateTime, Duration, Utc};
 use security_audit::{AuditSink, event_from_decision};
 use security_engine::decide;
 use security_policy::Policy;
-use security_types::{ActionRequest, ActionType, Decision, DecisionEffect};
+use security_types::{ActionRequest, ActionType, ApprovalGrant, Decision, DecisionEffect};
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
@@ -15,6 +15,14 @@ use crate::{Capability, CapabilityBroker, CapabilityError};
 /// an external PDP, or a signed policy cache without changing the pipeline.
 pub trait Authorizer: Send + Sync {
 	fn decide(&self, request: &ActionRequest) -> Decision;
+	/// Optional awaited decision boundary. Local implementations retain their synchronous behavior;
+	/// remote integrations override this method without changing the pipeline's control ordering.
+	fn decide_async<'a>(
+		&'a self,
+		request: &'a ActionRequest,
+	) -> std::pin::Pin<Box<dyn std::future::Future<Output = Decision> + Send + 'a>> {
+		Box::pin(async move { self.decide(request) })
+	}
 }
 
 /// A dynamic policy decision point. Implementations may consult local state, a remote PDP, or a
@@ -105,6 +113,7 @@ impl<T: RemotePdpTransport> DynamicPdp for RemoteDynamicPdp<T> {
 			));
 		}
 		Ok(Decision {
+			approval: None,
 			request_id: response.request_id,
 			effect: response.effect,
 			policy_id: Some(response.policy_id),
@@ -168,7 +177,7 @@ impl<P: AgentIdentityProvider> SecurityControl for ExternalAgentIdentityCheck<P>
 		&self,
 		request: &ActionRequest,
 		_arguments: Option<&serde_json::Value>,
-	) -> Result<(), ControlDenial> {
+	) -> Result<Option<ApprovalGrant>, ControlDenial> {
 		if request.subject.agent_id.is_none() {
 			return if self.required {
 				Err(ControlDenial {
@@ -176,12 +185,13 @@ impl<P: AgentIdentityProvider> SecurityControl for ExternalAgentIdentityCheck<P>
 					reason: "an Agent identity is required by the Agent directory".into(),
 				})
 			} else {
-				Ok(())
+				Ok(None)
 			};
 		}
 		self
 			.provider
 			.verify(request)
+			.map(|_| None)
 			.map_err(|error| ControlDenial {
 				control_id: self.id().into(),
 				reason: format!(
@@ -371,6 +381,7 @@ impl DynamicPdp for LocalDynamicPdp {
 		};
 		let selected = select(DecisionEffect::Deny).or_else(|| select(DecisionEffect::Allow));
 		Ok(Decision {
+			approval: None,
 			request_id: request.request_id.clone(),
 			effect: selected
 				.map(|policy| policy.policy.effect)
@@ -390,7 +401,7 @@ struct CachedDecision {
 	expires_at: DateTime<Utc>,
 }
 
-/// Process-local, bounded-by-TTL decision cache. It is deliberately not a source of authority:
+/// Process-local, TTL- and capacity-bounded decision cache. It is deliberately not a source of authority:
 /// cache misses and expired entries always go back to the PDP, and PDP failures deny by default.
 #[derive(Debug, Clone, Default)]
 pub struct DecisionCache {
@@ -398,6 +409,9 @@ pub struct DecisionCache {
 }
 
 impl DecisionCache {
+	// A full cache stops admitting new keys; those requests continue to consult the PDP.
+	const MAX_ENTRIES: usize = 4096;
+
 	fn get(&self, key: &str, now: DateTime<Utc>) -> Option<Decision> {
 		let mut entries = self.entries.lock().expect("decision cache lock poisoned");
 		let entry = entries.get(key)?;
@@ -422,17 +436,20 @@ impl DecisionCache {
 		if expires_at <= Utc::now() {
 			return;
 		}
-		self
-			.entries
-			.lock()
-			.expect("decision cache lock poisoned")
-			.insert(
+		let mut entries = self.entries.lock().expect("decision cache lock poisoned");
+		if entries.len() >= Self::MAX_ENTRIES {
+			let now = Utc::now();
+			entries.retain(|_, entry| entry.expires_at > now);
+		}
+		if entries.len() < Self::MAX_ENTRIES || entries.contains_key(&key) {
+			entries.insert(
 				key,
 				CachedDecision {
 					decision,
 					expires_at,
 				},
 			);
+		}
 	}
 }
 
@@ -481,15 +498,15 @@ impl<P> CachedDynamicPdp<P> {
 
 impl<P: DynamicPdp> DynamicPdp for CachedDynamicPdp<P> {
 	fn decide(&self, request: &ActionRequest) -> Result<Decision, DynamicPdpError> {
-		if self.cache_ttl <= Duration::zero() {
+		if self.cache_ttl <= Duration::zero()
+			|| self.failure_mode != DynamicPdpFailureMode::UseCachedDecision
+		{
 			return self.pdp.decide(request);
 		}
 		let key = self.cache_key(request);
-		if self.failure_mode == DynamicPdpFailureMode::UseCachedDecision {
-			if let Some(mut decision) = self.cache.get(&key, Utc::now()) {
-				decision.request_id = request.request_id.clone();
-				return Ok(decision);
-			}
+		if let Some(mut decision) = self.cache.get(&key, Utc::now()) {
+			decision.request_id = request.request_id.clone();
+			return Ok(decision);
 		}
 		let decision = self.pdp.decide(request)?;
 		self.cache.insert(key, decision.clone(), self.cache_ttl);
@@ -575,6 +592,7 @@ impl<P: DynamicPdp> Authorizer for StaticAndDynamicAuthorizer<P> {
 		match dynamic_pdp.decide(request) {
 			Ok(decision) => decision,
 			Err(error) => Decision {
+				approval: None,
 				request_id: request.request_id.clone(),
 				effect: DecisionEffect::Deny,
 				policy_id: Some(format!("dynamic-pdp:unavailable:{}", error.reason)),
@@ -600,7 +618,7 @@ pub trait SecurityControl: Send + Sync {
 		&self,
 		request: &ActionRequest,
 		arguments: Option<&serde_json::Value>,
-	) -> Result<(), ControlDenial>;
+	) -> Result<Option<ApprovalGrant>, ControlDenial>;
 }
 
 /// Identity-stage brick that blocks a revoked delegation before static or dynamic authorization.
@@ -623,12 +641,12 @@ impl<P: DelegationRevocationProvider> SecurityControl for DelegationRevocationCh
 		&self,
 		request: &ActionRequest,
 		_arguments: Option<&serde_json::Value>,
-	) -> Result<(), ControlDenial> {
+	) -> Result<Option<ApprovalGrant>, ControlDenial> {
 		let Some(delegation_id) = request.subject.delegation_id.as_deref() else {
-			return Ok(());
+			return Ok(None);
 		};
 		match self.provider.is_revoked(delegation_id) {
-			Ok(false) => Ok(()),
+			Ok(false) => Ok(None),
 			Ok(true) => Err(ControlDenial {
 				control_id: self.id().into(),
 				reason: format!("delegation '{}' has been revoked", delegation_id),
@@ -738,7 +756,7 @@ impl SecurityControl for AgentIdentityRegistry {
 		&self,
 		request: &ActionRequest,
 		_arguments: Option<&serde_json::Value>,
-	) -> Result<(), ControlDenial> {
+	) -> Result<Option<ApprovalGrant>, ControlDenial> {
 		let Some(agent_id) = request.subject.agent_id.as_deref() else {
 			return if self.required {
 				Err(ControlDenial {
@@ -746,7 +764,7 @@ impl SecurityControl for AgentIdentityRegistry {
 					reason: "a registered Agent identity is required".into(),
 				})
 			} else {
-				Ok(())
+				Ok(None)
 			};
 		};
 		let Some(agent) = self.agents.iter().find(|agent| agent.agent_id == agent_id) else {
@@ -791,7 +809,7 @@ impl SecurityControl for AgentIdentityRegistry {
 				),
 			});
 		}
-		Ok(())
+		Ok(None)
 	}
 }
 
@@ -1171,9 +1189,9 @@ impl SecurityControl for AgentDelegation {
 		&self,
 		request: &ActionRequest,
 		_arguments: Option<&serde_json::Value>,
-	) -> Result<(), ControlDenial> {
+	) -> Result<Option<ApprovalGrant>, ControlDenial> {
 		if request.subject.agent_id.is_none() {
-			return Ok(());
+			return Ok(None);
 		}
 		if request.subject.user_id.is_none() {
 			return Err(ControlDenial {
@@ -1192,7 +1210,7 @@ impl SecurityControl for AgentDelegation {
 			.iter()
 			.any(|grant| Self::matches_grant(grant, request, chrono::Utc::now()))
 		{
-			Ok(())
+			Ok(None)
 		} else {
 			Err(ControlDenial {
 				control_id: self.id().into(),
@@ -1211,7 +1229,7 @@ impl SecurityControl for RequiredIdentity {
 		&self,
 		request: &ActionRequest,
 		_arguments: Option<&serde_json::Value>,
-	) -> Result<(), ControlDenial> {
+	) -> Result<Option<ApprovalGrant>, ControlDenial> {
 		let missing = [
 			(self.user && request.subject.user_id.is_none(), "userId"),
 			(self.agent && request.subject.agent_id.is_none(), "agentId"),
@@ -1225,7 +1243,7 @@ impl SecurityControl for RequiredIdentity {
 		.collect::<Vec<_>>();
 
 		if missing.is_empty() {
-			Ok(())
+			Ok(None)
 		} else {
 			Err(ControlDenial {
 				control_id: self.id().into(),
@@ -1268,10 +1286,10 @@ impl SecurityControl for RequiredToolArguments {
 		&self,
 		request: &ActionRequest,
 		arguments: Option<&serde_json::Value>,
-	) -> Result<(), ControlDenial> {
+	) -> Result<Option<ApprovalGrant>, ControlDenial> {
 		if request.action.action_type != ActionType::ToolInvoke || request.action.name != self.tool_name
 		{
-			return Ok(());
+			return Ok(None);
 		}
 		let Some(arguments) = arguments.and_then(serde_json::Value::as_object) else {
 			return Err(ControlDenial {
@@ -1293,7 +1311,7 @@ impl SecurityControl for RequiredToolArguments {
 			.map(String::as_str)
 			.collect::<Vec<_>>();
 		if missing.is_empty() {
-			Ok(())
+			Ok(None)
 		} else {
 			Err(ControlDenial {
 				control_id: self.id().into(),
@@ -1333,10 +1351,10 @@ impl SecurityControl for RequiredToolApproval {
 		&self,
 		request: &ActionRequest,
 		_arguments: Option<&serde_json::Value>,
-	) -> Result<(), ControlDenial> {
+	) -> Result<Option<ApprovalGrant>, ControlDenial> {
 		if request.action.action_type != ActionType::ToolInvoke || request.action.name != self.tool_name
 		{
-			return Ok(());
+			return Ok(None);
 		}
 		Err(ControlDenial {
 			control_id: self.id().into(),
@@ -1355,7 +1373,7 @@ pub trait ApprovalProvider: Send + Sync {
 		&self,
 		request: &ActionRequest,
 		arguments: &serde_json::Value,
-	) -> Result<bool, ApprovalError>;
+	) -> Result<Option<ApprovalGrant>, ApprovalError>;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1376,7 +1394,7 @@ impl<T: ApprovalProvider + ?Sized> ApprovalProvider for Arc<T> {
 		&self,
 		request: &ActionRequest,
 		arguments: &serde_json::Value,
-	) -> Result<bool, ApprovalError> {
+	) -> Result<Option<ApprovalGrant>, ApprovalError> {
 		(**self).approved(request, arguments)
 	}
 }
@@ -1389,8 +1407,11 @@ impl ApprovalProvider for StaticApproval {
 		&self,
 		_request: &ActionRequest,
 		_arguments: &serde_json::Value,
-	) -> Result<bool, ApprovalError> {
-		Ok(self.0)
+	) -> Result<Option<ApprovalGrant>, ApprovalError> {
+		Ok(self.0.then(|| ApprovalGrant {
+			approval_id: "static-approval".into(),
+			expires_at: Utc::now() + Duration::seconds(30),
+		}))
 	}
 }
 
@@ -1417,11 +1438,11 @@ impl<P: ApprovalProvider> SecurityControl for ToolApproval<P> {
 		&self,
 		request: &ActionRequest,
 		arguments: Option<&serde_json::Value>,
-	) -> Result<(), ControlDenial> {
+	) -> Result<Option<ApprovalGrant>, ControlDenial> {
 		if request.action.action_type != ActionType::ToolInvoke
 			|| request.action.name.as_str() != self.tool_name.as_ref()
 		{
-			return Ok(());
+			return Ok(None);
 		}
 		let Some(arguments) = arguments else {
 			return Err(ControlDenial {
@@ -1430,8 +1451,8 @@ impl<P: ApprovalProvider> SecurityControl for ToolApproval<P> {
 			});
 		};
 		match self.provider.approved(request, arguments) {
-			Ok(true) => Ok(()),
-			Ok(false) => Err(ControlDenial {
+			Ok(Some(grant)) => Ok(Some(grant)),
+			Ok(None) => Err(ControlDenial {
 				control_id: self.id().into(),
 				reason: format!("tool '{}' was not approved", self.tool_name),
 			}),
@@ -1513,22 +1534,80 @@ where
 		request: &ActionRequest,
 		arguments: Option<&serde_json::Value>,
 	) -> Result<Decision, GatewayError> {
+		self.check_identity_controls(request, arguments)?;
+		self.finish_authorization(request, arguments, self.authorizer.decide(request))
+	}
+
+	/// Await only the authorizer; the same identity/action controls and audit path serve both APIs.
+	pub async fn authorize_async(
+		&self,
+		request: &ActionRequest,
+		arguments: Option<&serde_json::Value>,
+	) -> Result<Decision, GatewayError> {
+		self.check_identity_controls(request, arguments)?;
+		let decision = self.authorizer.decide_async(request).await;
+		self.finish_authorization(request, arguments, decision)
+	}
+
+	fn check_identity_controls(
+		&self,
+		request: &ActionRequest,
+		arguments: Option<&serde_json::Value>,
+	) -> Result<(), GatewayError> {
 		for control in &self.identity_controls {
 			if let Err(denial) = control.check(request, arguments) {
 				return Err(self.reject_control(request, denial));
 			}
 		}
+		Ok(())
+	}
 
-		let decision = self.authorizer.decide(request);
+	fn finish_authorization(
+		&self,
+		request: &ActionRequest,
+		arguments: Option<&serde_json::Value>,
+		mut decision: Decision,
+	) -> Result<Decision, GatewayError> {
 		if decision.effect == DecisionEffect::Deny {
 			self.record(request, &decision);
 			return Err(GatewayError::Denied(decision));
 		}
 
+		// Approval is produced only by a trusted action control, never by the PDP.
+		decision.approval = None;
 		for control in &self.action_controls {
-			if let Err(denial) = control.check(request, arguments) {
-				return Err(self.reject_control(request, denial));
+			match control.check(request, arguments) {
+				Ok(Some(grant)) => {
+					if decision.approval.as_ref().is_some_and(|old| old != &grant) {
+						return Err(self.reject_control(
+							request,
+							ControlDenial {
+								control_id: "tool-approval".into(),
+								reason: "conflicting approval receipts".into(),
+							},
+						));
+					}
+					decision.approval = Some(grant);
+				},
+				Ok(None) => {},
+				Err(denial) => return Err(self.reject_control(request, denial)),
 			}
+		}
+		if let Some(grant) = &decision.approval {
+			if grant.approval_id.is_empty() || grant.expires_at <= Utc::now() {
+				return Err(self.reject_control(
+					request,
+					ControlDenial {
+						control_id: "tool-approval".into(),
+						reason: "approval expired or missing its identifier".into(),
+					},
+				));
+			}
+			decision.expires_at = Some(
+				decision
+					.expires_at
+					.map_or(grant.expires_at, |end| end.min(grant.expires_at)),
+			);
 		}
 
 		self.record(request, &decision);
@@ -1541,11 +1620,19 @@ where
 		arguments: &serde_json::Value,
 		ttl: Duration,
 	) -> Result<Capability, GatewayError> {
-		self.authorize(request, Some(arguments))?;
+		let decision = self.authorize(request, Some(arguments))?;
+		let now = Utc::now();
+		let expires_at = decision
+			.expires_at
+			.map_or(now + ttl, |end| end.min(now + ttl));
+		if expires_at <= now {
+			return Err(GatewayError::CapabilityUnavailable);
+		}
+
 		let Some(capabilities) = &self.capabilities else {
 			return Err(GatewayError::CapabilityUnavailable);
 		};
-		Ok(capabilities.issue(request, arguments, ttl))
+		Ok(capabilities.issue_until(request, arguments, expires_at))
 	}
 
 	pub fn consume_tool_capability(
@@ -1564,6 +1651,7 @@ where
 
 	fn reject_control(&self, request: &ActionRequest, denial: ControlDenial) -> GatewayError {
 		let decision = Decision {
+			approval: None,
 			request_id: request.request_id.clone(),
 			effect: DecisionEffect::Deny,
 			policy_id: Some(format!("control:{}", denial.control_id)),
@@ -1574,7 +1662,8 @@ where
 		GatewayError::DeniedByControl { decision, denial }
 	}
 
-	fn record(&self, request: &ActionRequest, decision: &Decision) {
+	/// Record a trusted execution outcome; this does not authorize an operation.
+	pub fn record(&self, request: &ActionRequest, decision: &Decision) {
 		self.audit.record(event_from_decision(
 			Uuid::new_v4().to_string(),
 			request,

@@ -27,6 +27,39 @@ fn scope() -> ExecutionScope {
 		action: Arc::new(action),
 	}
 }
+
+#[test]
+fn execution_identity_matches_clones_but_does_not_replace_liveness_checks() {
+	let original = scope();
+	let mut copy = original.clone();
+	assert!(original.same_execution(&copy));
+	assert!(!original.same_execution(&scope()));
+	copy.fingerprint.push_str("-changed");
+	assert!(!original.same_execution(&copy));
+	let copy = original.clone();
+	original.handle.cancel().unwrap();
+	assert!(original.same_execution(&copy));
+	assert!(original.failure().is_some());
+	assert!(copy.failure().is_some());
+}
+
+#[cfg(feature = "gateway-mcp")]
+#[tokio::test]
+async fn cancelled_execution_discards_pending_mcp_authorization() {
+	let scope = scope();
+	let mut request = ::http::Request::new(());
+	request.extensions_mut().insert(scope.clone());
+	let action = security_pipeline::tool_invoke_for_identity("pending", Default::default(), "echo");
+	let (release, wait) = tokio::sync::oneshot::channel();
+	let mut evaluation = Box::pin(crate::mcp::dispatch::authorize(request, &action, async {
+		wait.await.unwrap();
+		Ok::<_, security_pipeline::GatewayError>(())
+	}));
+	assert!(futures_util::poll!(&mut evaluation).is_pending());
+	scope.handle.cancel().unwrap();
+	assert!(evaluation.await.is_err());
+	assert!(release.send(()).is_err());
+}
 struct Source {
 	mode: &'static str,
 	handle: ExecutionHandle,

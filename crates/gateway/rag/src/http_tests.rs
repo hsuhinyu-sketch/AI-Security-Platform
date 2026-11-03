@@ -7,6 +7,9 @@ struct RecordingService(Mutex<Vec<String>>);
 
 #[async_trait::async_trait]
 impl RagHttpService for RecordingService {
+	fn max_document_bytes(&self) -> usize {
+		security_rag::IngestionGuardConfig::default().max_document_bytes
+	}
 	async fn authorize_import(
 		&self,
 		_: String,
@@ -96,4 +99,24 @@ async fn trusted_context_survives_but_missing_identity_never_reaches_service() {
 		service.0.lock().unwrap().as_slice(),
 		&[context.request_id().to_owned()]
 	);
+}
+
+#[tokio::test]
+async fn document_transport_budget_does_not_expand_query_body_limit() {
+	let service = Arc::new(RecordingService::default());
+	let app = router(service.clone()).layer(Extension(VerifiedGatewayIdentity(Default::default())));
+	let request = Request::builder()
+		.method("POST")
+		.uri("/v1/rag/query")
+		.header("content-type", "application/json")
+		.body(axum::body::Body::from(
+			serde_json::json!({"corpusId":"docs", "query":"x".repeat(2 * 1024 * 1024), "limit":1})
+				.to_string(),
+		))
+		.unwrap();
+	assert_eq!(
+		app.oneshot(request).await.unwrap().status(),
+		StatusCode::PAYLOAD_TOO_LARGE
+	);
+	assert!(service.0.lock().unwrap().is_empty());
 }

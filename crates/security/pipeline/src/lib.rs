@@ -2,12 +2,8 @@ use std::collections::HashMap;
 use std::sync::Mutex;
 
 use chrono::{DateTime, Duration, Utc};
-use security_audit::{AuditSink, event_from_decision};
-use security_engine::decide;
-use security_policy::Policy;
 use security_types::{
-	Action, ActionRequest, ActionType, AuthorizationContext, Decision, DecisionEffect, Resource,
-	ResourceType, Subject,
+	Action, ActionRequest, ActionType, AuthorizationContext, Resource, ResourceType, Subject,
 };
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
@@ -44,6 +40,7 @@ pub struct GatewayIdentity {
 impl GatewayIdentity {
 	fn authorization_context(&self) -> AuthorizationContext {
 		AuthorizationContext {
+			approval: None,
 			session_id: self.session_id.clone(),
 			client_id: self.client_id.clone(),
 		}
@@ -396,6 +393,15 @@ impl CapabilityBroker {
 		arguments: &serde_json::Value,
 		ttl: Duration,
 	) -> Capability {
+		self.issue_until(request, arguments, Utc::now() + ttl)
+	}
+
+	pub(crate) fn issue_until(
+		&self,
+		request: &ActionRequest,
+		arguments: &serde_json::Value,
+		expires_at: DateTime<Utc>,
+	) -> Capability {
 		let capability = Capability {
 			token: Uuid::new_v4().to_string(),
 			request_id: request.request_id.clone(),
@@ -403,7 +409,7 @@ impl CapabilityBroker {
 			action: request.action.clone(),
 			resource: request.resource.clone(),
 			arguments_hash: arguments_hash(arguments),
-			expires_at: Utc::now() + ttl,
+			expires_at,
 		};
 		self
 			.capabilities
@@ -450,57 +456,4 @@ pub fn arguments_hash(arguments: &serde_json::Value) -> String {
 		.iter()
 		.map(|byte| format!("{byte:02x}"))
 		.collect()
-}
-
-/// Security enforcement facade used by an LLM/MCP request path.
-/// It produces an audit event for every decision and only issues a capability after ALLOW.
-pub struct SecurityGateway<S> {
-	policies: Vec<Policy>,
-	audit: S,
-	capabilities: CapabilityBroker,
-}
-
-impl<S: AuditSink> SecurityGateway<S> {
-	pub fn new(policies: Vec<Policy>, audit: S) -> Self {
-		Self {
-			policies,
-			audit,
-			capabilities: CapabilityBroker::default(),
-		}
-	}
-
-	pub fn authorize(&self, request: &ActionRequest) -> Decision {
-		let decision = decide(&self.policies, request);
-		self.audit.record(event_from_decision(
-			Uuid::new_v4().to_string(),
-			request,
-			&decision,
-		));
-		decision
-	}
-
-	pub fn authorize_tool(
-		&self,
-		request: &ActionRequest,
-		arguments: &serde_json::Value,
-		ttl: Duration,
-	) -> Result<Capability, GatewayError> {
-		let decision = self.authorize(request);
-		if decision.effect == DecisionEffect::Deny {
-			return Err(GatewayError::Denied(decision));
-		}
-		Ok(self.capabilities.issue(request, arguments, ttl))
-	}
-
-	pub fn consume_tool_capability(
-		&self,
-		token: &str,
-		request: &ActionRequest,
-		arguments: &serde_json::Value,
-	) -> Result<Capability, GatewayError> {
-		self
-			.capabilities
-			.consume(token, request, arguments)
-			.map_err(GatewayError::Capability)
-	}
 }

@@ -95,6 +95,7 @@ pub struct Store {
 pub enum BindEvent {
 	Add(Bind, BindListeners),
 	Remove(BindKey),
+	Failed(BindKey, String),
 }
 
 #[derive(Debug)]
@@ -836,6 +837,9 @@ impl Store {
 				},
 				Err(err) => {
 					warn!(bind=%key, address=%bind.address, error=%err, "failed to start bind listener");
+					let _ = self
+						.tx
+						.send(BindEvent::Failed(key.clone(), err.to_string()));
 					None
 				},
 			}

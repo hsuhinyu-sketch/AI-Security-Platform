@@ -471,7 +471,6 @@ pub(crate) fn request(
 	rpc["params"] = clean;
 	let upstream_id = rpc["id"].clone();
 	if let Some(task) = &parent.task {
-		task.claim(access, &upstream_id)?;
 		rpc["params"]["_meta"] =
 			json!({"io.modelcontextprotocol/related-task":{"taskId":task.gateway_id()}});
 	}
@@ -491,6 +490,11 @@ pub(crate) fn request(
 			p.parent.upgrade().is_some_and(|p| Arc::ptr_eq(&p, parent)) && p.upstream_id == upstream_id
 		}) {
 		return Err(access.denial("reverse-not-negotiated-or-capacity"));
+	}
+	// Claim only an admissible, decoded request. Keep the pending lock through insertion
+	// so concurrent rejected requests cannot consume the Task's lifetime ID allowance.
+	if let Some(task) = &parent.task {
+		task.claim(access, &upstream_id)?;
 	}
 	state.pending.insert(
 		id,

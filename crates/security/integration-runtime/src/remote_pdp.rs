@@ -53,7 +53,7 @@ pub struct HttpRemotePdpTransport {
 }
 
 impl HttpRemotePdpTransport {
-	fn from_config(config: &RemotePdpConfig) -> Result<Self, DynamicPdpError> {
+	pub(super) fn from_config(config: &RemotePdpConfig) -> Result<Self, DynamicPdpError> {
 		let (endpoint, client) = trusted_https::build_client(
 			&config.endpoint,
 			config.timeout_millis,

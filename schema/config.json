@@ -1547,7 +1547,7 @@
           "default": null
         },
         "securityPipeline": {
-          "description": "Composable SecurityGateway controls enforced for MCP Tool calls.",
+          "description": "Composable security pipeline controls enforced for MCP Tool calls.",
           "default": null
         },
         "authorization": {
@@ -3831,6 +3831,17 @@
     "Policy": {
       "type": "object",
       "properties": {
+        "streamingLimits": {
+          "description": "Finite per-response resource admission before streaming conversion.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/StreamingLimits"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "promptGuard": {
           "description": "Prompt and response guardrails to apply to LLM traffic.",
           "anyOf": [
@@ -3907,6 +3918,33 @@
       },
       "additionalProperties": false
     },
+    "StreamingLimits": {
+      "type": "object",
+      "properties": {
+        "maxResponseBytes": {
+          "description": "Total upstream data bytes after decompression, including protocol framing.",
+          "type": "integer",
+          "format": "uint",
+          "minimum": 1,
+          "default": 8388608
+        },
+        "maxToolArgumentBytes": {
+          "description": "Cumulative UTF-8 argument bytes per tool slot; full snapshots use the larger size.",
+          "type": "integer",
+          "format": "uint",
+          "minimum": 1,
+          "default": 1048576
+        },
+        "maxTrackedBlocks": {
+          "description": "Distinct tracked tool/content/output slots over the response lifetime, not just open slots.",
+          "type": "integer",
+          "format": "uint",
+          "minimum": 1,
+          "default": 128
+        }
+      },
+      "additionalProperties": false
+    },
     "PromptGuard": {
       "type": "object",
       "properties": {
@@ -3934,12 +3972,12 @@
     "PromptGuardStreamingMode": {
       "oneOf": [
         {
-          "description": "Do not apply prompt guards to streaming responses or realtime websocket messages.",
+          "description": "Do not apply streaming guards; guarded HTTP streams are refused before sending.",
           "type": "string",
           "const": "Disabled"
         },
         {
-          "description": "Apply prompt guards to streaming responses and realtime websocket messages.",
+          "description": "Apply configured response guards to streams by default.",
           "type": "string",
           "const": "Enabled"
         }
@@ -4184,7 +4222,6 @@
       ]
     },
     "WebhookFailureMode": {
-      "description": "Defines how the proxy behaves when a webhook guardrail is unreachable or\nreturns an error.\n\nDefaults to `failClosed`. When failing closed, the error is propagated and\nthe LLM request is rejected. When failing open, the request is allowed\nthrough despite the webhook failure.",
       "oneOf": [
         {
           "description": "Reject the request when the webhook guardrail is unavailable (default).",
@@ -7025,7 +7062,7 @@
           "default": null
         },
         "securityPipeline": {
-          "description": "Composable SecurityGateway controls enforced for MCP Tool calls.",
+          "description": "Composable security pipeline controls enforced for MCP Tool calls.",
           "default": null
         }
       },
@@ -7621,7 +7658,7 @@
           "default": null
         },
         "securityPipeline": {
-          "description": "Composable SecurityGateway controls enforced for MCP Tool calls.",
+          "description": "Composable security pipeline controls enforced for MCP Tool calls.",
           "default": null
         },
         "a2a": {
@@ -9796,6 +9833,17 @@
           "items": {
             "$ref": "#/$defs/LLMRouteMatch"
           }
+        },
+        "streamingLimits": {
+          "description": "Per-model streaming resource limits, intersected with shared limits.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/StreamingLimits"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "additionalProperties": false,
@@ -9815,17 +9863,10 @@
       ]
     },
     "ModelVisibility": {
-      "oneOf": [
-        {
-          "description": "Public models can be requested directly by clients and are included in the model list.",
-          "type": "string",
-          "const": "public"
-        },
-        {
-          "description": "Internal models can be targeted by virtual models but cannot be requested directly.",
-          "type": "string",
-          "const": "internal"
-        }
+      "type": "string",
+      "enum": [
+        "public",
+        "internal"
       ]
     },
     "LocalLLMPassthrough": {
@@ -10169,6 +10210,17 @@
             }
           ],
           "default": null
+        },
+        "streamingLimits": {
+          "description": "Shared streaming limits applied to every model.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/StreamingLimits"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "additionalProperties": false

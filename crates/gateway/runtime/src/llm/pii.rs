@@ -42,10 +42,7 @@ pub(crate) fn install(
 		.model_name()
 		.ok_or(ProxyError::AuthorizationFailed)?
 		.to_owned();
-	if !matches!(
-		route,
-		RouteType::Completions | RouteType::Messages | RouteType::Responses
-	) {
+	if !route.supports_content_controls() {
 		for config in &configs {
 			record(
 				config,

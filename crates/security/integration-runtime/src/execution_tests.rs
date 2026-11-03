@@ -47,6 +47,56 @@ fn candidate_pass_does_not_replace_durable_audit_admission() {
 	assert!(evaluate_at_stage(&config, CheckStage::Dispatch, &action, None, &sink).is_ok());
 }
 
+#[tokio::test]
+async fn awaited_evaluation_preserves_modes_and_required_audit_failure() {
+	let action = security_pipeline::model_invoke_for_identity("awaited", Default::default(), "local");
+	for remote in [false, true] {
+		for mode in [
+			SecurityMode::Enforce,
+			SecurityMode::Audit,
+			SecurityMode::Shadow,
+		] {
+			let mut config = SecurityConfig::default();
+			config.mode = mode;
+			if remote {
+				config.remote_agent_identity = Some(
+					serde_json::from_value(serde_json::json!({
+						"endpoint":"http://invalid.example/directory"
+					}))
+					.unwrap(),
+				);
+			}
+			let audit = Arc::new(InMemoryAuditSink::default());
+			let result =
+				evaluate_with_audit_async(Arc::new(config), action.clone(), None, audit.clone()).await;
+			assert_eq!(result.is_ok(), mode != SecurityMode::Enforce);
+			let events = audit.events();
+			assert!(!events.is_empty());
+			assert!(
+				events
+					.iter()
+					.all(|event| event.request_id == "awaited" && event.decision == DecisionEffect::Deny)
+			);
+		}
+	}
+	let mut config = allowed();
+	config.required_audit = Some(required_audit::RequiredAuditConfig {
+		action_types: vec![security_types::ActionType::ModelInvoke],
+	});
+	let audit = Arc::new(InMemoryAuditSink::default());
+	assert!(
+		evaluate_with_audit_async(Arc::new(config), action, None, audit.clone())
+			.await
+			.is_err()
+	);
+	assert!(
+		audit
+			.events()
+			.iter()
+			.any(|event| event.policy_id.as_deref() == Some("security:required-audit-unavailable"))
+	);
+}
+
 #[test]
 fn normalized_tool_list_keeps_transport_egress_constraints() {
 	let egress: DataEgressConfig = serde_json::from_value(serde_json::json!({
@@ -59,6 +109,61 @@ fn normalized_tool_list_keeps_transport_egress_constraints() {
 	let invoke =
 		security_pipeline::tool_invoke_for_identity("internal", Default::default(), "delete");
 	assert!(!egress.permits(&invoke, "db/delete"));
+}
+
+#[tokio::test]
+async fn awaited_tool_requires_valid_composition_and_durable_audit() {
+	let action =
+		security_pipeline::tool_invoke_for_identity("tool-await", Default::default(), "delete");
+	for mode in ["enforce", "audit", "shadow"] {
+		let config = serde_json::from_value(serde_json::json!({
+			"mode":mode,"policies":[{"id":"allow","enabled":true,"effect":"allow"}],
+			"requiredToolApprovals":[{"toolName":"delete"}],
+			"capabilityBroker":{"issueEndpoint":"http://invalid.example/issue"}
+		}))
+		.unwrap();
+		let audit = Arc::new(InMemoryAuditSink::default());
+		let result = authorize_tool_with_capability_with_audit_async(
+			Arc::new(config),
+			action.clone(),
+			serde_json::json!({"record":42}),
+			audit.clone(),
+		)
+		.await;
+		if mode == "enforce" {
+			assert!(result.is_err());
+		} else {
+			assert_eq!(result.unwrap(), None);
+		}
+		assert!(
+			audit
+				.events()
+				.iter()
+				.all(|event| event.policy_id.as_deref() != Some("security:capability"))
+		);
+	}
+	let config = serde_json::from_value(serde_json::json!({
+		"mode":"enforce","policies":[{"id":"allow","enabled":true,"effect":"allow"}],
+		"requiredAudit":{"actionTypes":["toolInvoke"]}
+	}))
+	.unwrap();
+	let audit = Arc::new(InMemoryAuditSink::default());
+	assert!(
+		authorize_tool_with_capability_with_audit_async(
+			Arc::new(config),
+			action,
+			serde_json::json!({}),
+			audit.clone()
+		)
+		.await
+		.is_err()
+	);
+	assert!(
+		audit
+			.events()
+			.iter()
+			.any(|event| event.policy_id.as_deref() == Some("security:required-audit-unavailable"))
+	);
 }
 
 #[test]
@@ -104,4 +209,23 @@ fn retry_charges_one_logical_call_but_each_attempt_and_releases_concurrency() {
 		Err(BudgetError::Attempts)
 	));
 	assert_eq!(ledger.usage().unwrap().model_calls, 1);
+}
+
+#[tokio::test]
+async fn config_authorizer_awaited_mapping_matches_sync_modes_and_denials() {
+	let action =
+		security_pipeline::knowledge_retrieve_for_identity("rag-mapping", Default::default(), "docs");
+	for mode in ["enforce", "audit", "shadow"] {
+		for effect in ["allow", "deny"] {
+			let config = serde_json::from_value(
+				serde_json::json!({"mode":mode,"policies":[{"id":"rule","enabled":true,"effect":effect}]}),
+			)
+			.unwrap();
+			let authorizer = SecurityConfigAuthorizer::new(Arc::new(config));
+			assert_eq!(
+				authorizer.decide(&action),
+				authorizer.decide_async(&action).await
+			);
+		}
+	}
 }

@@ -750,6 +750,7 @@ pub fn audit_object_check(
 ) {
 	let rule = result.err().map_or("owner", ObjectError::rule);
 	let decision = Decision {
+		approval: None,
 		request_id: action.request_id.clone(),
 		effect: if result.is_ok() {
 			DecisionEffect::Allow

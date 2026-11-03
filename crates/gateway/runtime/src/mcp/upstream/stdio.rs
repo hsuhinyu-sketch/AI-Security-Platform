@@ -167,6 +167,13 @@ impl Process {
 				tokio::select! {
 					req = sender_rx.recv() => match req {
 						Some((msg, ctx)) => {
+							if let Err(error) = crate::mcp::dispatch::current(&ctx.as_request()) {
+								warn!(?error, "refusing MCP request invalidated while queued");
+								if let ClientJsonRpcMessage::Request(request) = &msg {
+									pending_requests_clone.lock().unwrap().discard(&request.id);
+								}
+								continue;
+							}
 							if let Err(e) = proc.send(msg, &ctx).await {
 								error!("Error sending message to stdio process: {:?}", e);
 								terminal_err = Some(e);

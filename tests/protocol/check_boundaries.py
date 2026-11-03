@@ -367,7 +367,7 @@ assert "translated.map(policy::streaming_limits::terminal)" in stream_host
 assert stream_host.index("decompress_body(") < stream_host.index("policy::streaming_limits::limited")
 assert "None::<AmendOnDrop>" in stream_host, "outer output guard must not own a second accounting logger"
 final_attempt = proxy_source.split("// This runs per outbound attempt, after dynamic target rewriting and provider setup.",1)[1]
-ordered = [final_attempt.index(token) for token in ("guard.dispatch(&backend_call.target)?", "scope.reserve(*kind, action)?", "upstream.call(call)")]
+ordered = [final_attempt.index(token) for token in ("Box::pin(guard.dispatch(&backend_call.target)).await?", "scope.reserve(*kind, action)?", "upstream.call(call)")]
 assert ordered == sorted(ordered), "per-attempt authorization/reservation/send order changed"
 assert "pub trait StreamingEvaluator" in Path("crates/gateway/llm/src/lib.rs").read_text()
 assert "PolicyClient" in Path("crates/gateway/runtime/src/llm/policy/streaming_guardrails.rs").read_text()
@@ -453,7 +453,7 @@ assert "async fn convert_llm_config" not in local_config and "async fn convert_l
 assert "llm_router:" not in Path("crates/gateway/runtime/src/types/agent.rs").read_text()
 assert "backend.resource_name()" in local_config
 assert "!backend.is_llm()" in proxy_source, "MCP bound model calls must retain the final backend-kind check"
-for required in ("scope.reserve(*kind, action)?", "guard.dispatch(&backend_call.target)?", "upstream.call(call)"):
+for required in ("scope.reserve(*kind, action)?", "Box::pin(guard.dispatch(&backend_call.target)).await?", "upstream.call(call)"):
     assert required in proxy_source
 print("Public config: LLM definitions/assembly selected by feature; obsolete Route slot removed; final execution checks retained")
 

@@ -9,6 +9,7 @@ use platform_core::version;
 use prometheus_client::encoding::EncodeLabelSet;
 use prometheus_client::metrics::counter;
 use prometheus_client::metrics::family::Family;
+use prometheus_client::metrics::gauge::Gauge;
 use prometheus_client::metrics::histogram::Histogram as PromHistogram;
 use prometheus_client::metrics::info::Info;
 use prometheus_client::registry::{Metric, Registry, Unit};
@@ -196,6 +197,10 @@ pub struct BuildLabel {
 
 #[derive(Debug)]
 pub struct Metrics {
+	pub config_reloads: Family<[(&'static str, &'static str); 1], counter::Counter>,
+	pub config_reload_last_successful: Gauge,
+	pub config_watch_active: Gauge,
+	pub config_watch_failures: counter::Counter,
 	pub requests: Counter,
 	pub request_duration: Histogram<HTTPLabels>,
 	pub request_processing_duration: Histogram<MinimalHTTPLabels>,
@@ -356,7 +361,33 @@ impl Metrics {
 			gen_ai_time_to_first_token.clone(),
 		);
 
+		let config_reload_last_successful = Gauge::default();
+		registry.register(
+			"config_reload_last_successful",
+			"Whether the last local configuration load succeeded",
+			config_reload_last_successful.clone(),
+		);
+		let config_watch_active = Gauge::default();
+		registry.register(
+			"config_watch_active",
+			"Whether the local configuration file watch is registered",
+			config_watch_active.clone(),
+		);
+		let config_watch_failures = counter::Counter::default();
+		registry.register(
+			"config_watch_failures",
+			"Configuration file watch registration failures and closed channels",
+			config_watch_failures.clone(),
+		);
 		Metrics {
+			config_reloads: build(
+				&mut registry,
+				"config_reloads",
+				"Local configuration loads by result, including startup",
+			),
+			config_reload_last_successful,
+			config_watch_active,
+			config_watch_failures,
 			requests: build(
 				&mut registry,
 				"requests",

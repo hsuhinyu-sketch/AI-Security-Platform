@@ -81,6 +81,8 @@ pub struct IssueCapabilityRequest {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct IssueCapabilityResponse {
+	#[serde(default, skip_serializing_if = "Option::is_none")]
+	pub approval_id: Option<String>,
 	pub token: String,
 	pub request_id: String,
 	pub arguments_hash: String,
@@ -222,7 +224,14 @@ impl CapabilityBroker {
 		if ttl <= Duration::zero() || ttl > self.max_ttl {
 			return Err(BrokerError::InvalidTtl);
 		}
-		let expires_at = Utc::now() + ttl;
+		let now = Utc::now();
+		let mut expires_at = now + ttl;
+		if let Some(approval) = &request.request.authorization_context.approval {
+			if approval.approval_id.is_empty() || approval.expires_at <= now {
+				return Err(BrokerError::InvalidTtl);
+			}
+			expires_at = expires_at.min(approval.expires_at);
+		}
 		for _ in 0..3 {
 			let capability = StoredCapability {
 				token: Uuid::new_v4().to_string(),
@@ -233,6 +242,12 @@ impl CapabilityBroker {
 			match self.store.issue(capability.clone()) {
 				Ok(()) => {
 					return Ok(IssueCapabilityResponse {
+						approval_id: request
+							.request
+							.authorization_context
+							.approval
+							.as_ref()
+							.map(|a| a.approval_id.clone()),
 						token: capability.token,
 						request_id: request.request.request_id,
 						arguments_hash: request.arguments_hash,
@@ -374,5 +389,68 @@ impl IntoResponse for BrokerHttpError {
 			),
 		};
 		(status, Json(serde_json::json!({ "code": code }))).into_response()
+	}
+}
+
+#[cfg(test)]
+mod approval_tests {
+	use super::*;
+	fn request() -> IssueCapabilityRequest {
+		serde_json::from_value(serde_json::json!({"protocolVersion":"v1", "argumentsHash":"hash", "ttlSeconds":30,
+			"request":{"requestId":"tool", "subject":{"tenantId":"tenant-a"}, "action":{"actionType":"toolInvoke", "name":"delete"}, "resource":{"id":"delete", "resourceType":"tool"},
+			"authorizationContext":{"approval":{"approvalId":"approval-42", "expiresAt": Utc::now() + Duration::seconds(2)}}}})).unwrap()
+	}
+	#[test]
+	fn absolute_approval_deadline_and_id_are_bound_to_single_use_capability() {
+		let broker = CapabilityBroker::new(
+			Arc::new(InMemoryCapabilityStore::default()),
+			Duration::seconds(60),
+		)
+		.unwrap();
+		let input = request();
+		let issued = broker.issue(input.clone()).unwrap();
+		assert_eq!(issued.approval_id.as_deref(), Some("approval-42"));
+		assert!(
+			issued.expires_at
+				<= input
+					.request
+					.authorization_context
+					.approval
+					.as_ref()
+					.unwrap()
+					.expires_at
+		);
+		let mut consume = ConsumeCapabilityRequest {
+			protocol_version: "v1".into(),
+			token: issued.token,
+			request: input.request.clone(),
+			arguments_hash: input.arguments_hash.clone(),
+		};
+		consume
+			.request
+			.authorization_context
+			.approval
+			.as_mut()
+			.unwrap()
+			.approval_id = "forged".into();
+		assert!(broker.consume(consume).is_err());
+		let issued = broker.issue(input.clone()).unwrap();
+		let consume = ConsumeCapabilityRequest {
+			protocol_version: "v1".into(),
+			token: issued.token,
+			request: input.request,
+			arguments_hash: input.arguments_hash,
+		};
+		assert!(broker.consume(consume.clone()).is_ok());
+		assert!(broker.consume(consume).is_err());
+		let mut expired = request();
+		expired
+			.request
+			.authorization_context
+			.approval
+			.as_mut()
+			.unwrap()
+			.expires_at = Utc::now() - Duration::seconds(1);
+		assert!(broker.issue(expired).is_err());
 	}
 }

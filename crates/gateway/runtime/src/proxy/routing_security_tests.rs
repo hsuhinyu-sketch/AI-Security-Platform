@@ -103,6 +103,86 @@ fn guarded() -> (Guards, gateway_contracts::ConfigRevision, Target) {
 }
 
 #[tokio::test]
+async fn pending_reauthorization_withholds_frames_and_rechecks_revocation_before_release() {
+	use futures_util::StreamExt;
+	for revoke in [false, true] {
+		let (guards, revision, target) = guarded();
+		let polls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+		let observed = polls.clone();
+		let source = futures_util::stream::iter([Ok::<_, std::io::Error>(bytes::Bytes::from_static(
+			b"protected",
+		))])
+		.inspect(move |_| {
+			observed.fetch_add(1, Ordering::SeqCst);
+		});
+		let (release, wait) = tokio::sync::oneshot::channel();
+		let mut body = Box::pin(ResponseBody {
+			body: Some(Body::from_stream(source)),
+			guards,
+			target,
+			reauthorize: tokio::time::sleep(REAUTHORIZE_INTERVAL),
+			pending: Some(Box::pin(async move {
+				wait.await.unwrap();
+				Ok(())
+			})),
+		});
+		assert!(futures_util::poll!(body.frame()).is_pending());
+		assert_eq!(polls.load(Ordering::SeqCst), 0);
+		if revoke {
+			revision.invalidate();
+		}
+		release.send(()).unwrap();
+		let result = body.frame().await.unwrap();
+		if revoke {
+			assert!(result.is_err());
+			assert_eq!(polls.load(Ordering::SeqCst), 0);
+		} else {
+			assert_eq!(result.unwrap().into_data().unwrap(), "protected");
+			assert_eq!(polls.load(Ordering::SeqCst), 1);
+		}
+		assert!(body.frame().await.is_none());
+	}
+}
+
+#[tokio::test]
+async fn denied_or_dropped_pending_reauthorization_releases_upstream_without_polling() {
+	use futures_util::StreamExt;
+	for deny in [false, true] {
+		let (guards, _revision, target) = guarded();
+		let dropped = Arc::new(AtomicBool::new(false));
+		let lease = OnDrop(dropped.clone());
+		let source = futures_util::stream::iter([Ok::<_, std::io::Error>(bytes::Bytes::from_static(
+			b"must not escape",
+		))])
+		.map(move |_| -> Result<bytes::Bytes, std::io::Error> {
+			let _keep = &lease;
+			panic!("pending authorization must withhold inner polling");
+		});
+		let (release, wait) = tokio::sync::oneshot::channel();
+		let mut body = Box::pin(ResponseBody {
+			body: Some(Body::from_stream(source)),
+			guards,
+			target,
+			reauthorize: tokio::time::sleep(REAUTHORIZE_INTERVAL),
+			pending: Some(Box::pin(async move {
+				wait.await.unwrap();
+				Err(ProxyError::AuthorizationFailed)
+			})),
+		});
+		assert!(futures_util::poll!(body.frame()).is_pending());
+		if deny {
+			release.send(()).unwrap();
+			assert!(body.frame().await.unwrap().is_err());
+			assert!(body.frame().await.is_none());
+		} else {
+			drop(body);
+			assert!(release.send(()).is_err());
+		}
+		assert!(dropped.load(Ordering::Acquire));
+	}
+}
+
+#[tokio::test]
 async fn bound_dependency_rechecks_final_target_and_preserves_revocation_context() {
 	use crate::proxy::httpproxy::{
 		PolicyClient,
@@ -327,4 +407,42 @@ async fn invalidation_while_polling_source_cannot_disclose_the_returned_frame() 
 		.into_body();
 	assert!(body.frame().await.unwrap().is_err());
 	assert!(body.frame().await.is_none());
+}
+
+#[cfg(feature = "ui")]
+#[tokio::test]
+async fn candidate_filtering_is_silent_and_final_denial_names_the_evaluated_action() {
+	let (mut guards, _revision, target) = guarded();
+	let guard = Arc::get_mut(&mut guards.0[0]).unwrap();
+	guard.request_id = uuid::Uuid::new_v4().to_string();
+	guard.attempt = 2;
+	guard.inference = true;
+	guard.config = Arc::new(
+		serde_json::from_value(serde_json::json!({"mode":"enforce", "policies":[
+			{"id":"allow","enabled":true,"effect":"allow"},
+			{"id":"deny-model","enabled":true,"effect":"deny","actionType":"modelInvoke"}
+		]}))
+		.unwrap(),
+	);
+	let store = crate::security_events::store();
+	for _ in 0..500 {
+		assert!(guard.prefilter(Some(&target)).is_err());
+	}
+	assert!(store.events(Some(&guard.request_id), 1000).is_empty());
+	let denial = guard.prefilter(Some(&target)).unwrap_err();
+	guard.reject_candidate(denial);
+	let events = store.events(Some(&guard.request_id), 1000);
+	assert_eq!(events.len(), 1);
+	assert!(events[0].action.starts_with("ModelInvoke:"));
+	assert_eq!(
+		events[0].policy_id.as_deref(),
+		Some("routing:candidate:attempt:2")
+	);
+	assert!(guard.dispatch(&target).await.is_err());
+	let events = store.events(Some(&guard.request_id), 1000);
+	let dispatch = events
+		.iter()
+		.find(|e| e.policy_id.as_deref() == Some("routing:dispatch:attempt:2"))
+		.unwrap();
+	assert!(dispatch.action.starts_with("ModelInvoke:"));
 }

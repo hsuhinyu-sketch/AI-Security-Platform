@@ -19,6 +19,10 @@ use crate::{
 	RawLoggingLevel, StringOrInt, ThreadingMode, cel, client, serdes, telemetry, types,
 };
 
+#[cfg(test)]
+#[path = "config_tests.rs"]
+mod tests;
+
 const DEFAULT_UI_USER_ATTRIBUTE: &str = r#"coalesce(apiKey.user, apiKey.name, apiKey.owner, jwt.sub, jwt.email, basicAuth.username, source.identity.namespace + "/" + source.identity.serviceAccount, source.subjectCn, null)"#;
 const DEFAULT_UI_GROUP_ATTRIBUTE: &str = r#"coalesce(apiKey.group, jwt.groups[0], null)"#;
 
@@ -29,11 +33,47 @@ struct TracingEnvOverrides {
 	protocol: Option<trc::Protocol>,
 }
 
+/// Use the same expansion and YAML/JSON semantics at startup and on local updates.
+pub(crate) fn parse_document(contents: &str) -> anyhow::Result<serde_json::Value> {
+	let contents = contents.replace("# yaml-language-server: $schema", "#");
+	let contents = shellexpand::full(&contents)?;
+	serdes::yamlviajson::from_str(&contents).ctx("invalid config")
+}
+
+/// The startup section is retained only to reject unsupported changes before publication.
+#[derive(Clone)]
+pub(crate) struct StartupConfig(Arc<Option<serde_json::Value>>);
+
+impl std::fmt::Debug for StartupConfig {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		f.write_str("StartupConfig { .. }")
+	}
+}
+
+impl StartupConfig {
+	fn section(document: &serde_json::Value) -> Option<&serde_json::Value> {
+		document
+			.get("config")
+			.filter(|value| !value.is_null() && value.as_object().is_none_or(|fields| !fields.is_empty()))
+	}
+
+	pub(crate) fn ensure_unchanged(&self, document: &serde_json::Value) -> anyhow::Result<()> {
+		if self.0.as_ref().as_ref() != Self::section(document) {
+			anyhow::bail!(
+				"config: is startup-only; restart required to change it; candidate not applied"
+			);
+		}
+		Ok(())
+	}
+}
+
 pub fn parse_config(
 	contents: String,
 	local_config_source: Option<ConfigSource>,
 ) -> anyhow::Result<Config> {
-	let nested: NestedRawConfig = serdes::yamlviajson::from_str(&contents).ctx("invalid config")?;
+	let document = parse_document(&contents)?;
+	let startup_config = StartupConfig(Arc::new(StartupConfig::section(&document).cloned()));
+	let nested: NestedRawConfig = serde_json::from_value(document).ctx("invalid config")?;
 	let raw = nested.config.unwrap_or_default();
 	cel::register_custom_functions(&raw.custom_functions).ctx("invalid config.customFunctions")?;
 
@@ -299,6 +339,7 @@ pub fn parse_config(
 		policy.validate().map_err(anyhow::Error::msg)?;
 	}
 	Ok(crate::Config {
+		startup_config,
 		dependency_egress: raw.dependency_egress,
 		security_audit: {if raw.security_audit.is_some() && raw.security_audit_path.is_some(){anyhow::bail!("choose securityAudit or legacy securityAuditPath");}if let Some(audit)=&raw.security_audit {audit.validate().map_err(anyhow::Error::msg)?;}raw.security_audit},
 		security_audit_path: raw.security_audit_path,

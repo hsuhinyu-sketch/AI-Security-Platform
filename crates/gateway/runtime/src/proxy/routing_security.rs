@@ -14,6 +14,13 @@ use std::sync::Arc;
 #[path = "routing_security_tests.rs"]
 mod tests;
 
+/// A rejected candidate is recorded only if selection has no usable alternative.
+#[derive(Debug)]
+pub(crate) struct CandidateDenial {
+	action: ActionRequest,
+	error: ProxyError,
+}
+
 #[derive(Clone, Copy, Default)]
 pub(crate) struct Attempt(pub usize);
 
@@ -242,6 +249,7 @@ impl Guards {
 				guards,
 				target: target.clone(),
 				reauthorize: tokio::time::sleep(REAUTHORIZE_INTERVAL),
+				pending: None,
 			})
 		}))
 	}
@@ -331,13 +339,45 @@ impl Guard {
 				.0,
 		})))
 	}
-	pub fn prefilter(&self, target: Option<&Target>) -> Result<(), ProxyError> {
-		self.check(target, CheckStage::Candidate)
+	pub fn prefilter(&self, target: Option<&Target>) -> Result<(), CandidateDenial> {
+		let destination = target
+			.map(ToString::to_string)
+			.unwrap_or_else(|| "unresolved-endpoint".into());
+		let mut evaluated = self.route_action(&destination);
+		let result = (|| {
+			self.current()?;
+			for (action, authorize) in self
+				.actions(&destination, target.is_some())
+				.into_iter()
+				.flatten()
+			{
+				evaluated = action;
+				if authorize
+					&& self.config.mode == security_integration_runtime::SecurityMode::Enforce
+					&& self.config.pipeline.prefilter(&evaluated).effect == DecisionEffect::Deny
+				{
+					return Err(ProxyError::AuthorizationFailed);
+				}
+				if target.is_some() {
+					self.check_destination(&evaluated, &destination, CheckStage::Candidate)?;
+				}
+			}
+			self.current()
+		})();
+		result.map_err(|error| CandidateDenial {
+			action: evaluated,
+			error,
+		})
 	}
-	pub fn dispatch(&self, target: &Target) -> Result<(), ProxyError> {
-		self.check(Some(target), CheckStage::Dispatch)
+	pub fn reject_candidate(&self, denial: CandidateDenial) -> ProxyError {
+		self.record_check(&denial.action, CheckStage::Candidate, false);
+		denial.error
 	}
-	fn check_response_current(&self, target: &Target) -> Result<(), ProxyError> {
+
+	pub async fn dispatch(&self, target: &Target) -> Result<(), ProxyError> {
+		self.check_async(target, CheckStage::Dispatch).await
+	}
+	pub(super) fn check_response_current(&self, target: &Target) -> Result<(), ProxyError> {
 		self.current().inspect_err(|_| {
 			let action = security_pipeline::inference_route_for_identity(
 				&self.request_id,
@@ -362,78 +402,90 @@ impl Guard {
 		Ok(())
 	}
 
-	fn check(&self, target: Option<&Target>, stage: CheckStage) -> Result<(), ProxyError> {
-		let destination = target
-			.map(ToString::to_string)
-			.unwrap_or_else(|| "unresolved-endpoint".into());
-		let route = security_pipeline::inference_route_for_identity(
-			self.request_id.clone(),
+	fn route_action(&self, destination: &str) -> ActionRequest {
+		security_pipeline::inference_route_for_identity(
+			&self.request_id,
 			self.identity.clone(),
-			destination.clone(),
-		);
-		let result = (|| {
-			self.current()?;
-			let check = |action: ActionRequest, authorize: bool| {
-				if authorize {
-					security_integration_runtime::evaluate_at_stage(
-						&self.config,
-						stage,
-						&action,
-						None,
-						&crate::security_events::UiSecurityAuditSink,
-					)
-					.map_err(|_| ProxyError::AuthorizationFailed)?;
-				}
-				if target.is_some() {
-					if let Some(egress) = &self.config.data_egress {
-						if !egress.permits(&action, &destination) {
-							return Err(ProxyError::AuthorizationFailed);
-						}
-					}
-					if let Some(flow) = &self.flow {
-						if stage != CheckStage::Candidate {
-							flow.check(&action, &destination)?;
-						} else if !flow.permits(&action, &destination)? {
-							return Err(ProxyError::AuthorizationFailed);
-						}
-					}
-				}
-				Ok::<_, ProxyError>(())
-			};
-			if let Some(model) = &self.model {
-				check(
+			destination,
+		)
+	}
+
+	fn actions(&self, destination: &str, has_target: bool) -> [Option<(ActionRequest, bool)>; 3] {
+		[
+			self.model.as_ref().map(|model| {
+				(
 					security_pipeline::model_invoke_for_identity(
-						self.request_id.clone(),
+						&self.request_id,
 						self.identity.clone(),
 						model,
 					),
 					true,
-				)?;
-			}
-			if self.inference && target.is_some() {
-				check(route.clone(), true)?;
-			}
-			// Agent method-specific authorization is performed after JSON-RPC decoding, not
-			// replaced by a made-up generic action during candidate inspection.
-			if self.agent && target.is_some() {
-				check(
+				)
+			}),
+			(self.inference && has_target).then(|| (self.route_action(destination), true)),
+			// Method-specific Agent authorization follows JSON-RPC decoding, as before.
+			(self.agent && has_target).then(|| {
+				(
 					security_pipeline::agent_invoke_for_identity(
-						self.request_id.clone(),
+						&self.request_id,
 						self.identity.clone(),
-						&destination,
+						destination,
 					),
 					false,
-				)?;
+				)
+			}),
+		]
+	}
+
+	fn check_destination(
+		&self,
+		action: &ActionRequest,
+		destination: &str,
+		stage: CheckStage,
+	) -> Result<(), ProxyError> {
+		if let Some(egress) = &self.config.data_egress {
+			if !egress.permits(action, destination) {
+				return Err(ProxyError::AuthorizationFailed);
+			}
+		}
+		if let Some(flow) = &self.flow {
+			if stage == CheckStage::Candidate {
+				if !flow.permits(action, destination)? {
+					return Err(ProxyError::AuthorizationFailed);
+				}
+			} else {
+				flow.check(action, destination)?;
+			}
+		}
+		Ok(())
+	}
+
+	async fn check_async(&self, target: &Target, stage: CheckStage) -> Result<(), ProxyError> {
+		let destination = target.to_string();
+		let mut evaluated = self.route_action(&destination);
+		let result = async {
+			self.current()?;
+			for (action, authorize) in self.actions(&destination, true).into_iter().flatten() {
+				evaluated = action;
+				if authorize {
+					crate::security::evaluate_async(&self.config, &evaluated)
+						.await
+						.map_err(|_| ProxyError::AuthorizationFailed)?;
+				}
+				self.current()?;
+				self.check_destination(&evaluated, &destination, stage)?;
 			}
 			self.current()
-		})();
-		self.record_check(&route, stage, result.is_ok());
+		}
+		.await;
+		self.record_check(&evaluated, stage, result.is_ok());
 		result
 	}
 	fn record_check(&self, route: &ActionRequest, stage: CheckStage, allowed: bool) {
 		use security_audit::AuditSink;
 		let phase = stage.as_str();
 		let decision = Decision {
+			approval: None,
 			request_id: self.request_id.clone(),
 			effect: if allowed {
 				DecisionEffect::Allow
@@ -555,6 +607,7 @@ pin_project_lite::pin_project! {
 				guards: Guards,
 				target: Target,
 				#[pin] reauthorize: tokio::time::Sleep,
+				pending: Option<futures_util::future::BoxFuture<'static, Result<(), ProxyError>>>,
 		}
 }
 impl http_body::Body for ResponseBody {
@@ -569,25 +622,41 @@ impl http_body::Body for ResponseBody {
 		if this.body.is_none() {
 			return Poll::Ready(None);
 		}
-		let result = (|| {
+		let current = || {
 			for guard in &this.guards.0 {
 				guard.check_response_current(this.target)?;
 			}
-
-			if this.reauthorize.as_mut().poll(cx).is_ready() {
-				for guard in &this.guards.0 {
-					guard.check(Some(this.target), CheckStage::Continuation)?;
-				}
-				this
-					.reauthorize
-					.as_mut()
-					.reset(tokio::time::Instant::now() + REAUTHORIZE_INTERVAL);
-			}
 			Ok::<_, ProxyError>(())
-		})();
-		if let Err(error) = result {
+		};
+		if let Err(error) = current() {
 			this.body.set(None);
+			*this.pending = None;
 			return Poll::Ready(Some(Err(error.into())));
+		}
+		if this.pending.is_none() && this.reauthorize.as_mut().poll(cx).is_ready() {
+			let guards = this.guards.clone();
+			let target = this.target.clone();
+			*this.pending = Some(Box::pin(async move {
+				for guard in &guards.0 {
+					guard.check_async(&target, CheckStage::Continuation).await?;
+				}
+				Ok(())
+			}));
+		}
+		if let Some(pending) = this.pending.as_mut() {
+			let result = match pending.as_mut().poll(cx) {
+				Poll::Pending => return Poll::Pending,
+				Poll::Ready(result) => result.and_then(|()| current()),
+			};
+			*this.pending = None;
+			if let Err(error) = result {
+				this.body.set(None);
+				return Poll::Ready(Some(Err(error.into())));
+			}
+			this
+				.reauthorize
+				.as_mut()
+				.reset(tokio::time::Instant::now() + REAUTHORIZE_INTERVAL);
 		}
 		match this
 			.body

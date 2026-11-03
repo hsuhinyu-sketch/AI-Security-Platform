@@ -27,6 +27,10 @@ jobs:
           python3 tests/docs/check_docs.py --public
           python3 -m unittest discover -s tests/release -p 'test_*.py' -v
       - run: cargo check --workspace
+      - name: Generated schema consistency and read-only check contracts
+        run: |
+          cargo test --locked -p xtask
+          cargo run --locked -p xtask -- schema --check
       - name: Protocol crate dependency boundaries
         run: python3 tests/protocol/check_boundaries.py
       - name: Independent protocol cores and schema
@@ -191,6 +195,9 @@ jobs:
       - name: Strict TypeScript check
         working-directory: ui
         run: pnpm typecheck
+      - name: Generated schema consumer regressions
+        working-directory: ui
+        run: pnpm test:schema
       - name: Biome lint and format check
         working-directory: ui
         run: pnpm lint

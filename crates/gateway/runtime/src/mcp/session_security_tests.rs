@@ -52,7 +52,40 @@ pub(super) fn access() -> SessionAccess {
 pub(super) fn context(access: &SessionAccess) -> super::super::upstream::IncomingRequestContext {
 	let mut req = http::Request::new(());
 	req.extensions_mut().insert(access.clone());
+	req
+		.extensions_mut()
+		.insert(security_types::RequestContext::default());
 	super::super::upstream::IncomingRequestContext::new(&req.into_parts().0)
+}
+
+#[tokio::test]
+async fn session_checks_intersect_common_and_legacy_declarations() {
+	let mut access = access();
+	assert!(access.check().is_ok());
+	assert!(access.check_async().await.is_ok());
+	for rules in [
+		json!([]),
+		json!([
+			{"id":"allow","enabled":true,"effect":"allow"},
+			{"id":"deny-session","enabled":true,"effect":"deny","actionType":"mcpSessionOperation"}
+		]),
+	] {
+		let legacy: security_pipeline::SecurityPipelineConfig =
+			serde_json::from_value(json!({"policies":rules})).unwrap();
+		access.legacy = Some(legacy.into());
+		assert!(access.check().is_err());
+		assert!(access.check_async().await.is_err());
+	}
+	let legacy: security_pipeline::SecurityPipelineConfig = serde_json::from_value(json!({
+		"policies":[{"id":"allow","enabled":true,"effect":"allow"}]
+	}))
+	.unwrap();
+	access.legacy = Some(legacy.into());
+	assert!(access.check().is_ok());
+	assert!(access.check_async().await.is_ok());
+	Arc::make_mut(&mut access.config).pipeline.policies.clear();
+	assert!(access.check().is_err());
+	assert!(access.check_async().await.is_err());
 }
 
 #[test]
@@ -136,6 +169,7 @@ async fn idle_response_terminates_and_drops_upstream_on_timeout() {
 		});
 	let response = access
 		.protect_response(Response::new(Body::from_stream(upstream)))
+		.await
 		.unwrap();
 	assert!(
 		crate::http::read_body_with_limit(response.into_body(), 1024)
@@ -143,4 +177,183 @@ async fn idle_response_terminates_and_drops_upstream_on_timeout() {
 			.is_err()
 	);
 	assert!(dropped.load(Ordering::Acquire));
+}
+
+#[tokio::test]
+async fn notifications_do_not_lose_terminal_result_or_disclose_unrelated_progress() {
+	let access = access();
+	let context = context(&access);
+	let request = serde_json::from_value(json!({"jsonrpc":"2.0","id":7,"method":"tools/call", "params":{"name":"echo","arguments":{},"_meta":{"progressToken":"mine"}}})).unwrap();
+	let messages = [
+		json!({"jsonrpc":"2.0","method":"notifications/progress","params":{"progressToken":"other","progress":1}}),
+		json!({"jsonrpc":"2.0","method":"notifications/message","params":{"level":"info","data":"private log"}}),
+		json!({"jsonrpc":"2.0","method":"notifications/tasks/status","params":{"taskId":"unrelated-task","status":"working","createdAt":"2026-10-29T00:00:00Z","lastUpdatedAt":"2026-10-29T00:00:00Z","ttl":60000}}),
+		json!({"jsonrpc":"2.0","method":"notifications/progress","params":{"progressToken":"mine","progress":2}}),
+		json!({"jsonrpc":"2.0","id":7,"result":{"content":[{"type":"text","text":"terminal"}]}}),
+	];
+	let stream = Messages::from_stream(futures_util::stream::iter(
+		messages
+			.into_iter()
+			.map(|v| Ok(serde_json::from_value(v).unwrap())),
+	));
+	let values = protect_messages(stream, &context, Some(&request), "upstream")
+		.try_collect::<Vec<_>>()
+		.await
+		.unwrap();
+	assert_eq!(values.len(), 2);
+	assert_eq!(
+		serde_json::to_value(&values[0]).unwrap()["params"]["progressToken"],
+		"mine"
+	);
+	assert_eq!(serde_json::to_value(&values[1]).unwrap()["id"], 7);
+}
+
+#[tokio::test(start_paused = true)]
+async fn ignored_notifications_do_not_extend_idle_deadline() {
+	let mut access = access();
+	access.limits.stream_idle_seconds = 2;
+	let context = context(&access);
+	let stream = Messages::from_stream(futures_util::stream::unfold((), |_| async {
+		tokio::time::sleep(Duration::from_secs(1)).await;
+		Some((Ok(serde_json::from_value(json!({"jsonrpc":"2.0","method":"notifications/message", "params":{"level":"info","data":"ignored"}})).unwrap()), ()))
+	}));
+	let start = tokio::time::Instant::now();
+	assert!(
+		protect_messages(stream, &context, None, "upstream")
+			.next()
+			.await
+			.unwrap()
+			.is_err()
+	);
+	assert_eq!(start.elapsed(), Duration::from_secs(2));
+}
+
+#[tokio::test]
+async fn checks_and_binding_do_not_count_as_activity_but_accepted_requests_do() {
+	let mut access = access();
+	let binding = access.binding.clone().unwrap();
+	let before = Instant::now() - Duration::from_secs(100);
+	*binding.last_access.lock().unwrap() = before;
+	access.check().unwrap();
+	access.check_async().await.unwrap();
+	access.bind(binding.clone()).await.unwrap();
+	assert!(
+		access
+			.call(async { Err(ProxyError::AuthorizationFailed) })
+			.await
+			.is_err()
+	);
+	assert_eq!(*binding.last_access.lock().unwrap(), before);
+	access
+		.call(async { Ok(Response::new(Body::empty())) })
+		.await
+		.unwrap();
+	assert!(*binding.last_access.lock().unwrap() > before);
+	*binding.last_access.lock().unwrap() = before;
+	access
+		.call(async {
+			Ok(
+				http::Response::builder()
+					.status(http::StatusCode::ACCEPTED)
+					.body(Body::empty())
+					.unwrap(),
+			)
+		})
+		.await
+		.unwrap();
+	assert!(*binding.last_access.lock().unwrap() > before);
+}
+
+#[tokio::test]
+async fn only_authorized_correlated_messages_refresh_the_binding() {
+	for case in ["accepted", "unrelated", "business-denied", "malformed"] {
+		let mut access = access();
+		if case == "business-denied" {
+			Arc::make_mut(&mut access.config).pipeline.policies.push(
+				serde_json::from_value(json!({
+						"id":"deny-tool", "effect":"deny", "enabled":true, "actionType":"toolInvoke"
+				}))
+				.unwrap(),
+			);
+		}
+		let binding = access.binding.clone().unwrap();
+		let before = Instant::now() - Duration::from_secs(100);
+		*binding.last_access.lock().unwrap() = before;
+		let context = context(&access);
+		let request = serde_json::from_value(json!({"jsonrpc":"2.0","id":7,"method":"tools/call", "params":{"name":"echo","arguments":{},"_meta":{"progressToken":"mine"}}})).unwrap();
+		let message = match case {
+			"unrelated" => {
+				json!({"jsonrpc":"2.0","method":"notifications/progress","params":{"progressToken":"other","progress":1}})
+			},
+			"malformed" => json!({"jsonrpc":"2.0","id":8,"result":{"content":[]}}),
+			_ => {
+				json!({"jsonrpc":"2.0","method":"notifications/progress","params":{"progressToken":"mine","progress":1}})
+			},
+		};
+		let messages = Messages::from_stream(futures_util::stream::iter([Ok(
+			serde_json::from_value(message).unwrap(),
+		)]));
+		let result = protect_messages(messages, &context, Some(&request), "upstream")
+			.next()
+			.await;
+		if case == "accepted" {
+			assert!(result.unwrap().is_ok());
+			assert!(*binding.last_access.lock().unwrap() > before);
+		} else {
+			if case == "unrelated" {
+				assert!(result.is_none());
+			} else {
+				assert!(result.unwrap().is_err());
+			}
+			assert_eq!(*binding.last_access.lock().unwrap(), before, "{case}");
+		}
+	}
+}
+
+#[tokio::test]
+async fn activity_cannot_revive_idle_old_foreign_revoked_or_denied_sessions() {
+	for case in [
+		"idle",
+		"max-age",
+		"owner",
+		"closed",
+		"revision",
+		"credential",
+		"policy",
+	] {
+		let mut access = access();
+		let binding = Arc::get_mut(access.binding.as_mut().unwrap()).unwrap();
+		binding.last_access = Mutex::new(Instant::now() - Duration::from_secs(100));
+		match case {
+			"idle" => binding.idle_ttl = Duration::from_secs(1),
+			"max-age" => binding.created = Instant::now() - Duration::from_secs(601),
+			"owner" => access.scope = "foreign".into(),
+			"closed" => binding.closed.store(true, Ordering::Release),
+			"revision" => {
+				let revision = gateway_contracts::ConfigRevision::default();
+				binding.revision = revision.lease();
+				revision.invalidate();
+			},
+			"credential" => access.expires = 0,
+			"policy" => Arc::make_mut(&mut access.config).pipeline.policies.clear(),
+			_ => unreachable!(),
+		}
+		let binding = access.binding.as_ref().unwrap();
+		let before = *binding.last_access.lock().unwrap();
+		assert!(
+			access
+				.call(async {
+					Ok(
+						http::Response::builder()
+							.status(http::StatusCode::ACCEPTED)
+							.body(Body::empty())
+							.unwrap(),
+					)
+				})
+				.await
+				.is_err(),
+			"{case}"
+		);
+		assert_eq!(*binding.last_access.lock().unwrap(), before, "{case}");
+	}
 }

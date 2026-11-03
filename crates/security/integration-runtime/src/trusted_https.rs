@@ -40,13 +40,21 @@ pub(crate) fn build_client(
 				path.display()
 			)
 		})?;
-		let certificate = reqwest::Certificate::from_pem(&pem).map_err(|error| {
+		let certificates = reqwest::Certificate::from_pem_bundle(&pem).map_err(|error| {
 			format!(
 				"{service_name} root CA PEM '{}' is invalid: {error}",
 				path.display()
 			)
 		})?;
-		builder = builder.add_root_certificate(certificate);
+		if certificates.is_empty() {
+			return Err(format!(
+				"{service_name} root CA PEM '{}' contains no certificates",
+				path.display()
+			));
+		}
+		for certificate in certificates {
+			builder = builder.add_root_certificate(certificate);
+		}
 	}
 	if let Some(path) = identity_pem_file {
 		let pem = std::fs::read(path).map_err(|error| {

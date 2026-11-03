@@ -73,7 +73,9 @@ pub struct HttpAgentIdentityProvider {
 }
 
 impl HttpAgentIdentityProvider {
-	fn from_config(config: &RemoteAgentIdentityConfig) -> Result<Self, AgentIdentityError> {
+	pub(super) fn from_config(
+		config: &RemoteAgentIdentityConfig,
+	) -> Result<Self, AgentIdentityError> {
 		let (endpoint, client) = trusted_https::build_client(
 			&config.endpoint,
 			config.timeout_millis,

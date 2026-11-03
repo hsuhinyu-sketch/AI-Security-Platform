@@ -68,6 +68,7 @@ impl Endpoint<'_> {
 			strng::format!("/openai/v1/{t}?api-version=preview")
 		} else {
 			let model = self.model.as_deref().unwrap_or(model);
+			let model = percent_encoding::utf8_percent_encode(model, super::MODEL_PATH_SEGMENT);
 			strng::format!(
 				"/openai/deployments/{}/{t}?api-version={}",
 				model,

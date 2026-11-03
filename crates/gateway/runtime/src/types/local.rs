@@ -82,9 +82,9 @@ impl NormalizedLocalConfig {
 		gateway_name: ListenerTarget,
 		s: &str,
 	) -> anyhow::Result<NormalizedLocalConfig> {
-		let s = s.replace("# yaml-language-server: $schema", "#");
-		let s = shellexpand::full(&s)?;
-		let local_config: LocalConfig = serdes::yamlviajson::from_str(&s)?;
+		let document = crate::config::parse_document(s)?;
+		config.startup_config.ensure_unchanged(&document)?;
+		let local_config: LocalConfig = serde_json::from_value(document)?;
 		convert(resources, gateway_name, config, local_config).await
 	}
 }
@@ -1612,7 +1612,7 @@ pub struct MCPLocalBackendPolicies {
 		serde(deserialize_with = "unavailable_mcp")
 	)]
 	pub mcp_guardrails: Option<LocalMcpGuardrails>,
-	/// Composable SecurityGateway controls enforced for MCP Tool calls.
+	/// Composable security pipeline controls enforced for MCP Tool calls.
 	#[serde(default)]
 	#[cfg_attr(feature = "schema", schemars(with = "Option<serde_json::Value>"))]
 	pub security_pipeline: Option<security_pipeline::SecurityPipelineConfig>,
@@ -1657,7 +1657,7 @@ pub struct LocalBackendPolicies {
 		serde(deserialize_with = "unavailable_mcp")
 	)]
 	pub mcp_guardrails: Option<LocalMcpGuardrails>,
-	/// Composable SecurityGateway controls enforced for MCP Tool calls.
+	/// Composable security pipeline controls enforced for MCP Tool calls.
 	#[serde(default)]
 	#[cfg_attr(feature = "schema", schemars(with = "Option<serde_json::Value>"))]
 	pub security_pipeline: Option<security_pipeline::SecurityPipelineConfig>,
@@ -1918,7 +1918,7 @@ pub struct FilterOrPolicy {
 		serde(deserialize_with = "unavailable_mcp")
 	)]
 	mcp_guardrails: Option<LocalMcpGuardrails>,
-	/// Composable SecurityGateway controls enforced for MCP Tool calls.
+	/// Composable security pipeline controls enforced for MCP Tool calls.
 	#[serde(default)]
 	#[cfg_attr(feature = "schema", schemars(with = "Option<serde_json::Value>"))]
 	security_pipeline: Option<security_pipeline::SecurityPipelineConfig>,
@@ -2295,7 +2295,7 @@ async fn convert(
 		}
 	}
 
-	let normalized = NormalizedLocalConfig {
+	let mut normalized = NormalizedLocalConfig {
 		#[cfg(feature = "gateway-rag")]
 		rag_systems,
 		binds: all_binds,

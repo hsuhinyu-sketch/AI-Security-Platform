@@ -43,13 +43,14 @@ impl LegacySSEService {
 			.is_some_and(|c| c.mcp_sessions.is_some())
 		{
 			let (mut parts, _) = request.into_parts();
-			let access = super::session_security::SessionAccess::prepare(
+			let access = Box::pin(super::session_security::SessionAccess::prepare(
 				&mut parts,
 				&inputs,
 				&self.session_manager,
 				"use",
 				None,
-			)?
+			))
+			.await?
 			.expect("enabled");
 			return Err(access.denial("unsupported-legacy-sse"));
 		}

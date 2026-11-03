@@ -21,7 +21,13 @@ pub fn event_from_decision(
 		subject: request.subject.clone(),
 		action: request.action.clone(),
 		resource: request.resource.clone(),
-		authorization_context: request.authorization_context.clone(),
+		authorization_context: security_types::AuthorizationContext {
+			approval: decision
+				.approval
+				.clone()
+				.or_else(|| request.authorization_context.approval.clone()),
+			..request.authorization_context.clone()
+		},
 		decision: decision.effect,
 		policy_id: decision.policy_id.clone(),
 		policy_version: decision.policy_version.clone(),

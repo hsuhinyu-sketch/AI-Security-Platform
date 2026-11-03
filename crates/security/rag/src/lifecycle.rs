@@ -112,6 +112,115 @@ fn validate_metadata(meta: &DocumentMetadata) -> Result<(), String> {
 	}
 	Ok(())
 }
+
+/// Domain rules shared by the journal and transactional storage backends. These operations do not
+/// authorize callers or persist state; a backend must apply them under its own write transaction.
+impl DocumentMetadata {
+	pub fn validate(&self) -> Result<(), String> {
+		validate_metadata(self)
+	}
+	pub fn begin_index(
+		authority: &str,
+		document: &IndexedDocument,
+		access: TrustedChunkAccess,
+		previous: Option<&Self>,
+	) -> Result<Self, String> {
+		if matches!(document.source_origin, SourceOrigin::Lifecycle { .. }) {
+			return Err("nested lifecycle origin rejected".into());
+		}
+		let key = document_key(document);
+		let revision = match previous {
+			Some(old) if old.key != key || old.authority != authority => {
+				return Err("document authority/key mismatch".into());
+			},
+			Some(old) if matches!(old.state, DocumentState::Revoked | DocumentState::Deleted) => {
+				return Err("withdrawn document cannot be resurrected by ingestion".into());
+			},
+			Some(old) => old
+				.revision
+				.checked_add(1)
+				.ok_or("document revision exhausted")?,
+			None => 1,
+		};
+		let meta = Self {
+			authority: authority.into(),
+			key,
+			revision,
+			version: revision,
+			state: DocumentState::Pending,
+			source_hash: document.source_hash.clone(),
+			classification: document.classification,
+			classification_source: document.classification_source.clone(),
+			labels: document.labels.clone(),
+			access,
+		};
+		meta.validate()?;
+		Ok(meta)
+	}
+	pub fn activate(&self, revision: u64) -> Result<Self, String> {
+		if self.revision != revision || self.state != DocumentState::Pending {
+			return Err("stale document activation".into());
+		}
+		let mut meta = self.clone();
+		meta.state = DocumentState::Active;
+		meta.validate()?;
+		Ok(meta)
+	}
+	pub fn mutate(&self, expected_revision: u64, mutation: DocumentMutation) -> Result<Self, String> {
+		if self.revision != expected_revision {
+			return Err("document revision conflict".into());
+		}
+		let mut meta = self.clone();
+		match mutation {
+			DocumentMutation::Acl { access } if meta.state == DocumentState::Active => {
+				meta.access = access;
+			},
+			DocumentMutation::Revoke if meta.state != DocumentState::Deleted => {
+				meta.state = DocumentState::Revoked
+			},
+			DocumentMutation::Delete => meta.state = DocumentState::Deleted,
+			_ => return Err("document operation not allowed in current state".into()),
+		}
+		meta.revision = meta
+			.revision
+			.checked_add(1)
+			.ok_or("document revision exhausted")?;
+		meta.validate()?;
+		Ok(meta)
+	}
+	pub fn check_reference(
+		&self,
+		subject: &Subject,
+		reference: &DocumentVersion,
+	) -> Result<(), String> {
+		check_access(self, subject)?;
+		if self.key != reference.key
+			|| self.authority != reference.authority
+			|| self.revision != reference.revision
+		{
+			return Err("document security revision changed".into());
+		}
+		Ok(())
+	}
+	pub fn check_chunk(
+		&self,
+		chunk: &KnowledgeChunk,
+		subject: &Subject,
+	) -> Result<KnowledgeChunk, String> {
+		if self.key != chunk_key(chunk) {
+			return Err("document key mismatch".into());
+		}
+		checked_chunk(chunk, subject, self.clone())
+	}
+}
+fn document_key(document: &IndexedDocument) -> DocumentKey {
+	DocumentKey {
+		tenant_id: document.tenant_id.clone(),
+		corpus_id: document.corpus_id.clone(),
+		document_id: document.document_id.clone(),
+	}
+}
+
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Event {
@@ -173,7 +282,7 @@ impl State {
 		Ok(())
 	}
 	fn put(&mut self, meta: DocumentMetadata) -> Result<(), String> {
-		validate_metadata(&meta)?;
+		// All callers construct the next state through the validated domain transitions above.
 		self.commit(Change::Put {
 			metadata: meta.clone(),
 		})?;
@@ -301,45 +410,18 @@ impl DocumentLifecycleStore {
 		document: &IndexedDocument,
 		access: TrustedChunkAccess,
 	) -> Result<DocumentMetadata, String> {
-		if matches!(document.source_origin, SourceOrigin::Lifecycle { .. }) {
-			return Err("nested lifecycle origin rejected".into());
-		}
-		let key = DocumentKey {
-			tenant_id: document.tenant_id.clone(),
-			corpus_id: document.corpus_id.clone(),
-			document_id: document.document_id.clone(),
-		};
+		let key = document_key(document);
 		key.validate()?;
 		let mut state = self
 			.state
 			.lock()
 			.map_err(|_| "document authority unavailable")?;
 		state.check()?;
-		let revision = match state.records.get(&key) {
-			Some(old) if matches!(old.state, DocumentState::Revoked | DocumentState::Deleted) => {
-				return Err("withdrawn document cannot be resurrected by ingestion".into());
-			},
-			Some(old) => old
-				.revision
-				.checked_add(1)
-				.ok_or("document revision exhausted")?,
-			None if state.records.len() >= self.config.max_documents => {
-				return Err("document authority capacity exhausted".into());
-			},
-			None => 1,
-		};
-		let meta = DocumentMetadata {
-			authority: self.authority.clone(),
-			key,
-			revision,
-			version: revision,
-			state: DocumentState::Pending,
-			source_hash: document.source_hash.clone(),
-			classification: document.classification,
-			classification_source: document.classification_source.clone(),
-			labels: document.labels.clone(),
-			access,
-		};
+		let previous = state.records.get(&key);
+		if previous.is_none() && state.records.len() >= self.config.max_documents {
+			return Err("document authority capacity exhausted".into());
+		}
+		let meta = DocumentMetadata::begin_index(&self.authority, document, access, previous)?;
 		state.put(meta.clone())?;
 		Ok(meta)
 	}
@@ -349,11 +431,11 @@ impl DocumentLifecycleStore {
 			.lock()
 			.map_err(|_| "document authority unavailable")?;
 		state.check()?;
-		let mut meta = state.records.get(key).cloned().ok_or("unknown document")?;
-		if meta.revision != revision || meta.state != DocumentState::Pending {
-			return Err("stale document activation".into());
-		}
-		meta.state = DocumentState::Active;
+		let meta = state
+			.records
+			.get(key)
+			.ok_or("unknown document")?
+			.activate(revision)?;
 		state.put(meta)
 	}
 	pub fn mutate(
@@ -368,25 +450,11 @@ impl DocumentLifecycleStore {
 			.lock()
 			.map_err(|_| "document authority unavailable")?;
 		state.check()?;
-		let mut meta = state.records.get(key).cloned().ok_or("unknown document")?;
-		if meta.revision != expected_revision {
-			return Err("document revision conflict".into());
-		}
-		match mutation {
-			DocumentMutation::Acl { access } if meta.state == DocumentState::Active => {
-				validate_access(&access)?;
-				meta.access = access;
-			},
-			DocumentMutation::Revoke if !matches!(meta.state, DocumentState::Deleted) => {
-				meta.state = DocumentState::Revoked
-			},
-			DocumentMutation::Delete => meta.state = DocumentState::Deleted,
-			_ => return Err("document operation not allowed in current state".into()),
-		}
-		meta.revision = meta
-			.revision
-			.checked_add(1)
-			.ok_or("document revision exhausted")?;
+		let meta = state
+			.records
+			.get(key)
+			.ok_or("unknown document")?
+			.mutate(expected_revision, mutation)?;
 		state.put(meta.clone())?;
 		Ok(meta)
 	}
@@ -395,45 +463,82 @@ impl DocumentLifecycleStore {
 		chunk: &KnowledgeChunk,
 		subject: &Subject,
 	) -> Result<KnowledgeChunk, String> {
-		let SourceOrigin::Lifecycle {
-			authority,
-			version,
-			origin,
-			..
-		} = &chunk.source_origin
-		else {
-			return Err("unversioned index entry".into());
-		};
-		let key = DocumentKey {
-			tenant_id: chunk.tenant_id.clone(),
-			corpus_id: chunk.corpus_id.clone(),
-			document_id: chunk.document_id.clone(),
-		};
-		let meta = self.get(&key)?;
-		check_access(&meta, subject)?;
-		if *authority != meta.authority
-			|| *version != meta.version
-			|| chunk.source_hash != meta.source_hash
-		{
-			return Err("stale document content version".into());
-		}
-		let mut chunk = chunk.clone();
-		chunk.allowed_users = meta.access.allowed_users.clone();
-		chunk.allowed_agents = meta.access.allowed_agents.clone();
-		chunk.allow_tenant_authenticated = meta.access.allow_tenant_authenticated;
-		chunk.expires_at = meta.access.expires_at;
-		chunk.classification = meta.classification;
-		chunk.classification_source = meta.classification_source;
-		chunk.labels = meta.labels;
-		chunk.source_origin = SourceOrigin::Lifecycle {
-			authority: meta.authority,
-			version: *version,
-			revision: meta.revision,
-			origin: origin.clone(),
-		};
-		Ok(chunk)
+		let meta = self.get(&chunk_key(chunk))?;
+		checked_chunk(chunk, subject, meta)
+	}
+
+	fn filter_chunks(
+		&self,
+		chunks: &[KnowledgeChunk],
+		subject: &Subject,
+	) -> Result<Vec<KnowledgeChunk>, String> {
+		let mut state = self
+			.state
+			.lock()
+			.map_err(|_| "document authority unavailable")?;
+		state.check()?;
+		let accepted = chunks
+			.iter()
+			.filter_map(|chunk| {
+				let key = chunk_key(chunk);
+				key.validate().ok()?;
+				let meta = state.records.get(&key)?.clone();
+				checked_chunk(chunk, subject, meta).ok()
+			})
+			.collect();
+		// One durable highwater per candidate batch, before any candidate can escape.
+		// Journal/clock failure fails the entire batch, rather than hiding it as empty results.
+		state.commit(Change::Checkpoint)?;
+		Ok(accepted)
 	}
 }
+fn chunk_key(chunk: &KnowledgeChunk) -> DocumentKey {
+	DocumentKey {
+		tenant_id: chunk.tenant_id.clone(),
+		corpus_id: chunk.corpus_id.clone(),
+		document_id: chunk.document_id.clone(),
+	}
+}
+
+fn checked_chunk(
+	chunk: &KnowledgeChunk,
+	subject: &Subject,
+	meta: DocumentMetadata,
+) -> Result<KnowledgeChunk, String> {
+	let SourceOrigin::Lifecycle {
+		authority,
+		version,
+		origin,
+		..
+	} = &chunk.source_origin
+	else {
+		return Err("unversioned index entry".into());
+	};
+
+	check_access(&meta, subject)?;
+	if *authority != meta.authority
+		|| *version != meta.version
+		|| chunk.source_hash != meta.source_hash
+	{
+		return Err("stale document content version".into());
+	}
+	let mut chunk = chunk.clone();
+	chunk.allowed_users = meta.access.allowed_users.clone();
+	chunk.allowed_agents = meta.access.allowed_agents.clone();
+	chunk.allow_tenant_authenticated = meta.access.allow_tenant_authenticated;
+	chunk.expires_at = meta.access.expires_at;
+	chunk.classification = meta.classification;
+	chunk.classification_source = meta.classification_source;
+	chunk.labels = meta.labels;
+	chunk.source_origin = SourceOrigin::Lifecycle {
+		authority: meta.authority,
+		version: *version,
+		revision: meta.revision,
+		origin: origin.clone(),
+	};
+	Ok(chunk)
+}
+
 fn validate_transition(old: &DocumentMetadata, new: &DocumentMetadata) -> Result<(), String> {
 	let mut activated = old.clone();
 	activated.state = DocumentState::Active;
@@ -504,10 +609,7 @@ impl DocumentVersionValidator for DocumentLifecycleStore {
 				.records
 				.get(&reference.key)
 				.ok_or("unknown document")?;
-			check_access(meta, subject)?;
-			if meta.authority != reference.authority || meta.revision != reference.revision {
-				return Err("document security revision changed".into());
-			}
+			meta.check_reference(subject, reference)?;
 		}
 		state.commit(Change::Checkpoint)
 	}
@@ -592,21 +694,139 @@ impl<B: RetrievalBackend> RetrievalBackend for LifecycleBackend<B> {
 			agent_id: filter.agent_id,
 			delegation_id: None,
 		};
-		// Authority failure rejects the entire request, not an empty successful context.
-		store
-			.state
-			.lock()
-			.map_err(|_| "document authority unavailable")?
-			.check()?;
-		let accepted = chunks
-			.iter()
-			.filter_map(|chunk| store.check_chunk(chunk, &subject).ok())
-			.collect();
-		store
-			.state
-			.lock()
-			.map_err(|_| "document authority unavailable")?
-			.check()?;
-		Ok(accepted)
+		store.filter_chunks(&chunks, &subject)
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+	struct Fixture {
+		store: Arc<DocumentLifecycleStore>,
+		directory: std::path::PathBuf,
+		chunks: Vec<KnowledgeChunk>,
+		subject: Subject,
+	}
+	impl Fixture {
+		fn new() -> Self {
+			let directory = std::env::temp_dir().join(format!("rag-batch-{}", uuid::Uuid::new_v4()));
+			std::fs::create_dir(&directory).unwrap();
+			#[cfg(unix)]
+			{
+				use std::os::unix::fs::PermissionsExt;
+				std::fs::set_permissions(&directory, std::fs::Permissions::from_mode(0o700)).unwrap();
+			}
+			let store = DocumentLifecycleStore::open(DocumentLifecycleConfig {
+				namespace: "test".into(),
+				storage: StateJournalConfig {
+					path: directory.join("documents.jsonl"),
+					max_bytes: 1_048_576,
+				},
+				max_documents: 16,
+			})
+			.unwrap();
+			let mut document = IndexedDocument {
+				tenant_id: "tenant-a".into(),
+				corpus_id: "docs".into(),
+				document_id: "document".into(),
+				source_uri: "https://example.test/doc".into(),
+				source_hash: "a".repeat(64),
+				source_origin: SourceOrigin::Submitted,
+				content: "content".into(),
+				labels: vec![],
+				classification: DataClassification::Restricted,
+				classification_source: "default-classification".into(),
+			};
+			let access = TrustedChunkAccess {
+				allowed_users: vec!["alice".into()],
+				..Default::default()
+			};
+			let meta = store.begin_index(&document, access.clone()).unwrap();
+			store.activate(&meta.key, meta.revision).unwrap();
+			document.source_origin = SourceOrigin::Lifecycle {
+				authority: meta.authority,
+				version: meta.version,
+				revision: meta.revision,
+				origin: Box::new(SourceOrigin::Submitted),
+			};
+			let chunks = (0..500)
+				.map(|id| document.to_chunk(id.to_string(), "fragment", 1, access.clone()))
+				.collect();
+			let subject = Subject {
+				user_id: Some("alice".into()),
+				agent_id: None,
+				tenant_id: Some("tenant-a".into()),
+				delegation_id: None,
+			};
+			Self {
+				store,
+				directory,
+				chunks,
+				subject,
+			}
+		}
+	}
+	impl Drop for Fixture {
+		fn drop(&mut self) {
+			let _ = std::fs::remove_dir_all(&self.directory);
+		}
+	}
+	#[test]
+	fn candidate_batch_has_one_durable_checkpoint_and_preserves_tenant_acl_and_revocation() {
+		let f = Fixture::new();
+		let before = f.store.state.lock().unwrap().sequence;
+		assert_eq!(
+			f.store.filter_chunks(&f.chunks, &f.subject).unwrap().len(),
+			500
+		);
+		assert_eq!(f.store.state.lock().unwrap().sequence - before, 1);
+		let mut foreign = f.subject.clone();
+		foreign.tenant_id = Some("tenant-b".into());
+		assert!(
+			f.store
+				.filter_chunks(&f.chunks, &foreign)
+				.unwrap()
+				.is_empty()
+		);
+		foreign = f.subject.clone();
+		foreign.user_id = Some("bob".into());
+		assert!(
+			f.store
+				.filter_chunks(&f.chunks, &foreign)
+				.unwrap()
+				.is_empty()
+		);
+		f.store
+			.mutate(&chunk_key(&f.chunks[0]), 1, DocumentMutation::Revoke)
+			.unwrap();
+		assert!(
+			f.store
+				.filter_chunks(&f.chunks, &f.subject)
+				.unwrap()
+				.is_empty()
+		);
+	}
+	#[test]
+	fn authority_failure_is_never_filtered_into_a_successful_empty_batch() {
+		for clock in [false, true] {
+			let f = Fixture::new();
+			if clock {
+				f.store.state.lock().unwrap().highwater = chrono::Utc::now().timestamp_millis() + 60_000;
+			} else {
+				std::fs::rename(
+					f.directory.join("documents.jsonl"),
+					f.directory.join("replaced.jsonl"),
+				)
+				.unwrap();
+			}
+			assert!(f.store.filter_chunks(&f.chunks, &f.subject).is_err());
+			assert!(f.store.filter_chunks(&[], &f.subject).is_err());
+		}
+	}
+	#[test]
+	fn failed_batch_checkpoint_does_not_release_already_validated_candidates() {
+		let f = Fixture::new();
+		f.store.state.lock().unwrap().sequence = u64::MAX;
+		assert!(f.store.filter_chunks(&f.chunks, &f.subject).is_err());
 	}
 }

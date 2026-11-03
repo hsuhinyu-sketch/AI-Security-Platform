@@ -5,6 +5,10 @@ import copy
 import http.client
 import http.server
 import json
+import os
+import ssl
+from datetime import datetime, timedelta, timezone
+from unittest import mock
 from pathlib import Path
 import tempfile
 import threading
@@ -12,6 +16,7 @@ import time
 import unittest
 
 import gateway_faults
+from sampling_profile import tls_identity
 
 SECRET = 'REVIEW_SECRET'
 BINARY = None
@@ -25,6 +30,27 @@ class Model(gateway_faults.Upstream):
         text = {'safe': 'safe answer', 'email': 'alice@example.com'}.get(mode, SECRET)
         if self.path.endswith('/images/generations'):
             return self.reply(200, {'model': 'local', 'data': [{'url': 'https://example.test/result'}]})
+        if request.get('stream') and mode == 'pending-reauthorization':
+            self.send_response(200)
+            self.send_header('Content-Type', 'text/event-stream')
+            self.send_header('Transfer-Encoding', 'chunked')
+            self.end_headers()
+            def send(text):
+                event = {'id': 'renewal', 'object': 'chat.completion.chunk', 'created': 1, 'model': 'local',
+                         'choices': [{'index': 0, 'finish_reason': None, 'delta': {'content': text}}]}
+                data = ('data: ' + json.dumps(event) + '\n\n').encode()
+                self.wfile.write(f'{len(data):x}\r\n'.encode() + data + b'\r\n')
+                self.wfile.flush()
+            try:
+                send('safe first')
+                if self.server.release_tail.wait(10):
+                    send(SECRET)
+                    self.server.tail_sent.set()
+                self.wfile.write(b'0\r\n\r\n')
+                self.wfile.flush()
+            except (BrokenPipeError, ConnectionResetError):
+                pass
+            return
         if request.get('stream'):
             events = []
             parts = (text[:7], text[7:])
@@ -35,6 +61,8 @@ class Model(gateway_faults.Upstream):
                 parts = (arguments[:split], arguments[split:])
             for index, part in enumerate(parts):
                 delta = {'content': part}
+                if mode.startswith('unknown-'):
+                    delta = {mode.removeprefix('unknown-'): part}
                 if tool:
                     function = {'arguments': part}
                     if index == 0:
@@ -44,6 +72,9 @@ class Model(gateway_faults.Upstream):
                         delta['tool_calls'][0].update(id='call', type='function')
                 events.append({'id': 'review', 'object': 'chat.completion.chunk', 'created': 1, 'model': 'local',
                                'choices': [{'index': 0, 'finish_reason': None, 'delta': delta}]})
+                if mode.startswith('ancillary-'):
+                    events[-1]['choices'][0].update(delta={'content': 'safe'}, logprobs={
+                        'content': [{'token': SECRET if mode == 'ancillary-secret' else 'safe'}]})
             wire = ''.join('data: ' + json.dumps(event) + '\n\n' for event in events) + 'data: [DONE]\n\n'
             data = wire.encode()
             self.send_response(200)
@@ -78,6 +109,26 @@ class Model(gateway_faults.Upstream):
         if self.server.mode == 'numeric':
             return '{"value":7}'
         return json.dumps({'value': SECRET})
+
+
+class RemoteDecision(http.server.BaseHTTPRequestHandler):
+    def log_message(self, *_):
+        pass
+
+    def do_POST(self):
+        request = json.loads(self.rfile.read(int(self.headers['Content-Length'])))['request']
+        effect = self.server.decide(request)
+        data = json.dumps({'requestId': request['requestId'], 'effect': effect,
+                           'policyId': 'remote-content', 'policyVersion': 'content-v1',
+                           'expiresAt': (datetime.now(timezone.utc) + timedelta(seconds=30)).isoformat()}).encode()
+        try:
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('Content-Length', str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+        except (BrokenPipeError, ConnectionResetError, ssl.SSLError):
+            pass
 
 
 class SecurityContent(unittest.TestCase):
@@ -117,6 +168,142 @@ class SecurityContent(unittest.TestCase):
     def start(self, yaml=False):
         self.gateway.config.write_text(self.wire(self.config, yaml))
         self.gateway.start()
+
+    def remote_decision(self, decide):
+        certificate, key = tls_identity(self.directory)
+        server = http.server.ThreadingHTTPServer(('127.0.0.1', 0), RemoteDecision)
+        server.daemon_threads = True
+        server.decide = decide
+        tls = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        tls.load_cert_chain(certificate, key)
+        server.socket = tls.wrap_socket(server.socket, server_side=True)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        self.addCleanup(thread.join, 5)
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
+        security = self.config['aiSystems'][0]['security']
+        security['dynamicAuthorization'] = {'policyVersion': 'content-v1', 'cacheTtlSeconds': 0}
+        security['remotePdp'] = {'endpoint': f'https://127.0.0.1:{server.server_port}/pdp',
+                                 'rootCaPemFile': str(certificate), 'timeoutMillis': 10000}
+
+    def test_current_thread_remote_decision_does_not_stall_other_requests(self):
+        entered, release = threading.Event(), threading.Event()
+        def decide(_):
+            entered.set()
+            if not release.wait(12):
+                raise TimeoutError('test did not release the pending decision')
+            return 'allow'
+        self.remote_decision(decide)
+        affinity = os.sched_getaffinity(0)
+        try:
+            # One real per-core listener ensures both requests use the same event loop.
+            os.sched_setaffinity(0, {min(affinity)})
+            with mock.patch.dict(os.environ, {'THREADING_MODE': 'thread_per_core'}):
+                self.start()
+        finally:
+            os.sched_setaffinity(0, affinity)
+        result, errors = [], []
+        def first_request():
+            try:
+                result.append(self.call())
+            except BaseException as error:
+                errors.append(error)
+        worker = threading.Thread(target=first_request)
+        worker.start()
+        try:
+            self.assertTrue(entered.wait(8), 'PDP was not reached')
+            self.assertNotEqual(self.call(tenant='tenant-b')[0], 200)
+            self.assertTrue(worker.is_alive(), 'first request must still await its decision')
+        finally:
+            release.set()
+            worker.join(10)
+        self.assertFalse(worker.is_alive())
+        self.assertEqual(errors, [])
+        self.assertEqual(result[0][0], 200)
+        self.assertEqual(len(self.server.requests), 1)
+        self.evidence[self.id()] = {'sameListenerCurrentThread': True, 'crossTenantDispatched': 0}
+
+    def test_configuration_change_during_remote_dispatch_refuses_stale_allow(self):
+        entered, release = threading.Event(), threading.Event()
+        def decide(_):
+            entered.set()
+            if not release.wait(12):
+                raise TimeoutError('test did not release dispatch decision')
+            return 'allow'
+        self.remote_decision(decide)
+        self.start()
+        result, errors = [], []
+        def invoke():
+            try:
+                result.append(self.call())
+            except BaseException as error:
+                errors.append(error)
+        worker = threading.Thread(target=invoke)
+        worker.start()
+        try:
+            self.assertTrue(entered.wait(8), 'PDP was not reached')
+            changed = copy.deepcopy(self.config)
+            changed['aiSystems'][0]['security']['policies'][0]['effect'] = 'deny'
+            self.reload(changed, successful=True)
+        finally:
+            release.set()
+            worker.join(10)
+        self.assertFalse(worker.is_alive())
+        self.assertEqual(errors, [])
+        self.assertNotEqual(result[0][0], 200)
+        self.assertEqual(len(self.server.requests), 0)
+        self.evidence[self.id()] = {'staleAllowAfterPublicationDispatched': 0}
+
+    def test_pending_remote_stream_renewal_denial_cannot_disclose_buffered_frames(self):
+        entered, release = threading.Event(), threading.Event()
+        calls = []
+        def decide(request):
+            calls.append(request)
+            if len(calls) == 1:
+                return 'allow'
+            entered.set()
+            if not release.wait(12):
+                raise TimeoutError('test did not release continuation decision')
+            return 'deny'
+        self.remote_decision(decide)
+        self.server.mode = 'pending-reauthorization'
+        self.server.release_tail, self.server.tail_sent = threading.Event(), threading.Event()
+        self.start()
+        result, errors = [], []
+        def read_stream():
+            connection = http.client.HTTPConnection('127.0.0.1', self.gateway.model_port, timeout=12)
+            try:
+                connection.request('POST', '/v1/chat/completions', json.dumps({'model': 'local', 'stream': True,
+                    'messages': [{'role': 'user', 'content': 'question'}]}), {'Content-Type': 'application/json',
+                    'Authorization': 'Bearer ' + self.gateway.token()})
+                response = connection.getresponse()
+                try:
+                    data = response.read()
+                except http.client.IncompleteRead as error:
+                    data = error.partial
+                result.append((response.status, data))
+            except BaseException as error:
+                errors.append(error)
+            finally:
+                connection.close()
+        worker = threading.Thread(target=read_stream)
+        worker.start()
+        try:
+            self.assertTrue(entered.wait(10), 'periodic remote reauthorization was not reached')
+            self.server.release_tail.set()
+            self.assertTrue(self.server.tail_sent.wait(3), 'upstream tail was not produced')
+        finally:
+            release.set()
+            self.server.release_tail.set()
+            worker.join(12)
+        self.assertFalse(worker.is_alive())
+        self.assertEqual(errors, [])
+        self.assertEqual(result[0][0], 200)
+        self.assertIn(b'safe first', result[0][1])
+        self.assertNotIn(SECRET.encode(), result[0][1])
+        self.assertGreaterEqual(len(calls), 2)
+        self.evidence[self.id()] = {'pendingContinuationWithheldTail': True, 'secretFrames': 0}
 
     def guard(self, phase='response', streaming=None, action='reject', pattern=SECRET):
         guard = {phase: [{'regex': {'action': action, 'rules': [{'pattern': pattern}]}}]}
@@ -181,6 +368,60 @@ class SecurityContent(unittest.TestCase):
             time.sleep(.025)
         self.fail(log.read_text()[-5000:])
 
+    def test_egress_denial_and_allowed_destination_keep_their_contract(self):
+        security = self.config['aiSystems'][0]['security']
+        security['dataEgress'] = {'classification': 'restricted', 'modelDestinations': []}
+        self.start()
+        status, body = self.call()
+        self.assertEqual(status, 403)
+        self.assertEqual(body, b'authorization failed')
+        self.assertEqual(len(self.server.requests), 0)
+        allowed = copy.deepcopy(self.config)
+        allowed['aiSystems'][0]['security']['dataEgress']['modelDestinations'] = [f'127.0.0.1:{self.server.server_port}']
+        self.reload(allowed, successful=True)
+        self.assertEqual(self.call()[0], 200)
+        self.assertEqual(len(self.server.requests), 1)
+        self.evidence[self.id()] = {'deniedStatus': 403, 'deniedDispatches': 0, 'allowedDispatches': 1}
+
+    def test_security_blocked_mirror_returns_generic_forbidden_without_dispatch(self):
+        self.config['aiSystems'][0]['security']['dataEgress'] = {
+            'classification': 'restricted', 'modelDestinations': [f'127.0.0.1:{self.server.server_port}']}
+        self.config['policies'] = [{'name': {'name': 'mirror-retry', 'namespace': 'internal'},
+            'target': {'route': {'name': 'ai-system:fault-acceptance:llm:request', 'namespace': 'internal'}},
+            'policy': {'retry': {'attempts': 3, 'codes': [403, 503]}}},
+            {'name': {'name': 'mirror-policy', 'namespace': 'internal'},
+             'target': {'route': {'name': 'ai-system:fault-acceptance:llm:request', 'namespace': 'internal'}},
+             'policy': {'requestMirror': {'backend': {'host': f'127.0.0.1:{self.server.server_port}'}, 'percentage': 1.0}}}]
+        self.start()
+        status, body = self.call()
+        self.assertEqual(status, 403)
+        self.assertEqual(body, b'authorization failed')
+        self.assertEqual(len(self.server.requests), 0)
+        log = self.gateway.directory / 'gateway.log'
+        deadline = time.monotonic() + 3
+        while time.monotonic() < deadline and 'reason=Authorization' not in log.read_text():
+            time.sleep(.025)
+        self.assertIn('reason=Authorization', log.read_text())
+        self.evidence[self.id()] = {'deniedStatus': status, 'primaryAndMirrorDispatches': 0,
+                                   'clientBody': body.decode(), 'reason': 'Authorization'}
+
+    def test_allowed_upstream_503_keeps_status_and_configured_retries(self):
+        self.config['aiSystems'][0]['security']['dataEgress'] = {
+            'classification': 'restricted', 'modelDestinations': [f'127.0.0.1:{self.server.server_port}']}
+        self.config['policies'] = [{'name': {'name': 'upstream-retry', 'namespace': 'internal'},
+            'target': {'route': {'name': 'ai-system:fault-acceptance:llm:request', 'namespace': 'internal'}},
+            'policy': {'retry': {'attempts': 1, 'codes': [503]}}}]
+        def unavailable(handler):
+            request = json.loads(handler.rfile.read(int(handler.headers['Content-Length'])))
+            handler.server.requests.append((handler.path, request))
+            handler.reply(503, {'error': {'message': 'temporary failure', 'type': 'server_error'}})
+        self.start()
+        with mock.patch.object(Model, 'do_POST', unavailable):
+            status, body = self.call()
+        self.assertEqual(status, 503, body)
+        self.assertEqual(len(self.server.requests), 2)
+        self.evidence[self.id()] = {'upstreamStatus': status, 'upstreamAttempts': 2}
+
     def test_valid_enforce_and_explicit_audit_modes_keep_their_contract(self):
         self.start()
         self.assertEqual(self.call()[0], 200)
@@ -243,6 +484,34 @@ class SecurityContent(unittest.TestCase):
         self.start()
         self.assertEqual(self.call('/v1/images/generations')[0], 200)
         self.assertEqual(len(self.server.requests), 1)
+
+    def test_common_observation_modes_cannot_skip_opaque_content_controls(self):
+        for mode in ('audit', 'shadow'):
+            for passthrough in ('detect', 'opaque'):
+                with self.subTest(mode=mode, passthrough=passthrough):
+                    self.gateway, self.config = self.new_gateway()
+                    self.config['aiSystems'][0]['security']['mode'] = mode
+                    self.config['aiSystems'][0]['llm']['models'][0]['passthrough'] = passthrough
+                    self.guard('request')
+                    self.start()
+                    self.assert_blocked(self.call(), 0, request=True)
+
+    def test_opaque_routes_cannot_skip_structured_request_defaults(self):
+        for passthrough in ('detect', 'opaque'):
+            with self.subTest(passthrough=passthrough):
+                self.gateway, self.config = self.new_gateway()
+                self.config['aiSystems'][0]['security']['mode'] = 'audit'
+                model = self.config['aiSystems'][0]['llm']['models'][0]
+                model.update(passthrough=passthrough, defaults={'max_tokens': 10})
+                self.start()
+                self.assert_blocked(self.call(), 0, request=True)
+
+    def test_unguarded_opaque_route_preserves_payload(self):
+        self.config['aiSystems'][0]['llm']['models'][0]['passthrough'] = 'opaque'
+        self.start()
+        self.assertEqual(self.call(content='opaque payload')[0], 200)
+        self.assertEqual(len(self.server.requests), 1)
+        self.assertEqual(self.server.requests[0][1]['messages'][-1]['content'], 'opaque payload')
 
     def blocked_stream(self, mode, output='text'):
         self.guard(streaming=mode)
@@ -307,6 +576,36 @@ class SecurityContent(unittest.TestCase):
         self.assertIn(b'[DONE]', body)
         self.assertNotIn(b'guardrail_blocked', body)
         self.assertEqual(len(self.server.requests), 1)
+
+    def test_unknown_stream_text_fields_are_blocked_without_disclosure(self):
+        self.guard()
+        self.start()
+        for field in ('analysis', 'reasoning', 'transcript'):
+            with self.subTest(field=field):
+                self.server.mode = 'unknown-' + field
+                status, body = self.call(stream=True)
+                self.assertEqual(status, 200, body)
+                self.assertIn(b'guardrail_blocked', body)
+                self.assertNotIn(SECRET[:7].encode(), body)
+                self.assertNotIn(SECRET[7:].encode(), body)
+                self.assertNotIn(b'[DONE]', body)
+
+    def test_stream_ancillary_content_is_checked_and_safe_logprobs_are_delivered(self):
+        self.guard()
+        self.start()
+        for mode in ('ancillary-safe', 'ancillary-secret'):
+            with self.subTest(mode=mode):
+                self.server.mode = mode
+                status, body = self.call(stream=True)
+                self.assertEqual(status, 200, body)
+                self.assertNotIn(SECRET.encode(), body)
+                if mode == 'ancillary-safe':
+                    self.assertNotIn(b'guardrail_blocked', body)
+                    self.assertIn(b'logprobs', body)
+                    self.assertIn(b'[DONE]', body)
+                else:
+                    self.assertIn(b'guardrail_blocked', body)
+                    self.assertNotIn(b'[DONE]', body)
 
     def tool_cases(self, action, mode='tool', pattern=SECRET):
         self.guard(action=action, pattern=pattern)

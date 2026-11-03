@@ -1,16 +1,16 @@
-use std::io::Write;
+use std::path::Path;
 
 use ai_security_platform_runtime::cel;
-use anyhow::Result;
+use anyhow::{Context, Result, bail};
 use schemars::JsonSchema;
 
-pub fn generate_schema() -> Result<()> {
-	struct SchemaDoc {
-		file: &'static str,
-		schema_json: String,
-	}
+struct SchemaDoc {
+	file: &'static str,
+	schema_json: String,
+}
 
-	let xtask_path = std::env::var("CARGO_MANIFEST_DIR")?;
+pub fn generate_schema(check: bool) -> Result<()> {
+	let xtask_path = env!("CARGO_MANIFEST_DIR");
 	let schemas = vec![
 		SchemaDoc {
 			file: "config.json",
@@ -28,10 +28,29 @@ pub fn generate_schema() -> Result<()> {
 			)?,
 		},
 	];
-	for schema in &schemas {
-		let rule_path = format!("{xtask_path}/../../schema/{}", schema.file);
-		let mut file = fs_err::File::create(rule_path)?;
-		file.write_all(schema.schema_json.as_bytes())?;
+	write_or_check_schemas(&Path::new(xtask_path).join("../../schema"), &schemas, check)
+}
+
+fn write_or_check_schemas(directory: &Path, schemas: &[SchemaDoc], check: bool) -> Result<()> {
+	let mut stale = Vec::new();
+	for schema in schemas {
+		let path = directory.join(schema.file);
+		if check {
+			match fs_err::read(&path) {
+				Ok(current) if current == schema.schema_json.as_bytes() => {},
+				Ok(_) => stale.push(schema.file),
+				Err(error) if error.kind() == std::io::ErrorKind::NotFound => stale.push(schema.file),
+				Err(error) => return Err(error).with_context(|| format!("read {}", path.display())),
+			}
+		} else {
+			fs_err::write(&path, &schema.schema_json)?;
+		}
+	}
+	if !stale.is_empty() {
+		bail!(
+			"schema files are missing or out of date: {}. Run `cargo xtask schema` and include the generated changes.",
+			stale.join(", ")
+		);
 	}
 	Ok(())
 }
@@ -52,3 +71,7 @@ pub fn make_with_contract<T: JsonSchema>(
 	let schema = gens.into_root_schema_for::<T>();
 	Ok(serde_json::to_string_pretty(&schema)?)
 }
+
+#[cfg(test)]
+#[path = "schema_tests.rs"]
+mod tests;

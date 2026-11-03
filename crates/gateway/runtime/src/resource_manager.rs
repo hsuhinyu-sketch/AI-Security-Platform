@@ -13,7 +13,7 @@ use http::header::EXPIRES;
 use tokio::sync::{mpsc, watch};
 use tokio::task::JoinHandle;
 use tokio::time::{Instant, sleep_until};
-use tracing::{trace, warn};
+use tracing::{info, warn};
 
 use crate::client::Client;
 use crate::http::Body;
@@ -23,6 +23,7 @@ const OPENAPI_TTL: Duration = Duration::from_hours(24);
 const GENERIC_TTL: Duration = Duration::from_mins(15);
 const FAILED_HTTP_REFRESH: Duration = Duration::from_secs(15);
 const MIN_HTTP_REFRESH: Duration = Duration::from_secs(60);
+const HTTP_FETCH_TIMEOUT: Duration = Duration::from_secs(10);
 
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum ResourceKind {
@@ -138,9 +139,10 @@ impl ResourceFetcher {
 					.await
 					.with_context(|| format!("read resource file {}", path.display()))
 					.map(Bytes::from),
-				ResourceRef::Http { url, .. } => {
-					Err(anyhow!("resource fetcher cannot fetch HTTP resource {url}"))
-				},
+				ResourceRef::Http { url, .. } => Err(anyhow!(
+					"resource fetcher cannot fetch HTTP resource {}",
+					safe_http_resource(&url)
+				)),
 			},
 		}
 	}
@@ -232,24 +234,12 @@ struct Entry {
 	next_refresh: Option<Instant>,
 }
 
-struct FileWatch {
-	id: u64,
-	task: JoinHandle<()>,
-}
-
 #[derive(Default)]
 struct FileWatchRegistry {
-	watches: std::sync::Mutex<HashMap<PathBuf, FileWatch>>,
-	counter: AtomicU64,
+	watches: Mutex<HashMap<PathBuf, JoinHandle<()>>>,
 }
 
 impl FileWatchRegistry {
-	// Watch tasks can outlive their map entry. IDs keep old tasks from removing
-	// a newer watch registered for the same path after Vim-style file replacement.
-	fn next_id(&self) -> u64 {
-		self.counter.fetch_add(1, AtomicOrdering::Relaxed) + 1
-	}
-
 	fn contains(&self, path: &Path) -> bool {
 		self
 			.watches
@@ -258,40 +248,43 @@ impl FileWatchRegistry {
 			.contains_key(path)
 	}
 
-	fn insert_or_abort(&self, path: PathBuf, watch: FileWatch) {
+	fn insert_or_abort(&self, path: PathBuf, task: JoinHandle<()>) {
 		let mut watches = self
 			.watches
 			.lock()
 			.expect("resource file watcher mutex poisoned");
 		if watches.contains_key(&path) {
-			watch.task.abort();
+			task.abort();
 			return;
 		}
-		watches.insert(path, watch);
-	}
-
-	fn remove_if_current(&self, path: &Path, id: u64) {
-		let mut watches = self
-			.watches
-			.lock()
-			.expect("resource file watcher mutex poisoned");
-		if watches.get(path).is_some_and(|watch| watch.id == id) {
-			watches.remove(path);
-		}
+		watches.insert(path, task);
 	}
 
 	fn retain_paths(&self, retained: &HashSet<PathBuf>) {
-		let mut watches = self
+		self
 			.watches
 			.lock()
-			.expect("resource file watcher mutex poisoned");
-		watches.retain(|path, watch| {
-			let retain = retained.contains(path);
-			if !retain {
-				watch.task.abort();
-			}
-			retain
-		});
+			.expect("resource file watcher mutex poisoned")
+			.retain(|path, task| {
+				let retain = retained.contains(path);
+				if !retain {
+					task.abort();
+				}
+				retain
+			});
+	}
+}
+
+impl Drop for FileWatchRegistry {
+	fn drop(&mut self) {
+		for (_, task) in self
+			.watches
+			.get_mut()
+			.expect("resource file watcher mutex poisoned")
+			.drain()
+		{
+			task.abort();
+		}
 	}
 }
 
@@ -442,7 +435,7 @@ impl ResourceManager {
 			);
 		if let Some(at) = next {
 			tracing::debug!(
-				resource = %resource_key(&resource),
+				resource = %safe_resource_key(&resource),
 				refresh_in = ?at.saturating_duration_since(Instant::now()),
 				"scheduled resource refresh"
 			);
@@ -463,11 +456,25 @@ impl ResourceManager {
 		let FetchResult { content, next } = match result {
 			Ok(result) => result,
 			Err(e) => {
-				warn!(resource = %resource_key(&resource), "failed to refresh resource: {e}");
-				if !self.is_active(&resource) {
+				warn!(resource = %safe_resource_key(&resource), "failed to refresh resource: {e}");
+				let active = self
+					.inner
+					.active_resources
+					.lock()
+					.expect("resource active set mutex poisoned");
+				if !active.contains(&resource) {
 					return;
 				}
 				let next = Instant::now() + FAILED_HTTP_REFRESH;
+				let mut entries = self
+					.inner
+					.entries
+					.lock()
+					.expect("resource cache mutex poisoned");
+				let Some(entry) = entries.get_mut(&resource) else {
+					return;
+				};
+				entry.next_refresh = Some(next);
 				let _ = self
 					.inner
 					.scheduler_tx
@@ -475,7 +482,12 @@ impl ResourceManager {
 				return;
 			},
 		};
-		if !self.is_active(&resource) {
+		let active = self
+			.inner
+			.active_resources
+			.lock()
+			.expect("resource active set mutex poisoned");
+		if !active.contains(&resource) {
 			return;
 		}
 
@@ -499,7 +511,7 @@ impl ResourceManager {
 		};
 		if let Some(at) = next {
 			tracing::debug!(
-				resource = %resource_key(&resource),
+				resource = %safe_resource_key(&resource),
 				refresh_in = ?at.saturating_duration_since(Instant::now()),
 				"scheduled resource refresh"
 			);
@@ -527,101 +539,95 @@ impl ResourceManager {
 	}
 
 	fn watch_file(&self, path: &Path) -> anyhow::Result<()> {
-		let abspath = absolute(path)?;
-		trace!("adding file watch for {}", path.display());
-		let watch_id = self.inner.watched_files.next_id();
-		if self.inner.watched_files.contains(&abspath) {
+		let path = absolute(path)?;
+		if self.inner.watched_files.contains(&path) {
 			return Ok(());
 		}
-		let mut watched = crate::util::watch_files_with_options(
-			vec![abspath.clone()],
-			crate::util::WatchFilesOptions::default()
-				// Managed dependencies should reload when a referenced file disappears.
-				.reload_on_disappearance(true)
-				// Vim-style replace writes invalidate the inode watch; close it so
-				// the resource manager can register a fresh watch for the new file.
-				.close_on_removal(true),
-		)?;
-
-		let manager = self.clone();
-		let path = abspath.clone();
+		let options = crate::util::WatchFilesOptions::default()
+			.reload_on_disappearance(true)
+			.close_on_removal(true);
+		let initial = crate::util::watch_files_with_options(vec![path.clone()], options)?;
+		let owner = Arc::downgrade(&self.inner);
+		let watched_path = path.clone();
 		let task = tokio::spawn(async move {
-			while let Some(invalidated) = watched.changed_invalidated().await {
-				if invalidated {
-					// Linux file watches are tied to the replaced inode. Remove this
-					// task's entry and register a fresh watch for the new file.
-					manager
-						.inner
-						.watched_files
-						.remove_if_current(&path, watch_id);
-					if let Err(e) = manager.watch_file(&path) {
-						warn!("failed to re-watch resource file {}: {e}", path.display());
+			let path = watched_path;
+			let mut watched = Some(initial);
+			let mut retry = tokio::time::interval(Duration::from_secs(1));
+			retry.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+			loop {
+				tokio::select! {
+					changed = async { watched.as_mut().unwrap().changed_invalidated().await }, if watched.is_some() => {
+						if changed != Some(false) {
+							watched = None;
+							if changed.is_none() {
+								warn!(code="RESOURCE_WATCH_LOST", path=%path.display(), "resource watch channel closed; re-registering");
+							}
+						}
+						let Some(inner) = owner.upgrade() else { return; };
+						// Evict missing content and notify the existing reload path promptly.
+						Self { inner }.refresh_file(path.clone()).await;
+					}
+					_ = retry.tick(), if watched.is_none() => {
+						match crate::util::watch_files_with_options(vec![path.clone()], options) {
+							Ok(new_watched) => {
+								watched = Some(new_watched);
+								info!(code="RESOURCE_WATCH_RESTORED", path=%path.display(), "resource watcher registered");
+								let Some(inner) = owner.upgrade() else { return; };
+								// Read after registration to capture changes made during the gap.
+								Self { inner }.refresh_file(path.clone()).await;
+							}
+							Err(error) => warn!(code="RESOURCE_WATCH_RETRY_FAILED", path=%path.display(), %error, "failed to re-watch resource file; retrying"),
+						}
 					}
 				}
-				manager.refresh_file(path.clone()).await;
-				if invalidated {
-					break;
-				}
 			}
-			manager
-				.inner
-				.watched_files
-				.remove_if_current(&path, watch_id);
 		});
-		self
-			.inner
-			.watched_files
-			.insert_or_abort(abspath, FileWatch { id: watch_id, task });
-
+		self.inner.watched_files.insert_or_abort(path, task);
 		Ok(())
 	}
 
 	async fn refresh_file(&self, path: PathBuf) {
 		let resource = ResourceRef::File(path.clone());
-		// The file watch event may race with dependency cleanup.
 		if !self.is_active(&resource) {
 			return;
 		}
-		let content = match fs_err::tokio::read(&path).await {
-			Ok(content) => Bytes::from(content),
-			Err(e) => {
-				warn!("failed to refresh resource file {}: {e}", path.display());
-				if !self.is_active(&resource) {
-					return;
-				}
-				let removed = self
-					.inner
-					.entries
-					.lock()
-					.expect("resource cache mutex poisoned")
-					.remove(&resource)
-					.is_some();
-				if removed {
-					self.notify_changed(&resource);
-				}
-				return;
-			},
-		};
-		if !self.is_active(&resource) {
-			return;
-		}
+		let content = fs_err::tokio::read(&path).await;
 		let changed = {
+			// Hold the existing active-set lock through the write so pruning cannot
+			// finish between the final membership check and cache publication.
+			let active = self
+				.inner
+				.active_resources
+				.lock()
+				.expect("resource active set mutex poisoned");
+			if !active.contains(&resource) {
+				return;
+			}
 			let mut entries = self
 				.inner
 				.entries
 				.lock()
 				.expect("resource cache mutex poisoned");
-			let changed = entries
-				.get(&resource)
-				.is_none_or(|entry| entry.content != content);
-			entries.insert(
-				resource.clone(),
-				Entry {
-					content,
-					next_refresh: None,
+			match content {
+				Ok(content) => {
+					let content = Bytes::from(content);
+					let changed = entries
+						.get(&resource)
+						.is_none_or(|entry| entry.content != content);
+					entries.insert(
+						resource.clone(),
+						Entry {
+							content,
+							next_refresh: None,
+						},
+					);
+					changed
 				},
-			);
-			changed
+				Err(error) => {
+					warn!(code="RESOURCE_FILE_READ_FAILED", path=%path.display(), %error, "failed to refresh resource file");
+					entries.remove(&resource).is_some()
+				},
+			}
 		};
 		if changed {
 			self.notify_changed(&resource);
@@ -629,7 +635,7 @@ impl ResourceManager {
 	}
 
 	fn start_http_scheduler(&self, mut scheduler_rx: mpsc::UnboundedReceiver<ScheduledRefresh>) {
-		let manager = self.clone();
+		let owner = Arc::downgrade(&self.inner);
 		tokio::spawn(async move {
 			let mut heap = BinaryHeap::<TimerEntry>::new();
 			loop {
@@ -639,6 +645,8 @@ impl ResourceManager {
 						let Some(entry) = heap.pop() else {
 							continue;
 						};
+						let Some(inner) = owner.upgrade() else { return; };
+						let manager = Self { inner };
 						if manager.should_refresh(&entry.resource, entry.at) {
 							manager.refetch_and_notify_if_changed(entry.resource).await;
 						}
@@ -679,7 +687,7 @@ impl ResourceManager {
 			+ 1;
 		let _ = self.inner.change_tx.send(ResourceChange {
 			version: next,
-			resource: resource_key(resource),
+			resource: safe_resource_key(resource),
 		});
 	}
 }
@@ -701,21 +709,29 @@ async fn fetch_direct(client: &Client, resource: &ResourceRef) -> anyhow::Result
 			})
 		},
 		ResourceRef::Http { url, kind } => {
-			let resp = client
-				.simple_call(
-					::http::Request::builder()
-						.uri(url)
-						.body(Body::empty())
-						.expect("builder should succeed"),
-				)
+			let fetch = async {
+				let resp = client
+					.simple_call(
+						::http::Request::builder()
+							.uri(url)
+							.body(Body::empty())
+							.expect("builder should succeed"),
+					)
+					.await
+					.with_context(|| format!("fetch {}", safe_http_resource(url)))?;
+				if !resp.status().is_success() {
+					return Err(anyhow!("resource server returned HTTP {}", resp.status()));
+				}
+				let ttl = ttl_from_headers(resp.headers(), kind.default_ttl());
+				let body = crate::http::read_resp_body(resp).await?;
+				Ok(FetchResult {
+					content: body,
+					next: Some(Instant::now() + ttl.max(MIN_HTTP_REFRESH)),
+				})
+			};
+			tokio::time::timeout(HTTP_FETCH_TIMEOUT, fetch)
 				.await
-				.with_context(|| format!("fetch {url}"))?;
-			let ttl = ttl_from_headers(resp.headers(), kind.default_ttl());
-			let body = crate::http::read_resp_body(resp).await?;
-			Ok(FetchResult {
-				content: body,
-				next: Some(Instant::now() + ttl.max(MIN_HTTP_REFRESH)),
-			})
+				.map_err(|_| anyhow!("resource fetch timed out"))?
 		},
 	}
 }
@@ -748,6 +764,28 @@ fn resource_key(resource: &ResourceRef) -> String {
 	}
 }
 
+// Resource URLs may contain query credentials or userinfo. Keep the full URI
+// for cache identity and ordering, but never emit it as diagnostic metadata.
+fn safe_http_resource(url: &http::Uri) -> String {
+	let host = url.host().unwrap_or_default();
+	let port = url
+		.port_u16()
+		.map(|port| format!(":{port}"))
+		.unwrap_or_default();
+	format!(
+		"{}://{host}{port}{}",
+		url.scheme_str().unwrap_or_default(),
+		url.path()
+	)
+}
+
+fn safe_resource_key(resource: &ResourceRef) -> String {
+	match resource {
+		ResourceRef::File(path) => format!("file:{}", path.display()),
+		ResourceRef::Http { url, kind } => format!("http:{kind:?}:{}", safe_http_resource(url)),
+	}
+}
+
 fn normalize_resource(resource: ResourceRef) -> anyhow::Result<ResourceRef> {
 	Ok(match resource {
 		ResourceRef::File(path) => ResourceRef::File(absolute(path)?),
@@ -762,3 +800,7 @@ async fn maybe_sleep_until(till: Option<Instant>) {
 		pending::<()>().await;
 	}
 }
+
+#[cfg(test)]
+#[path = "resource_manager_tests.rs"]
+mod tests;

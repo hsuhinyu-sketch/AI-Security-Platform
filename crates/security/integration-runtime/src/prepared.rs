@@ -9,9 +9,28 @@ pub(super) struct PreparedSecurity {
 }
 
 impl SecurityConfig {
-	/// Prepare static execution inputs before publication, without constructing remote clients.
+	/// Prepare execution inputs and validate remote transports without sending requests.
+	/// Run on a blocking thread when called from a Tokio runtime.
 	pub fn prepare_execution(&self) -> Result<(), String> {
 		self.validate_composition()?;
+		// Reuse the real constructors; temporary clients do not populate the live request cache.
+		if let Some(config) = &self.remote_pdp {
+			super::remote_pdp::HttpRemotePdpTransport::from_config(config).map_err(|e| e.reason)?;
+		}
+		if let Some(config) = &self.approval {
+			super::remote_approval::HttpApprovalProvider::from_config(config).map_err(|e| e.reason)?;
+		}
+		if let Some(config) = &self.capability_broker {
+			super::remote_capability::HttpCapabilityIssuer::from_config(config).map_err(|e| e.reason)?;
+		}
+		if let Some(config) = &self.delegation_revocation {
+			super::remote_revocation::HttpDelegationRevocationProvider::from_config(config)
+				.map_err(|e| e.reason)?;
+		}
+		if let Some(config) = &self.remote_agent_identity {
+			super::remote_agent_identity::HttpAgentIdentityProvider::from_config(config)
+				.map_err(|e| e.reason)?;
+		}
 		self.prepared_security()?;
 		Ok(())
 	}
@@ -121,5 +140,153 @@ mod tests {
 		assert!(crate::evaluate_with_audit(&config, &foreign, None, &audit).is_err());
 		std::thread::sleep(std::time::Duration::from_millis(1100));
 		assert!(crate::evaluate_with_audit(&config, &action, None, &audit).is_err());
+	}
+
+	fn remote_config(field: &str, mode: &str, provider: serde_json::Value) -> SecurityConfig {
+		let mut value =
+			json!({"mode":mode,"policies":[{"id":"allow","enabled":true,"effect":"allow"}]});
+		if field == "remotePdp" {
+			value["dynamicAuthorization"] = json!({"policyVersion":"v1"});
+		}
+		if matches!(field, "approval" | "capabilityBroker") {
+			value["requiredToolApprovals"] = json!([{"toolName":"echo"}]);
+		}
+		if field == "capabilityBroker" {
+			value["approval"] = json!({"endpoint":"https://127.0.0.1:9/approve"});
+		}
+		value[field] = provider;
+		serde_json::from_value(value).unwrap()
+	}
+
+	#[test]
+	fn preparation_rejects_invalid_remote_url_and_timeout_in_every_applicable_mode() {
+		for field in [
+			"remotePdp",
+			"approval",
+			"capabilityBroker",
+			"delegationRevocation",
+			"remoteAgentIdentity",
+		] {
+			let endpoint = if field == "capabilityBroker" {
+				"issueEndpoint"
+			} else {
+				"endpoint"
+			};
+			for mode in ["enforce", "audit", "shadow"] {
+				if field == "capabilityBroker" && mode != "enforce" {
+					continue;
+				}
+				for url in [
+					"http://127.0.0.1:9",
+					"https://user:secret@example.test/",
+					"https://example.test/#fragment",
+					"not-a-url",
+				] {
+					let error = remote_config(field, mode, json!({endpoint:url}))
+						.prepare_execution()
+						.unwrap_err();
+					assert!(error.contains("endpoint"), "{field}/{mode}: {error}");
+					assert!(!error.contains("secret"));
+				}
+				let error = remote_config(
+					field,
+					mode,
+					json!({endpoint:"https://127.0.0.1:9", "timeoutMillis":0}),
+				)
+				.prepare_execution()
+				.unwrap_err();
+				assert!(error.contains("timeoutMillis"), "{field}/{mode}: {error}");
+			}
+		}
+	}
+
+	#[test]
+	fn preparation_rejects_missing_and_malformed_tls_material() {
+		let directory = std::env::temp_dir().join(format!("aisp-preflight-{}", uuid::Uuid::new_v4()));
+		std::fs::create_dir(&directory).unwrap();
+		let invalid = directory.join("invalid.pem");
+		let non_certificate = directory.join("invalid-der.pem");
+		std::fs::write(&invalid, "not a PEM").unwrap();
+		std::fs::write(
+			&non_certificate,
+			"-----BEGIN CERTIFICATE-----\nZm9v\n-----END CERTIFICATE-----\n",
+		)
+		.unwrap();
+		for field in [
+			"remotePdp",
+			"approval",
+			"capabilityBroker",
+			"delegationRevocation",
+			"remoteAgentIdentity",
+		] {
+			let endpoint = if field == "capabilityBroker" {
+				"issueEndpoint"
+			} else {
+				"endpoint"
+			};
+			for material in ["rootCaPemFile", "identityPemFile"] {
+				for path in [&invalid, &non_certificate, &directory.join("missing.pem")] {
+					assert!(
+						remote_config(
+							field,
+							"enforce",
+							json!({endpoint:"https://127.0.0.1:9", material:path})
+						)
+						.prepare_execution()
+						.is_err(),
+						"{field}/{material}: {}",
+						path.display()
+					);
+				}
+			}
+		}
+		std::fs::remove_dir_all(directory).unwrap();
+	}
+
+	#[test]
+	fn valid_preflight_does_not_contact_services_or_hide_mutated_config() {
+		let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+		listener.set_nonblocking(true).unwrap();
+		let url = format!("https://{}/unused", listener.local_addr().unwrap());
+		for field in [
+			"remotePdp",
+			"approval",
+			"capabilityBroker",
+			"delegationRevocation",
+			"remoteAgentIdentity",
+		] {
+			let endpoint = if field == "capabilityBroker" {
+				"issueEndpoint"
+			} else {
+				"endpoint"
+			};
+			remote_config(field, "enforce", json!({endpoint:url}))
+				.prepare_execution()
+				.unwrap();
+		}
+		assert_eq!(
+			listener.accept().unwrap_err().kind(),
+			std::io::ErrorKind::WouldBlock
+		);
+		let original = remote_config("remotePdp", "enforce", json!({"endpoint":url}));
+		original.prepare_execution().unwrap();
+		let mut changed = original.clone();
+		changed.remote_pdp.as_mut().unwrap().endpoint = "http://invalid.example".into();
+		assert!(changed.prepare_execution().is_err());
+		original.prepare_execution().unwrap();
+	}
+
+	#[test]
+	fn unrepresentable_capability_ttl_is_a_configuration_error() {
+		for ttl in [0, u64::MAX, i64::MAX as u64, 10_000_000_000_000_000] {
+			let error = remote_config(
+				"capabilityBroker",
+				"enforce",
+				json!({"issueEndpoint":"https://127.0.0.1:9", "ttlSeconds":ttl}),
+			)
+			.prepare_execution()
+			.unwrap_err();
+			assert!(error.contains("ttlSeconds"), "{error}");
+		}
 	}
 }

@@ -55,6 +55,8 @@ impl RagQueryRequest {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RagGatewayError {
+	/// Logical deletion is durable, but the backend has not confirmed physical purge.
+	PurgeFailed(DocumentStatus),
 	Lifecycle(String),
 	Ingestion(IngestionError),
 	Retrieval(RetrievalError),
@@ -122,6 +124,21 @@ where
 			.map_err(RagGatewayError::Ingestion)
 	}
 
+	pub async fn authorize_import_async(
+		&self,
+		request_id: impl Into<String>,
+		identity: GatewayIdentity,
+		corpus_id: &str,
+		document_id: &str,
+		source_id: &str,
+	) -> Result<(), RagGatewayError> {
+		self
+			.ingestor
+			.authorize_import_async(request_id, identity, corpus_id, document_id, source_id)
+			.await
+			.map_err(RagGatewayError::Ingestion)
+	}
+
 	pub fn record_source_fetch_failure(
 		&self,
 		request_id: impl Into<String>,
@@ -176,13 +193,14 @@ where
 		let subject: security_types::Subject = identity.clone().into();
 		let guarded = self
 			.context_guard
-			.assemble(
+			.assemble_async(
 				self.retriever.security_pipeline(),
 				&self.context_audit,
 				request_id,
 				identity,
 				context,
 			)
+			.await
 			.map_err(RagGatewayError::Context)?;
 		if let Some((store, _)) = &self.lifecycle {
 			use security_types::DocumentVersionValidator;
@@ -232,10 +250,11 @@ where
 		self
 			.retriever
 			.security_pipeline()
-			.authorize(
+			.authorize_async(
 				&action,
 				Some(&serde_json::json!({"corpusId":corpus,"expectedRevision":expected})),
 			)
+			.await
 			.map_err(|e| RagGatewayError::Retrieval(RetrievalError::GatewayDenied(e)))?;
 		let (store, purger) = self
 			.lifecycle
@@ -260,13 +279,28 @@ where
 		} else {
 			None
 		};
-		Ok(DocumentStatus {
+		let status = DocumentStatus {
 			revision: meta.revision,
 			version: meta.version,
 			state: meta.state,
 			source_hash: meta.source_hash,
 			purged,
-		})
+		};
+		if purged == Some(false) {
+			self.retriever.security_pipeline().record(
+				&action,
+				&security_types::Decision {
+					approval: None,
+					request_id: action.request_id.clone(),
+					effect: security_types::DecisionEffect::Deny,
+					policy_id: Some("rag:document-purge-failed".into()),
+					policy_version: None,
+					expires_at: None,
+				},
+			);
+			return Err(RagGatewayError::PurgeFailed(status));
+		}
+		Ok(status)
 	}
 
 	pub fn ingestor(&self) -> &SecureIngestor<IB, IA, IS, IAudit> {
@@ -278,7 +312,7 @@ where
 	}
 }
 
-#[derive(serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DocumentStatus {
 	pub revision: u64,

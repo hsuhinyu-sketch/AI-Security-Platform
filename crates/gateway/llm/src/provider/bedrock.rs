@@ -24,9 +24,7 @@ impl Endpoint<'_> {
 		model: &str,
 	) -> Strng {
 		let model = self.model.as_deref().unwrap_or(model);
-		const MODEL_SEGMENT: &percent_encoding::AsciiSet =
-			&percent_encoding::CONTROLS.add(b'/').add(b'%');
-		let model = percent_encoding::utf8_percent_encode(model, MODEL_SEGMENT);
+		let model = percent_encoding::utf8_percent_encode(model, super::MODEL_PATH_SEGMENT);
 		match route_type {
 			Some(ProviderFormat::AnthropicTokenCount) => strng::format!("/model/{model}/count-tokens"),
 			Some(ProviderFormat::Embeddings) => strng::format!("/model/{model}/invoke"),

@@ -105,6 +105,8 @@ def index_block(entries):
         )
         groups[group].append(entry)
     for group, items in groups.items():
+        if not items:
+            continue
         lines += [f"### {group}（{len(items)}）", ""]
         if group.startswith("历史归档"):
             lines += ["<details>", "<summary>展开旧方案、实施报告及验证证据</summary>", ""]

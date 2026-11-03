@@ -29,6 +29,10 @@ def message(method='tools/call', **params):
 
 class WireUpstream(fixture.Upstream):
     def do_GET(self):
+        if self.path.startswith('/.well-known/'):
+            with self.server.lock:
+                self.server.calls['metadata-http'] += 1
+            return self.reply(200, {'resource': 'local-mcp'})
         if not self.path.startswith('/api/'):
             return super().do_GET()
         with self.server.lock:
@@ -107,6 +111,15 @@ class WireUpstream(fixture.Upstream):
                 encoded = json.dumps(reply).encode()
                 if case == 'sse':
                     self.reply_raw(200, b': keepalive\n\ndata: ' + encoded + b'\n\n', 'text/event-stream; charset=utf-8')
+                elif case == 'notifications':
+                    notifications = [
+                        {'jsonrpc': '2.0', 'method': 'notifications/progress', 'params': {'progressToken': 'other', 'progress': 1}},
+                        {'jsonrpc': '2.0', 'method': 'notifications/message', 'params': {'level': 'info', 'data': 'private log'}},
+                        {'jsonrpc': '2.0', 'method': 'notifications/tasks/status', 'params': {'taskId': 'other-task', 'status': 'working', 'createdAt': '2026-10-29T00:00:00Z', 'lastUpdatedAt': '2026-10-29T00:00:00Z', 'ttl': 60000}},
+                        {'jsonrpc': '2.0', 'method': 'notifications/progress', 'params': {'progressToken': 'mine', 'progress': 2}},
+                    ]
+                    frames = b''.join(b'data: ' + json.dumps(value).encode() + b'\n\n' for value in notifications)
+                    self.reply_raw(200, frames + b'data: ' + encoded + b'\n\n', 'text/event-stream')
                 elif case == 'json':
                     self.reply_raw(200, encoded, 'application/json; charset=utf-8')
                 elif case == 'gzip':

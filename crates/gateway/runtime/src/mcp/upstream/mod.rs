@@ -31,6 +31,7 @@ use crate::*;
 /// extension value only when forwarding to an HTTP Tool/API backend.
 #[derive(Debug, Clone)]
 pub(crate) struct IssuedCapability {
+	pub expires_at: chrono::DateTime<chrono::Utc>,
 	pub capability: ::http::HeaderValue,
 	pub context: ::http::HeaderValue,
 }
@@ -236,6 +237,7 @@ impl Upstream {
 		request: JsonRpcRequest<ClientRequest>,
 		ctx: &IncomingRequestContext,
 	) -> Result<mergestream::Messages, UpstreamError> {
+		super::dispatch::current(&ctx.as_request())?;
 		if ctx
 			.as_request()
 			.extensions()

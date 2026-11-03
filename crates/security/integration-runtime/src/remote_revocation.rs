@@ -68,7 +68,7 @@ pub struct HttpDelegationRevocationProvider {
 }
 
 impl HttpDelegationRevocationProvider {
-	fn from_config(
+	pub(super) fn from_config(
 		config: &RemoteDelegationRevocationConfig,
 	) -> Result<Self, DelegationRevocationError> {
 		let (endpoint, client) = trusted_https::build_client(

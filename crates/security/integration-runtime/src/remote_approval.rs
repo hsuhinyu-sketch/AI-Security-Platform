@@ -4,7 +4,7 @@ use std::sync::Arc;
 use crate::blocking_client_cache::BlockingClientCache;
 use chrono::{DateTime, Utc};
 use security_pipeline::{ApprovalError, ApprovalProvider, arguments_hash};
-use security_types::ActionRequest;
+use security_types::{ActionRequest, ApprovalGrant};
 
 use crate::trusted_https;
 
@@ -72,7 +72,7 @@ pub struct HttpApprovalProvider {
 }
 
 impl HttpApprovalProvider {
-	fn from_config(config: &RemoteApprovalConfig) -> Result<Self, ApprovalError> {
+	pub(super) fn from_config(config: &RemoteApprovalConfig) -> Result<Self, ApprovalError> {
 		let (endpoint, client) = trusted_https::build_client(
 			&config.endpoint,
 			config.timeout_millis,
@@ -90,7 +90,7 @@ impl ApprovalProvider for HttpApprovalProvider {
 		&self,
 		request: &ActionRequest,
 		arguments: &serde_json::Value,
-	) -> Result<bool, ApprovalError> {
+	) -> Result<Option<ApprovalGrant>, ApprovalError> {
 		let expected_arguments_hash = arguments_hash(arguments);
 		let response = self
 			.client
@@ -121,7 +121,7 @@ fn validate_response(
 	response: &RemoteApprovalResponse,
 	request: &ActionRequest,
 	expected_arguments_hash: &str,
-) -> Result<bool, ApprovalError> {
+) -> Result<Option<ApprovalGrant>, ApprovalError> {
 	if response.approval_id.is_empty() {
 		return Err(ApprovalError::unavailable(
 			"approval response approvalId is empty",
@@ -146,5 +146,43 @@ fn validate_response(
 			"approval response is missing a future expiresAt",
 		));
 	}
-	Ok(response.approved)
+	Ok(if response.approved {
+		Some(ApprovalGrant {
+			approval_id: response.approval_id.clone(),
+			expires_at: response.expires_at.expect("future expiry validated"),
+		})
+	} else {
+		None
+	})
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+	#[test]
+	fn approved_receipt_preserves_id_and_deadline_and_rejects_invalid_binding() {
+		let request =
+			security_pipeline::tool_invoke_for_identity("request", Default::default(), "delete");
+		let mut response = RemoteApprovalResponse {
+			approval_id: "approval-42".into(),
+			request_id: "request".into(),
+			arguments_hash: "hash".into(),
+			approved: true,
+			expires_at: Some(Utc::now() + chrono::Duration::seconds(2)),
+		};
+		let receipt = validate_response(&response, &request, "hash")
+			.unwrap()
+			.unwrap();
+		assert_eq!(receipt.approval_id, response.approval_id);
+		assert_eq!(Some(receipt.expires_at), response.expires_at);
+		assert!(validate_response(&response, &request, "other").is_err());
+		response.expires_at = Some(Utc::now() - chrono::Duration::seconds(1));
+		assert!(validate_response(&response, &request, "hash").is_err());
+		response.approved = false;
+		assert!(
+			validate_response(&response, &request, "hash")
+				.unwrap()
+				.is_none()
+		);
+	}
 }

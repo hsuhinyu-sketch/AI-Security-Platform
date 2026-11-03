@@ -2,21 +2,14 @@
 use crate::proxy::ProxyError;
 use security_integration_runtime::{
 	SecurityConfig,
-	context_store::{ContextBinding, LocalSecurityContextStore, SecurityContextStore},
+	context_store::{ContextBinding, SecurityContextStore},
 	cross_component::CrossComponentConfig,
 	identity_binding::VerifiedOwner,
 };
 use security_types::{ActionRequest, DataClassification};
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
 
 pub(crate) const HEADER: &str = "x-aisp-context-id";
-#[derive(Default)]
-struct Registry(Arc<LocalSecurityContextStore>);
-static REGISTRY: OnceLock<Registry> = OnceLock::new();
-fn registry() -> &'static Registry {
-	REGISTRY
-		.get_or_init(|| Registry(security_integration_runtime::context_store::shared_memory_store()))
-}
 
 #[derive(Clone)]
 pub(crate) struct FlowAccess {
@@ -85,6 +78,7 @@ impl FlowAccess {
 		})();
 		use security_audit::AuditSink;
 		let decision = security_types::Decision {
+			approval: None,
 			request_id: action.request_id.clone(),
 			effect: if result.is_ok() {
 				security_types::DecisionEffect::Allow
@@ -142,83 +136,72 @@ fn context_id(headers: &http::HeaderMap) -> Result<Option<&str>, ProxyError> {
 		.map(|v| v.to_str().map_err(|_| ProxyError::AuthorizationFailed))
 		.transpose()
 }
-impl Registry {
-	fn store(
-		&self,
-		policy: &CrossComponentConfig,
-	) -> Result<Arc<dyn SecurityContextStore>, ProxyError> {
-		if policy.storage.is_some() || policy.store.get().is_some() {
-			policy
-				.context_store()
-				.map_err(|_| ProxyError::AuthorizationFailed)
-		} else {
-			Ok(self.0.clone())
-		}
+fn store(policy: &CrossComponentConfig) -> Result<Arc<dyn SecurityContextStore>, ProxyError> {
+	policy
+		.context_store()
+		.map_err(|_| ProxyError::AuthorizationFailed)
+}
+fn resolve(
+	id: &str,
+	owner: &VerifiedOwner,
+	config: &SecurityConfig,
+) -> Result<FlowAccess, ProxyError> {
+	if uuid::Uuid::parse_str(id).is_err() {
+		return Err(ProxyError::AuthorizationFailed);
 	}
-	fn resolve(
-		&self,
-		id: &str,
-		owner: &VerifiedOwner,
-		config: &SecurityConfig,
-	) -> Result<FlowAccess, ProxyError> {
-		if uuid::Uuid::parse_str(id).is_err() {
-			return Err(ProxyError::AuthorizationFailed);
-		}
-		let policy = config
-			.cross_component
-			.as_ref()
-			.ok_or(ProxyError::AuthorizationFailed)?;
-		let binding = Arc::new(ContextBinding {
-			owner: owner.clone(),
-			namespace: policy.namespace.clone(),
-			fingerprint: fingerprint(config)?,
-		});
-		let access = FlowAccess {
-			store: self.store(policy)?,
-			binding,
-			policy: Arc::new(policy.clone()),
-			correlation: crate::security::digest(id),
-			id: id.into(),
-		};
-		access.current()?;
-		Ok(access)
+	let policy = config
+		.cross_component
+		.as_ref()
+		.ok_or(ProxyError::AuthorizationFailed)?;
+	let binding = Arc::new(ContextBinding {
+		owner: owner.clone(),
+		namespace: policy.namespace.clone(),
+		fingerprint: fingerprint(config)?,
+	});
+	let access = FlowAccess {
+		store: store(policy)?,
+		binding,
+		policy: Arc::new(policy.clone()),
+		correlation: crate::security::digest(id),
+		id: id.into(),
+	};
+	access.current()?;
+	Ok(access)
+}
+#[cfg(feature = "gateway-rag")]
+fn issue_documents(
+	owner: VerifiedOwner,
+	config: &SecurityConfig,
+	classification: DataClassification,
+	parent: Option<&str>,
+	documents: Vec<security_types::DocumentVersion>,
+) -> Result<String, ProxyError> {
+	if let Some(id) = parent {
+		let access = resolve(id, &owner, config)?;
+		access
+			.store
+			.elevate_documents(id, &access.binding, classification, documents)
+			.map_err(|_| ProxyError::AuthorizationFailed)?;
+		return Ok(id.into()); // No renewal, downgrade, or new weaker copy.
 	}
-	fn issue_documents(
-		&self,
-		owner: VerifiedOwner,
-		config: &SecurityConfig,
-		classification: DataClassification,
-		parent: Option<&str>,
-		documents: Vec<security_types::DocumentVersion>,
-	) -> Result<String, ProxyError> {
-		if let Some(id) = parent {
-			let access = self.resolve(id, &owner, config)?;
-			access
-				.store
-				.elevate_documents(id, &access.binding, classification, documents)
-				.map_err(|_| ProxyError::AuthorizationFailed)?;
-			return Ok(id.into()); // No renewal, downgrade, or new weaker copy.
-		}
-		let fingerprint = fingerprint(config)?;
-		let policy = config
-			.cross_component
-			.as_ref()
-			.ok_or(ProxyError::AuthorizationFailed)?;
-		self
-			.store(policy)?
-			.issue_documents(
-				ContextBinding {
-					owner,
-					namespace: policy.namespace.clone(),
-					fingerprint,
-				},
-				policy.ttl_seconds,
-				policy.max_contexts,
-				classification,
-				documents,
-			)
-			.map_err(|_| ProxyError::AuthorizationFailed)
-	}
+	let fingerprint = fingerprint(config)?;
+	let policy = config
+		.cross_component
+		.as_ref()
+		.ok_or(ProxyError::AuthorizationFailed)?;
+	store(policy)?
+		.issue_documents(
+			ContextBinding {
+				owner,
+				namespace: policy.namespace.clone(),
+				fingerprint,
+			},
+			policy.ttl_seconds,
+			policy.max_contexts,
+			classification,
+			documents,
+		)
+		.map_err(|_| ProxyError::AuthorizationFailed)
 }
 
 pub(crate) fn prepare(
@@ -233,7 +216,7 @@ pub(crate) fn prepare(
 		let id = context_id(headers)?
 			.or_else(|| extensions.get::<FlowAccess>().map(|f| f.id.as_str()))
 			.ok_or(ProxyError::AuthorizationFailed)?;
-		registry().resolve(id, &owner(extensions)?, config)
+		resolve(id, &owner(extensions)?, config)
 	})();
 	if result.is_err() {
 		tracing::warn!(
@@ -277,8 +260,8 @@ pub(crate) fn rag_issuer(
 	})
 }
 #[cfg(feature = "gateway-rag")]
-impl gateway_rag::http::ContextConstraintIssuer for RagIssuer {
-	fn revoke(&self, id: &str) -> Result<(), String> {
+impl RagIssuer {
+	fn revoke_action(&self) -> Result<security_types::ActionRequest, String> {
 		let policy = self
 			.config
 			.cross_component
@@ -292,6 +275,41 @@ impl gateway_rag::http::ContextConstraintIssuer for RagIssuer {
 		action.action.action_type = security_types::ActionType::ContextOperation;
 		action.action.name = "context/revoke".into();
 		action.resource.resource_type = security_types::ResourceType::SecurityContext;
+		Ok(action)
+	}
+	fn revoke_authorized(
+		&self,
+		id: &str,
+		action: &security_types::ActionRequest,
+	) -> Result<(), String> {
+		let policy = self
+			.config
+			.cross_component
+			.as_ref()
+			.ok_or("context controls unavailable")?;
+		let binding = ContextBinding {
+			owner: self.owner.clone(),
+			namespace: policy.namespace.clone(),
+			fingerprint: fingerprint(&self.config).map_err(|_| "invalid context configuration")?,
+		};
+		let result = store(policy).and_then(|store| {
+			store
+				.revoke(id, &binding)
+				.map_err(|_| ProxyError::AuthorizationFailed)
+		});
+		audit_context(
+			action,
+			result.is_ok(),
+			format!("cross-component:revoke:{}", crate::security::digest(id)),
+		);
+		result.map_err(|_| "context revocation denied".into())
+	}
+}
+
+#[cfg(feature = "gateway-rag")]
+impl gateway_rag::http::ContextConstraintIssuer for RagIssuer {
+	fn revoke(&self, id: &str) -> Result<(), String> {
+		let action = self.revoke_action()?;
 		security_integration_runtime::evaluate_with_audit(
 			&self.config,
 			&action,
@@ -299,43 +317,40 @@ impl gateway_rag::http::ContextConstraintIssuer for RagIssuer {
 			&crate::security_events::UiSecurityAuditSink,
 		)
 		.map_err(|_| "context revocation denied")?;
-		let binding = ContextBinding {
-			owner: self.owner.clone(),
-			namespace: policy.namespace.clone(),
-			fingerprint: fingerprint(&self.config).map_err(|_| "invalid context configuration")?,
-		};
-		let result = registry().store(policy).and_then(|store| {
-			store
-				.revoke(id, &binding)
-				.map_err(|_| ProxyError::AuthorizationFailed)
-		});
-		audit_context(
-			&action,
-			result.is_ok(),
-			format!("cross-component:revoke:{}", crate::security::digest(id)),
-		);
-		result.map_err(|_| "context revocation denied".into())
+		self.revoke_authorized(id, &action)
 	}
+	fn revoke_async<'a>(
+		&'a self,
+		id: &'a str,
+	) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), String>> + Send + 'a>> {
+		Box::pin(async move {
+			let action = self.revoke_action()?;
+			crate::security::evaluate_async(&self.config, &action)
+				.await
+				.map_err(|_| "context revocation denied")?;
+			self.revoke_authorized(id, &action)
+		})
+	}
+
 	fn issue(
 		&self,
 		context: &security_rag::GuardedContext,
 		parent: Option<&str>,
 	) -> Result<String, String> {
-		let result = registry()
-			.issue_documents(
-				self.owner.clone(),
-				&self.config,
-				context
-					.classification
-					.unwrap_or(DataClassification::Restricted),
-				parent,
-				context
-					.chunks
-					.iter()
-					.filter_map(security_rag::lifecycle::document_reference)
-					.collect(),
-			)
-			.map_err(|_| "cross-component context issuance denied".to_string());
+		let result = issue_documents(
+			self.owner.clone(),
+			&self.config,
+			context
+				.classification
+				.unwrap_or(DataClassification::Restricted),
+			parent,
+			context
+				.chunks
+				.iter()
+				.filter_map(security_rag::lifecycle::document_reference)
+				.collect(),
+		)
+		.map_err(|_| "cross-component context issuance denied".to_string());
 		let action = security_pipeline::context_assemble_for_identity(
 			self.request_id.clone(),
 			self.owner.identity(),
@@ -353,6 +368,7 @@ impl gateway_rag::http::ContextConstraintIssuer for RagIssuer {
 fn audit_context(action: &ActionRequest, allowed: bool, rule: String) {
 	use security_audit::AuditSink;
 	let decision = security_types::Decision {
+		approval: None,
 		request_id: action.request_id.clone(),
 		effect: if allowed {
 			security_types::DecisionEffect::Allow

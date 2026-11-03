@@ -10,7 +10,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 
 use chrono::{DateTime, Utc};
 use security_audit::AuditSink;
-use security_types::{DecisionEffect, SecurityEvent};
+use security_types::{DecisionEffect, SecurityEvent, Subject};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use tokio::sync::broadcast;
@@ -256,10 +256,16 @@ impl SecurityEventStore {
 			decision: Some(event.decision),
 			policy_id: event.policy_id,
 			policy_version: event.policy_version,
-			details: BTreeMap::from([(
-				"decisionExpiresAt".into(),
-				json!(event.decision_expires_at.map(|value| value.to_rfc3339())),
-			)]),
+			details: BTreeMap::from([
+				(
+					"decisionExpiresAt".into(),
+					json!(event.decision_expires_at.map(|value| value.to_rfc3339())),
+				),
+				(
+					"approval".into(),
+					json!(event.authorization_context.approval),
+				),
+			]),
 		}
 	}
 
@@ -268,7 +274,7 @@ impl SecurityEventStore {
 		kind: SecurityEventKind,
 		request_id: String,
 		timestamp: DateTime<Utc>,
-		tenant_id: Option<String>,
+		subject: Subject,
 		action: &str,
 		resource_type: &str,
 		resource_id: String,
@@ -280,10 +286,10 @@ impl SecurityEventStore {
 			kind,
 			request_id,
 			timestamp,
-			user_id: None,
-			agent_id: None,
-			tenant_id,
-			delegation_id: None,
+			user_id: subject.user_id,
+			agent_id: subject.agent_id,
+			tenant_id: subject.tenant_id,
+			delegation_id: subject.delegation_id,
 			action: action.into(),
 			resource_type: resource_type.into(),
 			resource_id,
